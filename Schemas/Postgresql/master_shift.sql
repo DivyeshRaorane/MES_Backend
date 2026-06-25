@@ -1,10 +1,9 @@
 -- Master table for Working Shifts (dropdown)
 
-CREATE TABLE master_shift (
-    shift_id SERIAL PRIMARY KEY,
-    shift_name VARCHAR(10) NOT NULL UNIQUE,  -- e.g. 'A', 'B', 'C'
-    start_time TIME,
-    end_time TIME,
-    is_active BOOLEAN DEFAULT TRUE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+CREATE TABLE shifts(
+shift_id SERIAL PRIMARY KEY,
+shift_name VARCHAR(20) NOT NULL,
+shift_start_time TIME NOT NULL,
+shift_end_time TIME NOT NULL,
+created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

@@ -1,0 +1,6 @@
+CREATE TABLE pt_users(
+pt_user_id SERIAL PRIMARY KEY,
+emp_id VARCHAR(20),
+pt_user_name VARCHAR(100) NOT NULL,
+created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);

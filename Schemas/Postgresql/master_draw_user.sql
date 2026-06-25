@@ -1,0 +1,6 @@
+CREATE TABLE draw_users(
+draw_user_id SERIAL PRIMARY KEY,
+emp_id VARCHAR(20),
+draw_user_name VARCHAR(100) NOT NULL,
+created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);

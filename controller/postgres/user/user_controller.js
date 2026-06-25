@@ -1,4 +1,4 @@
-import { createUser,loginService } from "../../../services/user/user_service.js";
+import { createUser,loginService, getUsersS } from "../../../services/user/user_service.js";
 
 
 export const register_user = async (req,res) =>{
@@ -62,7 +62,7 @@ export const login = async(req,res,next)=>{
 
         if (!emp_id || !password){
             return res.status(400).json({
-                message:"Email and Password are required"
+                message:"Emp ID and Password are required"
             });
         }
 
@@ -71,13 +71,40 @@ export const login = async(req,res,next)=>{
     });
 
         return res.status(200).json({
+            success:true,
             message:"Login Successful",
-            ...result,
+            user: result.user,
+            token:result.token
         })
     }catch(error){
         return res.status(401).json({
-            message:error.message
+            success: false,
+            message:error.message || "Invalid credentials"
         })
     }
 }
+
+export const getUsersC = async (req, res) => {
+  try {
+    const { emp_id, role, department_id } = req.query;
+
+    const users = await getUsersS({
+      emp_id,
+      role,
+      department_id,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Users fetched successfully",
+      data: users,
+    });
+
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message || "Internal Server Error",
+    });
+  }
+};
 

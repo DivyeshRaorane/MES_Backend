@@ -12,6 +12,16 @@ import preformAcceptRoutes from "./routes/postgress/preform_accept.routes.js"
 import handleJoinRoutes from "./routes/postgress/handle_join.routes.js"
 import drawTowerRoutes from "./routes/postgress/draw_tower.routes.js"
 import preformAllocationRoutes from "./routes/postgress/preform_allocation.routes.js"
+import drawEntryRoutes from "./routes/postgress/draw_entry.routes.js"
+import towerDataRoutes from "./routes/sql/tower_data.routes.js"
+import shiftRoutes from "./routes/postgress/shift.routes.js"
+import drawUsersRoutes from "./routes/postgress/draw_user.routes.js"
+import windingObservationRoutes from "./routes/postgress/winding_observation.routes.js"
+import drawFiberCutReasonRoutes from "./routes/postgress/draw_fiber_cut_reason.route.js"
+import ptMachineRoutes from "./routes/postgress/pt_machine.routes.js"
+import ptUsersRoutes from "./routes/postgress/pt_user.routes.js"
+import ptAllocationRoutes from "./routes/postgress/pt_allocation.routes.js"
+
 
 const app = express();
 
@@ -25,13 +35,21 @@ app.use("/api", preformAcceptRoutes)
 app.use("/api", handleJoinRoutes)
 app.use("/api", drawTowerRoutes)
 app.use("/api", preformAllocationRoutes)
+app.use("/api", drawEntryRoutes)
+app.use("/api", shiftRoutes)
+app.use("/api", drawUsersRoutes)
+app.use("/api", windingObservationRoutes)
+app.use("/api", drawFiberCutReasonRoutes)
+app.use("/api", ptMachineRoutes)
+app.use("/api", ptUsersRoutes)
+app.use("/api", ptAllocationRoutes)
 
-
+app.use("/api", towerDataRoutes)
 
 app.use("/dt1", testRoutes)
-//app.use("/dt2", test2Routes)
-//app.use("/dt3", test3Routes)
-//app.use("/dt4", test4Routes)
+app.use("/dt2", test2Routes)
+app.use("/dt3", test3Routes)
+app.use("/dt4", test4Routes)
 
 
 

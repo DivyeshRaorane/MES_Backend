@@ -21,7 +21,11 @@ export const createTowerC = async(req,res)=>{
 
 export const getTowerC = async(req,res)=>{
     try{
-        const towers = await getTowerS(true);
+         const { active } = req.query;
+
+        const towers = await getTowerS(
+            active !== undefined ? active === "true" : null
+        );
 
         res.status(200).json({
       success: true,

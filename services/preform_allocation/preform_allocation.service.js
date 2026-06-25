@@ -129,3 +129,26 @@ export const recentAllocatedPreformsS = async()=>{
     const result = await pool.query(query);
     return result.rows;
 }
+
+export const preformsByTowersS = async(tower_id)=>{
+  const query = `
+  SELECT 
+  pa.allocation_id,
+            pa.preform_id,
+            pfa.preform_weight,
+            pa.tower_id,
+            dt.tower_no,
+            pa.allocation_date
+        FROM preform_allocation pa
+        INNER JOIN preform_accept pfa
+            ON pa.preform_id = pfa.preform_id
+        LEFT JOIN draw_tower dt
+            ON pa.tower_id = dt.tower_id
+        WHERE pa.tower_id = $1
+            AND pa.preform_draw = false
+        ORDER BY pa.created_at DESC;
+        `;
+
+        const result = await pool.query(query, [tower_id]);
+        return result.rows; 
+}

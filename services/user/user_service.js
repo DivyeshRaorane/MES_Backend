@@ -62,7 +62,7 @@ export const loginService = async({emp_id,password})=>{
     const user = result.rows[0];
 
     if(!user){
-        throw new Error('Invalid email or password')
+        throw new Error('Invalid Emp ID or password')
     };
 
     const isPasswordValid = await bcrypt.compare(
@@ -91,3 +91,60 @@ export const loginService = async({emp_id,password})=>{
         token
     }
 }
+
+export const getUsersS = async (filters = {}) => {
+  const { emp_id, role, department_id } = filters;
+
+  let query = `
+    SELECT 
+      u.emp_id,
+      u.emp_name,
+      u.emp_mail_id,
+      u.mobile_no,
+      u.role,
+      u.is_active,
+      json_agg(
+        json_build_object(
+          'id', d.id,
+          'name', d.d_name
+        )
+      ) FILTER (WHERE d.id IS NOT NULL) AS departments
+    FROM users u
+    LEFT JOIN user_departments ud ON u.emp_id = ud.emp_id
+    LEFT JOIN departments d ON ud.department_id = d.id
+  `;
+
+  const values = [];
+  const conditions = [];
+
+  // filter: emp_id
+  if (emp_id) {
+    values.push(emp_id);
+    conditions.push(`u.emp_id = $${values.length}`);
+  }
+
+  // filter: role
+  if (role) {
+    values.push(role);
+    conditions.push(`u.role = $${values.length}`);
+  }
+
+  // filter: department
+  if (department_id) {
+    values.push(department_id);
+    conditions.push(`ud.department_id = $${values.length}`);
+  }
+
+  if (conditions.length > 0) {
+    query += " WHERE " + conditions.join(" AND ");
+  }
+
+  query += `
+    GROUP BY u.emp_id, u.emp_name, u.emp_mail_id, u.mobile_no, u.role
+    ORDER BY u.emp_id
+  `;
+
+  const result = await pool.query(query, values);
+
+  return result.rows;
+};

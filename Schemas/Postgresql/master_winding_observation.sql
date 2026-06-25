@@ -1,0 +1,5 @@
+CREATE TABLE winding_observation(
+wind_obs_id SERIAL PRIMARY KEY,
+w_o_name VARCHAR(100) NOT NULL,
+created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);

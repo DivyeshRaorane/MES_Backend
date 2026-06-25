@@ -13,15 +13,15 @@ export const createTowerS = async(payload)=>{
     return result.rows[0];
 };
 
-export const getTowerS = async(is_active)=>{
-    
-    const query = `
-    SELECT * FROM draw_tower
-    WHERE is_active = $1;
-    `;
+export const getTowerS = async (is_active = null) => {
+  let query = `SELECT * FROM draw_tower`;
+  const params = [];
 
-    const result = await pool.query(query,[is_active]);
+  if (is_active !== null && is_active !== undefined) {
+    query += ` WHERE is_active = $1`;
+    params.push(is_active);
+  }
 
-    return result.rows
-    
-}
+  const result = await pool.query(query, params);
+  return result.rows;
+};
