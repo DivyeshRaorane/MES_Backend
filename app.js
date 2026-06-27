@@ -21,6 +21,9 @@ import drawFiberCutReasonRoutes from "./routes/postgress/draw_fiber_cut_reason.r
 import ptMachineRoutes from "./routes/postgress/pt_machine.routes.js"
 import ptUsersRoutes from "./routes/postgress/pt_user.routes.js"
 import ptAllocationRoutes from "./routes/postgress/pt_allocation.routes.js"
+import bobbinColorRoutes from "./routes/postgress/bobbin_color.routes.js"
+import bobbinTypeRoutes from "./routes/postgress/bobbin_type.routes.js"
+import ptEntryRoutes from "./routes/postgress/pt_entry.routes.js"
 
 
 const app = express();
@@ -43,6 +46,9 @@ app.use("/api", drawFiberCutReasonRoutes)
 app.use("/api", ptMachineRoutes)
 app.use("/api", ptUsersRoutes)
 app.use("/api", ptAllocationRoutes)
+app.use("/APi", bobbinColorRoutes)
+app.use("/api", bobbinTypeRoutes)
+app.use("/api", ptEntryRoutes)
 
 app.use("/api", towerDataRoutes)
 

@@ -20,8 +20,9 @@ export const preformAcceptanceController = async (req, res) => {
             draw_instruction,
             acceptance_status,
             rejection_note,
-            logged_in_user,
         }= req.body;
+
+        const emp_id = req.user.emp_id;
 
         const result = await preformAccept({preform_id,
     preform_weight,
@@ -40,7 +41,7 @@ export const preformAcceptanceController = async (req, res) => {
     draw_instruction,
     acceptance_status,
     rejection_note,
-    logged_in_user:1111,});
+    logged_in_user:emp_id,});
 
     return res.status(200).json({
         success:true,

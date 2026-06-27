@@ -22,7 +22,7 @@ CREATE TABLE preform_accept (
     material_description TEXT,
     remarks TEXT,
     draw_instruction TEXT,
-    is_handle_join bo0llean default false not null,
+    is_handle_join boollean default false not null,
     acceptance_status VARCHAR(10) NOT NULL DEFAULT 'accepted' CHECK (acceptance_status IN ('accepted', 'rejected')),
     rejection_note TEXT,
 
@@ -33,6 +33,7 @@ CREATE TABLE preform_accept (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
     FOREIGN KEY (logged_in_user) REFERENCES user_table(user_id)
+    FOREIGN KEY (accepted_by) REFERENCES draw_users(draw_user_id)
 );
 
 
