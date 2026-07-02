@@ -267,7 +267,9 @@ export const preformsByTowersS = async (tower_id) => {
       pa.product_type,
       pa.process_type,
       pa.allocation_date,
-      ms.balance_qty
+      ms.balance_qty,
+      ms.last_fid,
+      ms.p_count
     FROM preform_allocation pa
     INNER JOIN preform_accept pfa
       ON pa.preform_id = pfa.preform_id

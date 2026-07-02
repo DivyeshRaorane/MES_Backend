@@ -135,6 +135,8 @@ import pool from "../../db/postgres.js";
 //     }
 // }
 
+const toNum = (val) => (val === "" || val === null || val === undefined) ? null : Number(val);
+
 export const drawEntryS = async(payload)=>{
     console.log("What is the payload:", payload)
     const client = await pool.connect();
@@ -168,10 +170,11 @@ export const drawEntryS = async(payload)=>{
             UPDATE mat_stock
             SET 
             balance_qty = $1,
-            p_count = p_count + 1
+            p_count = p_count + 1,
+            last_fid = $3
             WHERE batch_id = $2
             `,
-            [remainingWeight,payload.preform_id]
+            [remainingWeight, payload.preform_id, payload.spool_fid]
         );
 
         const drawResult = await client.query(
@@ -181,6 +184,7 @@ export const drawEntryS = async(payload)=>{
                 tower_no,
                 preform_id,
                 spool_id,
+                spool_fid,
                 start_date,
                 end_date,
                 start_time,
@@ -226,21 +230,21 @@ export const drawEntryS = async(payload)=>{
             )
                 VALUES
             (
-                $1,$2,$3,
-                $4,$5,$6,$7,
-                $8,$9,$10,
-                $11,$12,$13,
-                $14,$15,$16,$17,
-                $18,$19,$20,
-                $21,$22,$23,$24,
-                $25,$26,
-                $27,$28,
-                $29,
-                $30,$31,$32,
-                $33,$34,
-                $35,$36,
-                $37,$38,$39,
-                $40,$41,$42,$43,$44,$45
+                $1,$2,$3,$4,
+                $5,$6,$7,$8,
+                $9,$10,$11,
+                $12,$13,$14,
+                $15,$16,$17,$18,
+                $19,$20,$21,
+                $22,$23,$24,$25,
+                $26,$27,
+                $28,$29,
+                $30,
+                $31,$32,$33,
+                $34,$35,
+                $36,$37,
+                $38,$39,$40,
+                $41,$42,$43,$44,$45,$46
             )
                 RETURNING spool_id
                 `,
@@ -248,33 +252,34 @@ export const drawEntryS = async(payload)=>{
                     payload.tower_no,
                 payload.preform_id,
                 payload.spool_id,
+                payload.spool_fid,
 
                 payload.start_date,
                 payload.end_date,
                 payload.start_time,
                 payload.end_time,
 
-                payload.drawn_weight,
-                payload.drawn_length,
+                toNum(payload.drawn_weight),
+                toNum(payload.drawn_length),
                 remainingWeight,
 
                 payload.shift,
-                payload.drawn_line_speed,
-                payload.draw_tension,
+                toNum(payload.drawn_line_speed),
+                toNum(payload.draw_tension),
 
-                payload.furnace_power,
-                payload.furnace_argon,
-                payload.furnace_he,
-                payload.tube_he,
+                toNum(payload.furnace_power),
+                toNum(payload.furnace_argon),
+                toNum(payload.furnace_he),
+                toNum(payload.tube_he),
 
-                payload.co2_flow,
-                payload.n2_flow,
-                payload.uv_air,
+                toNum(payload.co2_flow),
+                toNum(payload.n2_flow),
+                toNum(payload.uv_air),
 
                 payload.winding_observation,
                 payload.scr_observation,
-                payload.top_end_scrap,
-                payload.bottom_end_scrap,
+                toNum(payload.top_end_scrap),
+                toNum(payload.bottom_end_scrap),
 
                 payload.die_clean,
                 payload.spool_status,
@@ -288,8 +293,8 @@ export const drawEntryS = async(payload)=>{
                 payload.secondary_coating,
                 payload.coating_type,
 
-                payload.primary_pressure,
-                payload.secondary_pressure,
+                toNum(payload.primary_pressure),
+                toNum(payload.secondary_pressure),
 
                 payload.primary_batch,
                 payload.secondary_batch,
@@ -367,6 +372,26 @@ export const drawEntryS = async(payload)=>{
         );
     }
 }
+
+        if (payload.handle_active === true) {
+            await client.query(
+                `
+                UPDATE draw_tower
+                SET is_active = true
+                WHERE tower_no = $1
+                `,
+                [payload.tower_no]
+            );
+
+            await client.query(
+                `
+                UPDATE preform_allocation
+                SET preform_draw = true
+                WHERE preform_id = $1
+                `,
+                [payload.preform_id]
+            );
+        }
 
         await client.query("COMMIT");
 
