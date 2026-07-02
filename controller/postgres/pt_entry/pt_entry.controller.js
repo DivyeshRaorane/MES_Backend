@@ -1,4 +1,4 @@
-import { ptEntryS, getSpoolDetailsForPtEntryS, getPTFlawsS, getPTLogsS } from "../../../services/pt_entry/pt_entry.service.js";
+import { ptEntryS, getSpoolDetailsForPtEntryS, getPTFlawsS, getPTLogsS, getFidBySpoolS } from "../../../services/pt_entry/pt_entry.service.js";
 
 export const ptEntryC = async(req,res)=>{
     try{
@@ -79,6 +79,27 @@ export const getPTLogsC = async(req,res)=>{
         res.status(500).json({
             success: false,
             message: error.message || "Internal Server Error"
+        });
+    }
+}
+
+
+export const getFidBySpoolC = async(req,res)=>{
+    try{
+        const {spool_id} = req.params;
+
+        const data = await getFidBySpoolS(spool_id);
+
+        res.status(200).json({
+            success: true,
+            data
+        });
+    }catch(error){
+        console.error("Get FID by Spool Error:", error.message);
+
+        res.status(500).json({
+            success: false,
+            message: error.message
         });
     }
 }

@@ -1,4 +1,4 @@
-import { createPtAllocationS,getPTAllocatedSpoolS, getPTRejectedSpoolS,ptWipS } from "../../../services/pt_allocation/pt_allocation.service.js";
+import { createPtAllocationS,getPTAllocatedSpoolS, getPTRejectedSpoolS,ptWipS, deallocatePtS } from "../../../services/pt_allocation/pt_allocation.service.js";
 
 export const createPtAllocationC = async(req,res)=>{
     try{
@@ -109,6 +109,25 @@ export const ptWipC = async(req,res)=>{
 
     }catch(error){
          return res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+}
+
+export const deallocatePtC = async(req,res)=>{
+    try{
+        const data = await deallocatePtS(req.body);
+
+        return res.status(200).json({
+            success: true,
+            message: data.message,
+            spool_id: data.spool_id
+        });
+
+    }catch(error){
+        console.error("Deallocate PT Error:", error.message);
+        return res.status(500).json({
             success: false,
             message: error.message
         });

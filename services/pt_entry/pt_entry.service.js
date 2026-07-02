@@ -117,21 +117,45 @@ export const ptEntryS = async (payload) => {
         // Update Material Stock
         //-------------------------
 
-        const stockResult = await client.query(
-            `
-            UPDATE mat_stock
-            SET balance_qty = balance_qty - $1
-            WHERE batch_id = $2
-            RETURNING *;
-            `,
-            [
-                Number(payload.pt_length),
-                payload.spool_id
-            ]
-        );
+        if (payload.fid) {
+            // FID present: update balance, increment p_count, update last_fid
+            const stockResult = await client.query(
+                `
+                UPDATE mat_stock
+                SET balance_qty = balance_qty - $1,
+                    p_count = p_count + 1,
+                    last_fid = $3
+                WHERE batch_id = $2
+                RETURNING *;
+                `,
+                [
+                    Number(payload.pt_length),
+                    payload.spool_id,
+                    payload.fid
+                ]
+            );
 
-        if (stockResult.rowCount === 0) {
-            throw new Error("Material stock not found.");
+            if (stockResult.rowCount === 0) {
+                throw new Error("Material stock not found.");
+            }
+        } else {
+            // No FID: only update balance_qty
+            const stockResult = await client.query(
+                `
+                UPDATE mat_stock
+                SET balance_qty = balance_qty - $1
+                WHERE batch_id = $2
+                RETURNING *;
+                `,
+                [
+                    Number(payload.pt_length),
+                    payload.spool_id
+                ]
+            );
+
+            if (stockResult.rowCount === 0) {
+                throw new Error("Material stock not found.");
+            }
         }
 
         //-------------------------
@@ -267,4 +291,19 @@ export const getPTLogsS = async(spool_id)=>{
     const result = await pool.query(query,[spool_id]);
 
     return result.rows;
+}
+
+export const getFidBySpoolS = async(spool_id)=>{
+    const query = `
+    SELECT last_fid, p_count FROM mat_stock
+    WHERE batch_id = $1
+    `;
+
+    const result = await pool.query(query,[spool_id]);
+
+    if(result.rows.length === 0){
+        throw new Error("Mat stock not found for this spool");
+    }
+
+    return result.rows[0];
 }

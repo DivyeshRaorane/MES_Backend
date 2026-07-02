@@ -138,7 +138,6 @@ import pool from "../../db/postgres.js";
 const toNum = (val) => (val === "" || val === null || val === undefined) ? null : Number(val);
 
 export const drawEntryS = async(payload)=>{
-    console.log("What is the payload:", payload)
     const client = await pool.connect();
 
     try{
@@ -152,7 +151,6 @@ export const drawEntryS = async(payload)=>{
             [payload.preform_id]    
          );
 
-         console.log("stockr", stockResult.rows.length)
          if(stockResult.rows.length <= 0 ){
             throw new Error("Material Stock Not found.")
          }
@@ -422,9 +420,11 @@ export const getDrawEntryDataForPTAS = async(payload)=>{
             preform_id,
             tower_no,
             drawn_length,
-            product_type
+            product_type,
+            spool_fid
         FROM draw_entry
         WHERE spool_id = $1
+        AND is_pt_allocate = false
     `;
 
     const result = await pool.query(query, [spool_id]);
