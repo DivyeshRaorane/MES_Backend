@@ -17,7 +17,7 @@ export const syncPreformData = async () => {
                 `INSERT INTO preform_data (
                 preform_id,
                 preform_weight,
-                preform_type_id,
+                preform_type,
                 material_code,
                 material_description,
                 plant,
@@ -32,7 +32,7 @@ export const syncPreformData = async () => {
                 [
                     item.preform_id,
                     item.preform_weight,
-                    item.preform_type_id,
+                    item.preform_type,
                     item.material_code,
                     item.material_description,
                     item.plant,
@@ -53,7 +53,8 @@ export const createPreformData = async(data) =>{
 
     const {preform_id,
   preform_weight,
-  preform_type_id,
+  preform_type,
+  product_type,
   material_code,
   material_description,
   plant,
@@ -65,7 +66,8 @@ export const createPreformData = async(data) =>{
     INSERT INTO preform_data(
     preform_id,
       preform_weight,
-      preform_type_id,
+      preform_type,
+      product_type,
       material_code,
       material_description,
       plant,
@@ -73,14 +75,15 @@ export const createPreformData = async(data) =>{
       uom,
       is_active
 )
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,true)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,true)
       RETURNING *;
       `;
 
        const values = [
     preform_id,
     preform_weight,
-    Number(preform_type_id),
+    preform_type,
+    product_type,
     material_code,
     material_description,
     plant,

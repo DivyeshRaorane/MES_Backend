@@ -1,4 +1,4 @@
-import { getPreformFroAllocationS,preformAllocationEntryS, recentAllocatedPreformsS, preformsByTowersS} from "../../../services/preform_allocation/preform_allocation.service.js";
+import { getPreformFroAllocationS,preformAllocationEntryS,preformDeallocationS, recentAllocatedPreformsS, preformsByTowersS} from "../../../services/preform_allocation/preform_allocation.service.js";
 
 export const getPreformForAllocationC = async(req,res)=>{
     try{
@@ -20,7 +20,8 @@ export const getPreformForAllocationC = async(req,res)=>{
 
 export const preformAllocationEntryC = async(req,res)=>{
     try{
-const result = await preformAllocationEntryS(req.body);
+        const emp_id = req.user.emp_id;
+const result = await preformAllocationEntryS({...req.body, logged_in_user:emp_id});
 
 res.status(201).json({
       success: true,
@@ -35,6 +36,30 @@ console.error(error);
     });
     }
 } 
+
+
+export const preformDeallocationC = async (req, res) => {
+    try {
+        const { allocation_id } = req.params;
+        console.log("allocation id ", allocation_id)
+
+        const result = await preformDeallocationS(allocation_id);
+
+        return res.status(200).json({
+            success: true,
+            message: "Preform deallocated successfully",
+            data: result
+        });
+
+    } catch (error) {
+        console.error("Preform Deallocation Error:", error);
+
+        return res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+};
 
 export const recentAllocatedPreformsC = async(req,res)=>{
     try{

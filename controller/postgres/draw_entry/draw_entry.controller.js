@@ -3,8 +3,9 @@ import { drawEntryS, getDrawEntryDataForPTAS } from "../../../services/draw_entr
 export const drawEntryC = async(req,res)=>{
     try{
         const payload = req.body;
+        const emp_id = req.user.emp_id;
 
-        const result = await drawEntryS(payload);
+        const result = await drawEntryS({...payload, logged_in_user:emp_id});
 
         return res.status(200).json({
             success:true,
@@ -20,6 +21,8 @@ export const drawEntryC = async(req,res)=>{
     });
     }
 }
+
+
 
 export const getDrawEntryDataForPTAC = async (req, res) => {
     try {

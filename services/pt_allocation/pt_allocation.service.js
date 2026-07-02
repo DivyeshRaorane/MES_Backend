@@ -1,6 +1,7 @@
 import pool from "../../db/postgres.js";
 
 export const createPtAllocationS = async (payload) => {
+    
     const client = await pool.connect();
 
     try {
@@ -11,7 +12,6 @@ export const createPtAllocationS = async (payload) => {
             SELECT is_pt_allocate 
             FROM draw_entry 
             WHERE spool_id = $1
-            FOR UPDATE
         `;
 
         const checkResult = await client.query(checkQuery, [payload.spool_id]);
@@ -30,13 +30,13 @@ export const createPtAllocationS = async (payload) => {
         spool_id,
         allocation_date,
         preform_id,
-        tower_id,
+        tower_no,
         drawn_length,
         product_type,
         pt_strain,
-        pt_machine_id,
-        allocated_by_id,
-        shift_incharge_id,
+        pt_machine_no,
+        allocated_by,
+        shift_incharge,
         allocation_remark,
         logged_in_user,
         is_reject)
@@ -50,24 +50,42 @@ export const createPtAllocationS = async (payload) => {
             payload.spool_id,
             payload.allocation_date,
             payload.preform_id,
-            payload.tower_id,
+            payload.tower_no,
             payload.drawn_length,
             payload.product_type,
             payload.pt_strain,
-            payload.pt_machine_id,
-            payload.allocated_by_id,
-            payload.shift_incharge_id,
+            payload.pt_machine_no,
+            payload.allocated_by,
+            payload.shift_incharge,
             payload.allocation_remark,
-            1111,
+            payload.logged_in_user,
             payload.is_reject
         ]);
+
+        const mCode = Math.floor(100000 + Math.random() * 900000);
+
+        await client.query(
+            `
+            INSERT INTO mat_stock(
+            m_code,
+            batch_id,
+            uom,
+            activity,
+            qty,
+            balance_qty,
+            p_count
+            )
+            VALUES($1,$2,$3,$4,$5,$6,$7)
+            `,
+            [mCode,payload.spool_id,"KM","PT Allocation",payload.drawn_length,payload.drawn_length,0]
+        )
 
         // 🔵 STEP 3: UPDATE MACHINE
         await client.query(`
             UPDATE pt_machine
             SET is_active = false
-            WHERE pt_machine_id = $1
-        `, [payload.pt_machine_id]);
+            WHERE pt_machine_no = $1
+        `, [payload.pt_machine_no]);
 
         // 🔵 STEP 4: MARK ALLOCATED
         await client.query(`
@@ -82,7 +100,7 @@ export const createPtAllocationS = async (payload) => {
 
     } catch (error) {
         await client.query("ROLLBACK");
-        throw new Error(error.message);
+        throw new Error(error);
     } finally {
         client.release();
     }
@@ -93,27 +111,15 @@ export const getPTAllocatedSpoolS = async (is_pt_complete) => {
     try {
         const query = `
             SELECT
-                pta.*,
-
-                pu1.pt_user_name AS allocated_by_name,
-                pu2.pt_user_name AS shift_incharge_name,
-
-                pm.pt_machine_no
-
-            FROM pt_allocation pta
-
-            LEFT JOIN pt_users pu1
-                ON pta.allocated_by_id = pu1.pt_user_id
-
-            LEFT JOIN pt_users pu2
-                ON pta.shift_incharge_id = pu2.pt_user_id
-
-            LEFT JOIN pt_machine pm
-                ON pta.pt_machine_id = pm.pt_machine_id
-
-            WHERE pta.is_pt_complete = $1
-
-            ORDER BY pta.created_at DESC;
+                pa.*, 
+                ms.m_code,
+                ms.qty,
+                ms.balance_qty
+            FROM pt_allocation pa
+            LEFT JOIN mat_stock ms
+             ON ms.batch_id = pa.spool_id
+            WHERE is_pt_complete = $1
+            ORDER BY created_at DESC;
         `;
 
         const result = await pool.query(query, [is_pt_complete]);
@@ -123,3 +129,35 @@ export const getPTAllocatedSpoolS = async (is_pt_complete) => {
         throw new Error(error.message);
     }
 };
+
+export const getPTRejectedSpoolS = async(is_reject)=>{
+    try{
+        const query = `
+        SELECT * FROM pt_allocation
+        WHERE is_reject = $1
+        ORDER BY created_at DESC
+        `;
+
+        const result = await pool.query(query, [is_reject]);
+
+        return result.rows
+    }catch(error){
+        throw new Error(error.message)
+    }
+}
+
+export const ptWipS = async(is_pt_allocate)=>{
+    try{
+        const query = `
+        SELECT * FROM draw_entry
+        WHERE is_pt_allocate = $1
+        ORDER BY created_at DESC
+        `;
+
+        const result = await pool.query(query,[is_pt_allocate]);
+
+        return result.rows
+    }catch(error){
+        throw new Error(error.message)
+    }
+}

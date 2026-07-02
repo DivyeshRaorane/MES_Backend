@@ -21,7 +21,8 @@ export const createPreform = async(req,res)=>{
         const {
       preform_id,
       preform_weight,
-      preform_type_id,
+      preform_type,
+      product_type,
       material_code,
       material_description,
       plant,
@@ -32,7 +33,8 @@ export const createPreform = async(req,res)=>{
         const result = await createPreformData({
              preform_id,
              preform_weight,
-             preform_type_id,
+             preform_type,
+             product_type,
              material_code,
              material_description,
              plant,
@@ -46,6 +48,7 @@ export const createPreform = async(req,res)=>{
         });
 
     }catch(error){
+        console.error(error.message)
          return res.status(500).json({
       success: false,
       message: error.message

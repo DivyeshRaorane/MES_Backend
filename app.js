@@ -24,6 +24,7 @@ import ptAllocationRoutes from "./routes/postgress/pt_allocation.routes.js"
 import bobbinColorRoutes from "./routes/postgress/bobbin_color.routes.js"
 import bobbinTypeRoutes from "./routes/postgress/bobbin_type.routes.js"
 import ptEntryRoutes from "./routes/postgress/pt_entry.routes.js"
+import materialMasterRoutes from "./routes/postgress/material_master.route.js"
 
 
 const app = express();
@@ -49,6 +50,7 @@ app.use("/api", ptAllocationRoutes)
 app.use("/APi", bobbinColorRoutes)
 app.use("/api", bobbinTypeRoutes)
 app.use("/api", ptEntryRoutes)
+app.use("/api", materialMasterRoutes)
 
 app.use("/api", towerDataRoutes)
 

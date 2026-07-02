@@ -2,9 +2,11 @@ import { getTowerDB } from "../../db/indext.js";
 
 export const fetchTowerAllEventsS = async(tower_id, start_date, start_time, end_date, end_time)=>{
     const pool = await getTowerDB(tower_id);
-console.log(start_date)
+
     const start = new Date(`${start_date} ${start_time}`);
     const end = new Date(`${end_date} ${end_time}`);
+
+    console.log("Start Time",start,end)
 
     console.log(start)
     const result = await pool.request()

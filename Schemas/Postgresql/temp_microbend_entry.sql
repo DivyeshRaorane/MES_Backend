@@ -1,0 +1,24 @@
+CREATE TABLE temp_microbend_entry(
+    microbend_id SERIAL PRIMARY KEY,
+    bobbin_no VARCHAR(20) NOT NULL,
+
+    m_100T_50mm_1550 DECIMAL(10,3),
+   m_100T_50mm_1310 DECIMAL(10,3),
+   m_100T_50mm_1625 DECIMAL(10,3),
+   
+   m_100T_60mm_1550 DECIMAL(10,3),
+   m_100T_60mm_1310 DECIMAL(10,3), 
+   m_100T_60mm_1625 DECIMAL(10,3),
+   
+   m_100T_32mm_1550 DECIMAL(10,3),
+   m_100T_32mm_1310 DECIMAL(10,3),
+   m_100T_32mm_1625 DECIMAL(10,3),
+   
+   m_10T_30mm_1550 DECIMAL(10,3),
+   m_10T_30mm_1310 DECIMAL(10,3),
+   m_10T_30mm_1625 DECIMAL(10,3),
+   
+   m_1T_20mm_1550 DECIMAL(10,3),
+   m_1T_20mm_1310 DECIMAL(10,3),
+   m_1T_20mm_1625 DECIMAL(10,3),
+)

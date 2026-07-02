@@ -90,6 +90,13 @@ export const handleJoinS = async(payload)=>{
         [payload.preform_id]
     );
 
+    await client.query(
+        `UPDATE mat_stock
+        SET activity = 'Handle Join'
+        WHERE batch_id = $1`,
+    [payload.preform_id]
+    );
+
     await client.query("COMMIT");
 
     return result.rows[0];

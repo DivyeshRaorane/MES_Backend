@@ -1,137 +1,391 @@
 import pool from "../../db/postgres.js";
 
-export const drawEntryS = async (payload) => {
+// export const drawEntryS = async (payload) => {
+//     const client = await pool.connect();
+
+//     try {
+//         await client.query("BEGIN");
+
+//         const drawQuery = `
+//     INSERT INTO draw_entry(
+//     spool_id,preform_id,
+//     tower_id,
+//     start_date,end_date,
+//     start_time,end_time,
+//     drawn_weight,drawn_length,
+//     balance_weight,shift_id,
+//     drawn_line_speed,draw_tension,
+//     furnace_power,furnace_argon,
+//     furnace_he,tube_he,
+//     co2_flow,n2_flow,
+//     uv_air,winding_observation_id,
+//     scr_observation,top_end_scrap,
+//     bottom_end_scrap,die_clean,
+//     spool_status,indication_fiber_cut,
+//     indication_reason_id,
+//     remark,primary_coating,
+//     secondary_coating,coating_type,
+//     primary_pressure,secondary_pressure,
+//     shift_incharge, furnace_operator,
+//     die_operator,ground_operator,
+//     process_type,logged_in_user)
+//     VALUES ( $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,
+//         $11,$12,$13,$14,$15,$16,$17,$18,$19,
+//         $20,$21,$22,$23,$24,$25,$26,$27,$28,
+//         $29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40
+//         )
+//         `;
+
+//         const drawValues = [
+//             payload.spool_id,
+//             payload.preform_id,
+//             payload.tower_id,
+
+//             payload.start_date,
+//             payload.end_date,
+//             payload.start_time,
+//             payload.end_time,
+
+//             payload.drawn_weight,
+//             payload.drawn_length,
+//             payload.balance_weight,
+
+//             payload.shift_id,
+//             payload.drawn_line_speed,
+
+//             payload.draw_tension,
+
+//             payload.furnace_power,
+//             payload.furnace_argon,
+//             payload.furnace_he,
+
+//             payload.tube_he,
+//             payload.co2_flow,
+//             payload.n2_flow,
+//             payload.uv_air,
+
+//             payload.winding_observation_id,
+//             payload.scr_observation,
+
+//             payload.top_end_scrap,
+//             payload.bottom_end_scrap,
+
+//             payload.die_clean,
+//             payload.spool_status,
+
+//             payload.indication_fiber_cut,
+//             payload.indication_reason_id,
+//             payload.remark,
+
+//             payload.primary_coating,
+//             payload.secondary_coating,
+
+//             payload.coating_type,
+
+//             payload.primary_pressure,
+//             payload.secondary_pressure,
+
+//             payload.process_type,
+
+//             payload.shift_incharge,
+//             payload.furnace_operator,
+//             payload.die_operator,
+//             payload.ground_operator,
+
+//             1111
+//         ];
+
+//         await client.query(drawQuery, drawValues);
+
+//         if (payload.draw_flaws && payload.draw_flaws.length > 0) {
+//             const flawQuery = `
+//         INSERT INTO draw_flaw_details(
+//         spool_id,flaw_desc,
+//         start_length,end_length,
+//         defect_length,actual_cutting,
+//         logged_in_user)
+//         VALUES ($1,$2,$3,$4,$5,$6,$7)
+//         `;
+
+//             for (const flaw of payload.draw_flaws) {
+//                 await client.query(flawQuery, [
+//                     payload.spool_id,
+//                     flaw.reason,
+//                     flaw.pos1,
+//                     flaw.pos2,
+//                     flaw.defect_length,
+//                     flaw.actual_cutting,
+//                     1111
+//                 ])
+//             }
+//         }
+
+//         await client.query("COMMIT");
+//         return {
+//             success:true,
+//             message:"Draw Entry Done Successfully"
+//         }
+
+
+//     } catch (err) {
+//         await client.query("ROLLBACK");
+//         throw err;
+//     } finally {
+//         client.release();
+//     }
+// }
+
+export const drawEntryS = async(payload)=>{
+    console.log("What is the payload:", payload)
     const client = await pool.connect();
 
-    try {
-        await client.query("BEGIN");
+    try{
+         await client.query("BEGIN");
 
-        const drawQuery = `
-    INSERT INTO draw_entry(
-    spool_id,preform_id,
-    tower_id,
-    start_date,end_date,
-    start_time,end_time,
-    drawn_weight,drawn_length,
-    balance_weight,shift_id,
-    drawn_line_speed,draw_tension,
-    furnace_power,furnace_argon,
-    furnace_he,tube_he,
-    co2_flow,n2_flow,
-    uv_air,winding_observation_id,
-    scr_observation,top_end_scrap,
-    bottom_end_scrap,die_clean,
-    spool_status,indication_fiber_cut,
-    indication_reason_id,
-    remark,primary_coating,
-    secondary_coating,coating_type,
-    primary_pressure,secondary_pressure,
-    shift_incharge, furnace_operator,
-    die_operator,ground_operator,
-    process_type,logged_in_user)
-    VALUES ( $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,
-        $11,$12,$13,$14,$15,$16,$17,$18,$19,
-        $20,$21,$22,$23,$24,$25,$26,$27,$28,
-        $29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40
-        )
-        `;
+         const stockResult = await client.query(
+            `
+            SELECT * FROM mat_stock
+            WHERE batch_id = $1
+            `,
+            [payload.preform_id]    
+         );
 
-        const drawValues = [
-            payload.spool_id,
-            payload.preform_id,
-            payload.tower_id,
+         console.log("stockr", stockResult.rows.length)
+         if(stockResult.rows.length <= 0 ){
+            throw new Error("Material Stock Not found.")
+         }
 
-            payload.start_date,
-            payload.end_date,
-            payload.start_time,
-            payload.end_time,
+         const stock = stockResult.rows[0];
 
-            payload.drawn_weight,
-            payload.drawn_length,
-            payload.balance_weight,
+         const balanceWeight = Number(stock.balance_qty);
+         const usedWeight = Number(payload.drawn_weight);
 
-            payload.shift_id,
-            payload.drawn_line_speed,
+         const remainingWeight = balanceWeight - usedWeight;
+         const spoolNo = Number(stock.p_count) + 1;
 
-            payload.draw_tension,
+        await client.query(
+            `
+            UPDATE mat_stock
+            SET 
+            balance_qty = $1,
+            p_count = p_count + 1
+            WHERE batch_id = $2
+            `,
+            [remainingWeight,payload.preform_id]
+        );
 
-            payload.furnace_power,
-            payload.furnace_argon,
-            payload.furnace_he,
+        const drawResult = await client.query(
+            `
+            INSERT INTO draw_entry
+            (
+                tower_no,
+                preform_id,
+                spool_id,
+                start_date,
+                end_date,
+                start_time,
+                end_time,
+                drawn_weight,
+                drawn_length,
+                balance_weight,
+                shift,
+                drawn_line_speed,
+                draw_tension,
+                furnace_power,
+                furnace_argon,
+                furnace_he,
+                tube_he,
+                co2_flow,
+                n2_flow,
+                uv_air,
+                winding_observation,
+                scr_observation,
+                top_end_scrap,
+                bottom_end_scrap,
+                die_clean,
+                spool_status,
+                indication_fiber_cut,
+                indication_reason,
+                remark,
+                primary_coating,
+                secondary_coating,
+                coating_type,
+                primary_pressure,
+                secondary_pressure,
+                primary_batch,
+                secondary_batch,
+                process_type,
+                preform_type,
+                product_type,
+                logged_in_user,
+                shift_incharge,
+                furnace_operator,
+                die_operator,
+                ground_operator,
+                spool_no
+            )
+                VALUES
+            (
+                $1,$2,$3,
+                $4,$5,$6,$7,
+                $8,$9,$10,
+                $11,$12,$13,
+                $14,$15,$16,$17,
+                $18,$19,$20,
+                $21,$22,$23,$24,
+                $25,$26,
+                $27,$28,
+                $29,
+                $30,$31,$32,
+                $33,$34,
+                $35,$36,
+                $37,$38,$39,
+                $40,$41,$42,$43,$44,$45
+            )
+                RETURNING spool_id
+                `,
+                [
+                    payload.tower_no,
+                payload.preform_id,
+                payload.spool_id,
 
-            payload.tube_he,
-            payload.co2_flow,
-            payload.n2_flow,
-            payload.uv_air,
+                payload.start_date,
+                payload.end_date,
+                payload.start_time,
+                payload.end_time,
 
-            payload.winding_observation_id,
-            payload.scr_observation,
+                payload.drawn_weight,
+                payload.drawn_length,
+                remainingWeight,
 
-            payload.top_end_scrap,
-            payload.bottom_end_scrap,
+                payload.shift,
+                payload.drawn_line_speed,
+                payload.draw_tension,
 
-            payload.die_clean,
-            payload.spool_status,
+                payload.furnace_power,
+                payload.furnace_argon,
+                payload.furnace_he,
+                payload.tube_he,
 
-            payload.indication_fiber_cut,
-            payload.indication_reason_id,
-            payload.remark,
+                payload.co2_flow,
+                payload.n2_flow,
+                payload.uv_air,
 
-            payload.primary_coating,
-            payload.secondary_coating,
+                payload.winding_observation,
+                payload.scr_observation,
+                payload.top_end_scrap,
+                payload.bottom_end_scrap,
 
-            payload.coating_type,
+                payload.die_clean,
+                payload.spool_status,
 
-            payload.primary_pressure,
-            payload.secondary_pressure,
+                payload.indication_fiber_cut,
+                payload.indication_reason,
 
-            payload.process_type,
+                payload.remark,
 
-            payload.shift_incharge,
-            payload.furnace_operator,
-            payload.die_operator,
-            payload.ground_operator,
+                payload.primary_coating,
+                payload.secondary_coating,
+                payload.coating_type,
 
-            1111
-        ];
+                payload.primary_pressure,
+                payload.secondary_pressure,
 
-        await client.query(drawQuery, drawValues);
+                payload.primary_batch,
+                payload.secondary_batch,
 
-        if (payload.draw_flaws && payload.draw_flaws.length > 0) {
-            const flawQuery = `
-        INSERT INTO draw_flaw_details(
-        spool_id,flaw_desc,
-        start_length,end_length,
-        defect_length,actual_cutting,
-        logged_in_user)
-        VALUES ($1,$2,$3,$4,$5,$6,$7)
-        `;
+                payload.process_type,
+                payload.preform_type,
+                payload.product_type,
 
-            for (const flaw of payload.draw_flaws) {
-                await client.query(flawQuery, [
-                    payload.spool_id,
-                    flaw.flaw_desc,
-                    flaw.start_length,
-                    flaw.end_length,
-                    flaw.defect_length,
-                    flaw.actual_cutting,
-                    1111
-                ])
+                payload.logged_in_user,
+                payload.shift_incharge,
+                payload.furnace_operator,
+                payload.die_operator,
+                payload.ground_operator,
+                spoolNo
+                ]
+        );
+
+        const spoolId = drawResult.rows[0].spool_id;
+
+        if (payload.draw_flaws?.length > 0){
+            for (const flaw of payload.draw_flaws){
+                await client.query(
+                    `
+                    INSERT INTO draw_flaw_details
+                    (
+                    spool_id,
+                    reason,
+                    pos1,
+                    pos2,
+                    defect_length,
+                    actual_cutting,
+                    logged_in_user
+                    )
+                    VALUES($1,$2,$3,$4,$5,$6,$7)
+                    `,
+                    [
+                        spoolId,
+                        flaw.reason,
+                        flaw.pos1,
+                        flaw.pos2,
+                        flaw.defect_length,
+                        flaw.actual_cutting,
+                        payload.logged_in_user
+                    ]
+                );
+
             }
         }
 
+        if (payload.pt_flaws?.length > 0) {
+    for (const flaw of payload.pt_flaws) {
+        await client.query(
+            `
+            INSERT INTO pt_flaw_details
+            (
+                spool_id,
+                reason,
+                pos1,
+                pos2,
+                defect_length,
+                actual_cutting,
+                logged_in_user
+            )
+            VALUES ($1, $2, $3, $4, $5, $6,$7)
+            `,
+            [
+                spoolId,
+                flaw.reason,
+                flaw.pos1,
+                flaw.pos2,
+                flaw.defect_length,
+                flaw.actual_cutting,
+                payload.logged_in_user
+            ]
+        );
+    }
+}
+
         await client.query("COMMIT");
+
         return {
-            success:true,
-            message:"Draw Entry Done Successfully"
+            success: true,
+            spool_id: spoolId,
+            spool_no: spoolNo,
+            remaining_weight: remainingWeight,
+            warning: remainingWeight <= 2,
+            tower_no: payload.tower_no,
+            preform_id: payload.preform_id
         }
 
-
-    } catch (err) {
+         
+    }catch(error){
         await client.query("ROLLBACK");
-        throw err;
-    } finally {
-        client.release();
+        throw error;
+    }finally{
+        await client.release();
     }
 }
 
@@ -140,14 +394,12 @@ export const getDrawEntryDataForPTAS = async(payload)=>{
 
     const query = `
         SELECT 
-            de.preform_id,
-            de.drawn_length,
-            de.tower_id,
-            dt.tower_no
-        FROM draw_entry de
-        LEFT JOIN draw_tower dt 
-            ON dt.tower_id = de.tower_id
-        WHERE de.spool_id = $1
+            preform_id,
+            tower_no,
+            drawn_length,
+            product_type
+        FROM draw_entry
+        WHERE spool_id = $1
     `;
 
     const result = await pool.query(query, [spool_id]);
