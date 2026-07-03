@@ -26,6 +26,7 @@ import bobbinTypeRoutes from "./routes/postgress/bobbin_type.routes.js"
 import ptEntryRoutes from "./routes/postgress/pt_entry.routes.js"
 import materialMasterRoutes from "./routes/postgress/material_master.route.js"
 import pvEntryRoutes from "./routes/postgress/pv_entry.routes.js"
+import qcUserRoutes from "./routes/postgress/qc_user.routes.js"
 
 
 const app = express();
@@ -53,6 +54,7 @@ app.use("/api", bobbinTypeRoutes)
 app.use("/api", ptEntryRoutes)
 app.use("/api", materialMasterRoutes)
 app.use("/api", pvEntryRoutes)
+app.use("/api", qcUserRoutes)
 
 app.use("/api", towerDataRoutes)
 

@@ -217,12 +217,10 @@ export const ptEntryS = async (payload) => {
                     spool_fid,
                     preform_id,
                     fiber_color,
-                    fiber_type,
-                    tower_no,
-                    pt_machine_no
+                    fiber_type
                 )
                 VALUES (
-                    $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17
+                    $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15
                 )
                 `,
                 [
@@ -240,9 +238,7 @@ export const ptEntryS = async (payload) => {
                     extra.spool_fid || null,
                     extra.preform_id || null,
                     "Natural",
-                    extra.preform_type || null,
-                    payload.tower_no || null,
-                    payload.pt_machine_no || null
+                    extra.preform_type || null
                 ]
             );
         }
