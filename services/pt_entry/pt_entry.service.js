@@ -177,6 +177,26 @@ export const ptEntryS = async (payload) => {
             }
 
             //-------------------------
+            // Fetch extra fields from preform_accept and draw_entry
+            //-------------------------
+
+            const extraResult = await client.query(
+                `
+                SELECT 
+                    pa.preform_type,
+                    pa.product_type,
+                    de.spool_fid,
+                    de.preform_id
+                FROM draw_entry de
+                LEFT JOIN preform_accept pa ON de.preform_id = pa.preform_id
+                WHERE de.spool_id = $1
+                `,
+                [payload.spool_id]
+            );
+
+            const extra = extraResult.rows[0] || {};
+
+            //-------------------------
             // Insert Bobbin Entry
             //-------------------------
 
@@ -191,10 +211,18 @@ export const ptEntryS = async (payload) => {
                     pt_date,
                     drawn_length,
                     operator,
-                    logged_in_user
+                    logged_in_user,
+                    preform_type,
+                    product_type,
+                    spool_fid,
+                    preform_id,
+                    fiber_color,
+                    fiber_type,
+                    tower_no,
+                    pt_machine_no
                 )
                 VALUES (
-                    $1,$2,$3,$4,$5,$6,$7,$8,$9
+                    $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17
                 )
                 `,
                 [
@@ -206,7 +234,15 @@ export const ptEntryS = async (payload) => {
                     payload.pt_entry || new Date(),
                     Number(payload.drawn_length),
                     payload.operator_name || null,
-                    payload.logged_in_user
+                    payload.logged_in_user,
+                    extra.preform_type || null,
+                    extra.product_type || null,
+                    extra.spool_fid || null,
+                    extra.preform_id || null,
+                    "Natural",
+                    extra.preform_type || null,
+                    payload.tower_no || null,
+                    payload.pt_machine_no || null
                 ]
             );
         }

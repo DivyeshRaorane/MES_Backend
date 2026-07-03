@@ -312,6 +312,29 @@ export const drawEntryS = async(payload)=>{
 
         const spoolId = drawResult.rows[0].spool_id;
 
+        // Insert into mat_stock for this spool
+        const mCode = Math.floor(100000 + Math.random() * 900000);
+
+        await client.query(
+            `
+            INSERT INTO mat_stock (
+                m_code, batch_id, uom, activity,
+                qty, balance_qty, p_count, last_fid
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            `,
+            [
+                mCode,
+                payload.spool_id,
+                "KM",
+                "spool_entry",
+                payload.drawn_length,
+                payload.drawn_length,
+                0,
+                payload.spool_fid
+            ]
+        );
+
         if (payload.draw_flaws?.length > 0){
             for (const flaw of payload.draw_flaws){
                 await client.query(

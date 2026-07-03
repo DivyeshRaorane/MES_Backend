@@ -10,6 +10,7 @@ CREATE TABLE bobbin_entries(
     pt_date DATE NOT NULL,
     drawn_length DECIMAL(10,2),
     operator VARCHAR(50),
+    
 
     logged_in_user INT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP

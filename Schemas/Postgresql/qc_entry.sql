@@ -55,6 +55,8 @@ CREATE TABLE qc_entry(
    mfd_uniformity_1625 DECIMAL(10,3),
    mfd_uniformity_1383 DECIMAL(10,3),
 
+   
+
    step_1310_size DECIMAL(10,3),
    step_1550_size DECIMAL(10,3),
    step_1625_size DECIMAL(10,3),
@@ -70,11 +72,19 @@ CREATE TABLE qc_entry(
    spec_1550 DECIMAL(10,3),
    spec_1285_1330 DECIMAL(10,3),
 
-   mfd_top DECIMAL(10,3),
-   mfd_bottom DECIMAL(10,3),
+   mfd_1310_top DECIMAL(10,3),
+   mfd_1310_bottom DECIMAL(10,3),
+
+   mfd_1550_top DECIMAL(10,3),
+   mfd_1550_bottom DECIMAL(10,3),
+
+   effective_area_1310 DECIMAL(10,3),
+   effective_area_1550 DECIMAL(10,3),
 
    cut_off_top DECIMAL(10,3),
    cut_off_bottom DECIMAL(10,3),
+
+   cable_cut_off DECIMAL(10,3),
 
    mac_value DECIMAL(10,3),
 
@@ -139,9 +149,9 @@ CREATE TABLE qc_entry(
    m_100T_60mm_1310 DECIMAL(10,3), 
    m_100T_60mm_1625 DECIMAL(10,3),
    
-   m_100T_32mm_1550 DECIMAL(10,3),
-   m_100T_32mm_1310 DECIMAL(10,3),
-   m_100T_32mm_1625 DECIMAL(10,3),
+   m_1T_32mm_1550 DECIMAL(10,3),
+   m_1T_32mm_1310 DECIMAL(10,3),
+   m_1T_32mm_1625 DECIMAL(10,3),
    
    m_10T_30mm_1550 DECIMAL(10,3),
    m_10T_30mm_1310 DECIMAL(10,3),
@@ -150,6 +160,14 @@ CREATE TABLE qc_entry(
    m_1T_20mm_1550 DECIMAL(10,3),
    m_1T_20mm_1310 DECIMAL(10,3),
    m_1T_20mm_1625 DECIMAL(10,3),
+
+   m_1T_15mm_1550 DECIMAL(10,3),
+   m_1T_15mm_1310 DECIMAL(10,3),
+   m_1T_15mm_1625 DECIMAL(10,3),
+
+   m_1T_10mm_1550 DECIMAL(10,3),
+   m_1T_10mm_1310 DECIMAL(10,3),
+   m_1T_10mm_1625 DECIMAL(10,3),
 
 
 

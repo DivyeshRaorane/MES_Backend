@@ -143,10 +143,11 @@ export const preformAllocationEntryS = async (data) => {
         await client.query(
             `
             UPDATE draw_tower
-            SET is_active = false
+            SET is_active = false,
+                furnace_count = $2
             WHERE tower_no = $1
             `,
-            [data.tower_no]
+            [data.tower_no, data.seq]
         );
 
         // Mark handle_join as allocated

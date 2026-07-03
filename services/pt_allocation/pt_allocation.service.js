@@ -96,26 +96,6 @@ export const createPtAllocationS = async (payload) => {
                 payload.logged_in_user,
                 payload.is_reject
             ]);
-
-            // Only create mat_stock on fresh allocation
-            const mCode = Math.floor(100000 + Math.random() * 900000);
-
-            await client.query(
-                `
-                INSERT INTO mat_stock(
-                m_code,
-                batch_id,
-                uom,
-                activity,
-                qty,
-                balance_qty,
-                p_count,
-                last_fid
-                )
-                VALUES($1,$2,$3,$4,$5,$6,$7,$8)
-                `,
-                [mCode,payload.spool_id,"KM","PT Allocation",payload.drawn_length,payload.drawn_length,0,payload.spool_fid]
-            )
         }
 
         // 🔵 STEP 3: UPDATE MACHINE
@@ -130,6 +110,13 @@ export const createPtAllocationS = async (payload) => {
             UPDATE draw_entry
             SET is_pt_allocate = true
             WHERE spool_id = $1
+        `, [payload.spool_id]);
+
+        // 🔵 STEP 5: UPDATE MAT_STOCK ACTIVITY
+        await client.query(`
+            UPDATE mat_stock
+            SET activity = 'PT Allocated'
+            WHERE batch_id = $1
         `, [payload.spool_id]);
 
         await client.query("COMMIT");
@@ -224,6 +211,12 @@ export const deallocatePtS = async (payload) => {
         // STEP 3: Mark draw_entry as not allocated (goes back to pending/WIP list)
         await client.query(
             `UPDATE draw_entry SET is_pt_allocate = false WHERE spool_id = $1`,
+            [spool_id]
+        );
+
+        // STEP 4: Update mat_stock activity
+        await client.query(
+            `UPDATE mat_stock SET activity = 'PT Deallocate' WHERE batch_id = $1`,
             [spool_id]
         );
 
