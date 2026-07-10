@@ -259,6 +259,122 @@ export const ptEntryS = async (payload) => {
     );
 }
         //-------------------------
+        // Enhancement: start/end length, is_first, is_last, rejections
+        //-------------------------
+
+        const currentId = ptResult.rows[0].pt_entry_id;
+        const ptLength = Number(payload.pt_length) || 0;
+        const fid = payload.fid || '';
+        const activeRejType = payload.active_rejection_type || '';
+
+        // Calculate start_length & end_length
+        const sumResult = await client.query(
+            `SELECT COALESCE(SUM(pt_length), 0)::numeric as total_done FROM pt_entry WHERE spool_id = $1 AND pt_entry_id != $2`,
+            [payload.spool_id, currentId]
+        );
+        const startLen = Number(sumResult.rows[0].total_done);
+        const endLen = startLen + ptLength;
+
+        await client.query(
+            `UPDATE pt_entry SET start_length = $1, end_length = $2 WHERE pt_entry_id = $3`,
+            [startLen, endLen, currentId]
+        );
+
+        // Determine is_first
+        if (fid !== '') {
+            const firstCheck = await client.query(
+                `SELECT COUNT(*) as count FROM pt_entry WHERE spool_id = $1 AND is_first = TRUE`,
+                [payload.spool_id]
+            );
+            if (firstCheck.rows[0].count === '0') {
+                await client.query(
+                    `UPDATE pt_entry SET is_first = TRUE WHERE pt_entry_id = $1`,
+                    [currentId]
+                );
+            }
+        }
+
+        // Set before_rejection
+        const prevRej = await client.query(
+            `SELECT COALESCE(rejection_reason, active_rejection_type) as rej FROM pt_entry
+             WHERE spool_id = $1 AND pt_entry_id < $2 AND active_rejection_type IS NOT NULL AND active_rejection_type != ''
+             ORDER BY pt_entry_id DESC LIMIT 1`,
+            [payload.spool_id, currentId]
+        );
+        if (prevRej.rows.length > 0) {
+            await client.query(
+                `UPDATE pt_entry SET before_rejection = $1 WHERE pt_entry_id = $2`,
+                [prevRej.rows[0].rej, currentId]
+            );
+        }
+
+        // If current is rejection, update after_rejection for previous normal entries
+        if (activeRejType !== '') {
+            const rejName = payload.rejection_reason || activeRejType;
+            await client.query(
+                `UPDATE pt_entry SET after_rejection = $1
+                 WHERE spool_id = $2 AND pt_entry_id < $3 AND after_rejection IS NULL
+                 AND (active_rejection_type IS NULL OR active_rejection_type = '')`,
+                [rejName, payload.spool_id, currentId]
+            );
+        }
+
+        // Determine is_last (check if balance is 0)
+        const balanceCheck = await client.query(
+            `SELECT balance_qty FROM mat_stock WHERE batch_id = $1`,
+            [payload.spool_id]
+        );
+        if (balanceCheck.rows.length > 0 && Number(balanceCheck.rows[0].balance_qty) <= 0) {
+            await client.query(
+                `UPDATE pt_entry SET is_last = FALSE WHERE spool_id = $1 AND is_last = TRUE`,
+                [payload.spool_id]
+            );
+            const lastFid = await client.query(
+                `SELECT pt_entry_id FROM pt_entry WHERE spool_id = $1 AND fid IS NOT NULL AND fid != ''
+                 ORDER BY end_length DESC LIMIT 1`,
+                [payload.spool_id]
+            );
+            if (lastFid.rows.length > 0) {
+                await client.query(
+                    `UPDATE pt_entry SET is_last = TRUE WHERE pt_entry_id = $1`,
+                    [lastFid.rows[0].pt_entry_id]
+                );
+            }
+        }
+
+        //-------------------------
+        // Determine is_break from PT machine log
+        //-------------------------
+
+        let isBreak = false;
+        if (fid !== '' && payload.bobbin_no) {
+            await client.query('SAVEPOINT pt_machine_log_check');
+            try {
+                const machineLog = await client.query(
+                    `SELECT set_length, real_length FROM pt_machine_logs WHERE spool_code_tu = $1 ORDER BY processed_at DESC LIMIT 1`,
+                    [payload.bobbin_no]
+                );
+
+                if (machineLog.rows.length > 0) {
+                    const setLength = Number(machineLog.rows[0].set_length) || 0;
+                    const ptLengthMeters = ptLength * 1000;
+
+                    if (setLength > 0 && ptLengthMeters < setLength) {
+                        isBreak = true;
+                    }
+                }
+                await client.query('RELEASE SAVEPOINT pt_machine_log_check');
+            } catch (e) {
+                await client.query('ROLLBACK TO SAVEPOINT pt_machine_log_check');
+            }
+
+            await client.query(
+                `UPDATE pt_entry SET is_break = $1 WHERE pt_entry_id = $2`,
+                [isBreak, currentId]
+            );
+        }
+
+        //-------------------------
         // Commit
         //-------------------------
 
@@ -268,6 +384,9 @@ export const ptEntryS = async (payload) => {
 
     } catch (error) {
         await client.query("ROLLBACK");
+        if (error.code === '23505' && error.constraint === 'pt_entry_bobbin_no_unique') {
+            throw new Error(`Bobbin ${payload.bobbin_no} already added.`);
+        }
         throw error;
     } finally {
         client.release();
@@ -339,3 +458,35 @@ export const getFidBySpoolS = async(spool_id)=>{
 
     return result.rows[0];
 }
+
+export const spoolCompleteS = async (payload) => {
+    const client = await pool.connect();
+
+    try {
+        await client.query("BEGIN");
+
+        const { spool_id, pt_machine_no } = payload;
+
+        // Mark spool as PT complete
+        await client.query(
+            `UPDATE pt_allocation SET is_pt_complete = TRUE WHERE spool_id = $1`,
+            [spool_id]
+        );
+
+        // Free the PT machine
+        await client.query(
+            `UPDATE pt_machine SET is_active = TRUE WHERE pt_machine_no = $1`,
+            [pt_machine_no]
+        );
+
+        await client.query("COMMIT");
+
+        return { success: true, message: "Spool marked as PT complete. Machine freed." };
+
+    } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+    } finally {
+        client.release();
+    }
+};

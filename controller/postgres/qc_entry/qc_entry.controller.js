@@ -1,0 +1,59 @@
+import { fetchBobbinQcS, checkProcessCompletionS, submitQcEntryS } from "../../../services/qc_entry/qc_entry.service.js";
+import { validateBobbinQC } from "../../../services/qc_entry/qc_grade.service.js";
+
+export const fetchBobbinQcC = async (req, res) => {
+    try {
+        const { bobbin_no } = req.params;
+        const result = await fetchBobbinQcS(bobbin_no);
+
+        if (!result.success) {
+            return res.status(404).json({ success: false, message: result.message });
+        }
+
+        return res.status(200).json(result);
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+export const checkProcessCompletionC = async (req, res) => {
+    try {
+        const { bobbin_no } = req.params;
+        const result = await checkProcessCompletionS(bobbin_no);
+
+        if (!result.success) {
+            return res.status(404).json({ success: false, message: result.message });
+        }
+
+        return res.status(200).json(result);
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+export const gradeBobbinC = async (req, res) => {
+    try {
+        const { bobbin_no } = req.params;
+        const result = await validateBobbinQC(bobbin_no);
+
+        if (result.status === 'ERROR' || result.status === 'CRITICAL_ERROR') {
+            return res.status(400).json({ success: false, message: result.message });
+        }
+
+        return res.status(200).json({ success: true, data: result });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+export const submitQcEntryC = async (req, res) => {
+    try {
+        const emp_id = req.user.emp_id;
+        const result = await submitQcEntryS({ ...req.body, logged_in_user: emp_id });
+
+        res.status(201).json(result);
+    } catch (error) {
+        console.error("QC Entry Error:", error.message);
+        res.status(500).json({ success: false, message: error.message });
+    }
+};

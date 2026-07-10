@@ -1,11 +1,12 @@
 import express from 'express';
-import { ptEntryC, getSpoolDetailsForPtEntryC, getPTFlawsC, getPTLogsC, getFidBySpoolC } from '../../controller/postgres/pt_entry/pt_entry.controller.js';
+import { ptEntryC, getSpoolDetailsForPtEntryC, getPTFlawsC, getPTLogsC, getFidBySpoolC, spoolCompleteC } from '../../controller/postgres/pt_entry/pt_entry.controller.js';
 import { authMiddleware } from '../../middleware/aut_middleware.js';
 
 
 const router = express.Router();
 
 router.post("/ptentry",authMiddleware, ptEntryC);
+router.put("/ptentry/spool-complete", authMiddleware, spoolCompleteC);
 router.get("/getspooldetailsforpt/:spool_id", getSpoolDetailsForPtEntryC);
 router.get("/getfidbyspool/:spool_id", getFidBySpoolC);
 router.get("/getptflaws", getPTFlawsC)

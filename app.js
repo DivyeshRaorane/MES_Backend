@@ -27,6 +27,37 @@ import ptEntryRoutes from "./routes/postgress/pt_entry.routes.js"
 import materialMasterRoutes from "./routes/postgress/material_master.route.js"
 import pvEntryRoutes from "./routes/postgress/pv_entry.routes.js"
 import qcUserRoutes from "./routes/postgress/qc_user.routes.js"
+import d2ChamberRoutes from "./routes/postgress/d2_chamber.routes.js"
+import d2IssueRoutes from "./routes/postgress/d2_issue.routes.js"
+import d2GasRoutes from "./routes/postgress/d2_gas.routes.js"
+import d2ReceivingRoutes from "./routes/postgress/d2_receiving.routes.js"
+import h2ChamberRoutes from "./routes/postgress/h2_chamber.routes.js"
+import h2AgeingRoutes from "./routes/postgress/h2_ageing.routes.js"
+import qcGradeRoutes from "./routes/postgress/qc_grade.routes.js"
+import qcEntryRoutes from "./routes/postgress/qc_entry.routes.js"
+import adminUserRoutes from "./routes/postgress/admin_user.routes.js"
+import adminDrawMgmtRoutes from "./routes/postgress/admin_draw_management.routes.js"
+import adminShiftRoutes from "./routes/postgress/admin_shift.routes.js"
+import adminGradeRoutes from "./routes/postgress/admin_grade.routes.js"
+import ptMachineLogRoutes from "./routes/postgress/pt_machine_log.routes.js"
+import qcOutRoutes from "./routes/postgress/qc_out.routes.js"
+import fgRoutes from "./routes/postgress/fg.routes.js"
+import adminTrayRoutes from "./routes/postgress/admin_tray.routes.js"
+import modulaRoutes from "./routes/postgress/modula.routes.js"
+import complaintRoutes from "./routes/postgress/complaint.routes.js"
+import adminCustomerRoutes from "./routes/postgress/admin_customer.routes.js"
+import orderRoutes from "./routes/postgress/order.routes.js"
+import packingRoutes from "./routes/postgress/packing.routes.js"
+import drawShiftPlanRoutes from "./routes/postgress/draw_shift_plan.routes.js"
+import colouringRoutes from "./routes/postgress/colouring.routes.js"
+import rewindingRoutes from "./routes/postgress/rewinding.routes.js"
+import breakAnalysisRoutes from "./routes/postgress/break_analysis.routes.js"
+import tempEntryRoutes from "./routes/postgress/temp_entry.routes.js"
+import tempCycleEntryRoutes from "./routes/postgress/temp_cycle_entry.routes.js"
+import trhEntryRoutes from "./routes/postgress/trh_entry.routes.js"
+import hthaEntryRoutes from "./routes/postgress/htha_entry.routes.js"
+import waterImmersionRoutes from "./routes/postgress/water_immersion.routes.js"
+import acceleratedAgeingRoutes from "./routes/postgress/accelerated_ageing.routes.js"
 
 
 const app = express();
@@ -55,6 +86,37 @@ app.use("/api", ptEntryRoutes)
 app.use("/api", materialMasterRoutes)
 app.use("/api", pvEntryRoutes)
 app.use("/api", qcUserRoutes)
+app.use("/api", d2ChamberRoutes)
+app.use("/api", d2IssueRoutes)
+app.use("/api", d2GasRoutes)
+app.use("/api", d2ReceivingRoutes)
+app.use("/api", h2ChamberRoutes)
+app.use("/api", h2AgeingRoutes)
+app.use("/api", qcGradeRoutes)
+app.use("/api", qcEntryRoutes)
+app.use("/api", adminUserRoutes)
+app.use("/api", adminDrawMgmtRoutes)
+app.use("/api", adminShiftRoutes)
+app.use("/api", adminGradeRoutes)
+app.use("/api", ptMachineLogRoutes)
+app.use("/api", qcOutRoutes)
+app.use("/api", fgRoutes)
+app.use("/api", adminTrayRoutes)
+app.use("/api", modulaRoutes)
+app.use("/api", complaintRoutes)
+app.use("/api", adminCustomerRoutes)
+app.use("/api", orderRoutes)
+app.use("/api", packingRoutes)
+app.use("/api", drawShiftPlanRoutes)
+app.use("/api", colouringRoutes)
+app.use("/api", rewindingRoutes)
+app.use("/api", breakAnalysisRoutes)
+app.use("/api", tempEntryRoutes)
+app.use("/api", tempCycleEntryRoutes)
+app.use("/api", trhEntryRoutes)
+app.use("/api", hthaEntryRoutes)
+app.use("/api", waterImmersionRoutes)
+app.use("/api", acceleratedAgeingRoutes)
 
 app.use("/api", towerDataRoutes)
 

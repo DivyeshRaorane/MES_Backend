@@ -1,5 +1,7 @@
 CREATE TABLE qc_entry(
     bobbin_no VARCHAR(20)  PRIMARY KEY,
+    bobbin_fid VARCHAR(50)  UNIQUE NOT NULL,
+    matcode VARCHAR(50),
     avg_lsa_atn_1310 DECIMAL(10,3),
     avg_lsa_atn_1550 DECIMAL(10,3),
     avg_lsa_atn_1625 DECIMAL(10,3),
@@ -91,8 +93,8 @@ CREATE TABLE qc_entry(
    clad_dia_top DECIMAL(10,3),
    clad_dia_bottom DECIMAL(10,3),
 
-   core_clad_concentricity_top(10,3),
-   core_clad_concentricity_bottom(10,3),
+   core_clad_concentricity_top DECIMAL(10,3),
+   core_clad_concentricity_bottom DECIMAL(10,3),
 
    clad_ovality_top DECIMAL(10,3),
    clad_ovality_bottom DECIMAL(10,3),
@@ -168,6 +170,9 @@ CREATE TABLE qc_entry(
    m_1T_10mm_1550 DECIMAL(10,3),
    m_1T_10mm_1310 DECIMAL(10,3),
    m_1T_10mm_1625 DECIMAL(10,3),
+
+   temp_grade VARCHAR(10),
+   final_grade VARCHAR(10)
 
 
 

@@ -1,4 +1,4 @@
-import { ptEntryS, getSpoolDetailsForPtEntryS, getPTFlawsS, getPTLogsS, getFidBySpoolS } from "../../../services/pt_entry/pt_entry.service.js";
+import { ptEntryS, getSpoolDetailsForPtEntryS, getPTFlawsS, getPTLogsS, getFidBySpoolS, spoolCompleteS } from "../../../services/pt_entry/pt_entry.service.js";
 
 export const ptEntryC = async(req,res)=>{
     try{
@@ -103,3 +103,13 @@ export const getFidBySpoolC = async(req,res)=>{
         });
     }
 }
+
+export const spoolCompleteC = async (req, res) => {
+    try {
+        const result = await spoolCompleteS(req.body);
+        res.status(200).json(result);
+    } catch (error) {
+        console.error("Spool Complete Error:", error.message);
+        res.status(500).json({ success: false, message: error.message });
+    }
+};

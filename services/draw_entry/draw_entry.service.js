@@ -318,10 +318,10 @@ export const drawEntryS = async(payload)=>{
         await client.query(
             `
             INSERT INTO mat_stock (
-                m_code, batch_id, uom, activity,
+                m_code, batch_id, uom, activity, updated_at,
                 qty, balance_qty, p_count, last_fid
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            VALUES ($1, $2, $3, $4,CURRENT_TIMESTAMP, $5, $6, $7, $8)
             `,
             [
                 mCode,
@@ -410,6 +410,14 @@ export const drawEntryS = async(payload)=>{
                 SET preform_draw = true
                 WHERE preform_id = $1
                 `,
+                [payload.preform_id]
+            );
+        }
+
+        if (payload.preform_end === true && payload.handle_active === true) {
+            // Set mat_stock balance to 0 for this preform
+            await client.query(
+                `UPDATE mat_stock SET balance_qty = 0 WHERE batch_id = $1`,
                 [payload.preform_id]
             );
         }
