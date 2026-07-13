@@ -162,6 +162,7 @@ export const drawEntryS = async(payload)=>{
 
          const remainingWeight = balanceWeight - usedWeight;
          const spoolNo = Number(stock.p_count) + 1;
+         const isFirst = Number(stock.p_count) === 0;
 
         await client.query(
             `
@@ -224,7 +225,8 @@ export const drawEntryS = async(payload)=>{
                 furnace_operator,
                 die_operator,
                 ground_operator,
-                spool_no
+                spool_no,
+                is_first
             )
                 VALUES
             (
@@ -242,7 +244,7 @@ export const drawEntryS = async(payload)=>{
                 $34,$35,
                 $36,$37,
                 $38,$39,$40,
-                $41,$42,$43,$44,$45,$46
+                $41,$42,$43,$44,$45,$46,$47
             )
                 RETURNING spool_id
                 `,
@@ -306,7 +308,8 @@ export const drawEntryS = async(payload)=>{
                 payload.furnace_operator,
                 payload.die_operator,
                 payload.ground_operator,
-                spoolNo
+                spoolNo,
+                isFirst
                 ]
         );
 
@@ -394,30 +397,67 @@ export const drawEntryS = async(payload)=>{
     }
 }
 
-        if (payload.handle_active === true) {
+        // ── Handle Preform End (Scenario 1 & 2) ──
+        if (payload.preform_end === true) {
+            // Set mat_stock balance to 0
             await client.query(
-                `
-                UPDATE draw_tower
-                SET is_active = true
-                WHERE tower_no = $1
-                `,
+                `UPDATE mat_stock SET balance_qty = 0 WHERE batch_id = $1`,
+                [payload.preform_id]
+            );
+
+            // Clear any previous is_last for this preform
+            await client.query(
+                `UPDATE draw_entry SET is_last = FALSE WHERE preform_id = $1 AND is_last = TRUE`,
+                [payload.preform_id]
+            );
+
+            // Mark current entry as is_last
+            await client.query(
+                `UPDATE draw_entry SET is_last = TRUE WHERE spool_id = $1`,
+                [spoolId]
+            );
+
+            // Free the tower
+            await client.query(
+                `UPDATE draw_tower SET is_active = true WHERE tower_no = $1`,
                 [payload.tower_no]
             );
 
+            // Mark preform allocation as complete
             await client.query(
-                `
-                UPDATE preform_allocation
-                SET preform_draw = true
-                WHERE preform_id = $1
-                `,
+                `UPDATE preform_allocation SET preform_draw = true WHERE preform_id = $1`,
                 [payload.preform_id]
             );
         }
 
-        if (payload.preform_end === true && payload.handle_active === true) {
-            // Set mat_stock balance to 0 for this preform
+        // ── Handle Preform Remove (Scenario 3) ──
+        if (payload.preform_remove === true) {
+            // Free the tower
             await client.query(
-                `UPDATE mat_stock SET balance_qty = 0 WHERE batch_id = $1`,
+                `UPDATE draw_tower SET is_active = true WHERE tower_no = $1`,
+                [payload.tower_no]
+            );
+
+            // Do NOT set preform_draw = true (preform may be re-allocated)
+            // Note: Do NOT set balance to 0 or mark is_last
+        }
+
+        // ── Fallback is_last: if balance exhausted naturally (no preform_end flag) ──
+        if (!payload.preform_end && !payload.preform_remove && remainingWeight <= 0) {
+            await client.query(
+                `UPDATE draw_entry SET is_last = FALSE WHERE preform_id = $1 AND is_last = TRUE`,
+                [payload.preform_id]
+            );
+            await client.query(
+                `UPDATE draw_entry SET is_last = TRUE WHERE spool_id = $1`,
+                [spoolId]
+            );
+        }
+
+        // ── Free handle_join allocation on preform end or remove ──
+        if (payload.preform_end === true || payload.preform_remove === true) {
+            await client.query(
+                `UPDATE handle_join SET is_allocate = FALSE WHERE preform_id = $1`,
                 [payload.preform_id]
             );
         }

@@ -21,6 +21,19 @@ export const validateRewindS = async (bobbin_no) => {
         return { success: false, message: `Bobbin already has dispatch status: ${bobbin.dispatch_status}.` };
     }
 
+    // Check if bobbin is in modula tray
+    const trayCheck = await pool.query(
+        `SELECT tp.position_no, tm.tray_no FROM tray_position tp
+         JOIN tray_master tm ON tp.tray_id = tm.tray_id
+         WHERE tp.bobbin_no = $1 AND tp.status = 'OCCUPIED'`,
+        [bobbin_no]
+    );
+
+    if (trayCheck.rows.length > 0) {
+        const { tray_no, position_no } = trayCheck.rows[0];
+        return { success: false, message: `Bobbin is in Modula Tray ${tray_no}, Position ${position_no}. Remove from tray first.` };
+    }
+
     return {
         success: true,
         data: {
@@ -37,30 +50,42 @@ export const submitRewindS = async (payload) => {
     try {
         await client.query("BEGIN");
 
-        const { request_by, date, time, bobbins, logged_in_user } = payload;
+        const { bobbins } = payload;
 
         for (const bobbin of bobbins) {
-            // Insert fg_rewind
-            await client.query(
-                `INSERT INTO fg_rewind (bobbin_no, bobbin_fid, total_length, balance_length, rewinding_type,count, request_by, "date", "time", logged_in_user)
-                 VALUES ($1, $2, $3, $3, $4, $5, $6, $7, $8,$9)`,
-                [bobbin.bobbin_no, bobbin.bobbin_fid, bobbin.total_length, bobbin.rewinding_type,0, request_by, date, time, logged_in_user]
-            );
+            let formattedRemark;
 
-            // If CUT, insert cut instructions
             if (bobbin.rewinding_type === 'CUT' && bobbin.cuts && bobbin.cuts.length > 0) {
-                for (const cut of bobbin.cuts) {
-                    await client.query(
-                        `INSERT INTO rewind_instr (bobbin_no, bobbin_fid, p1, p2)
-                         VALUES ($1, $2, $3, $4)`,
-                        [bobbin.bobbin_no, bobbin.bobbin_fid, cut.p1, cut.p2]
-                    );
-                }
+                const remarkParts = bobbin.cuts.map(cut => {
+                    return `Cut from ${cut.p1} km to ${cut.p2}(${cut.c_remark || ''}:)`;
+                });
+                formattedRemark = remarkParts.join(', ');
+            } else {
+                formattedRemark = 'Whole Length';
             }
 
-            // Update bobbin_entries
+            // Get fiber_length from bobbin_entries for balance initialization
+            const bobbinData = await client.query(
+                `SELECT fiber_length FROM bobbin_entries WHERE bobbin_no = $1 LIMIT 1`,
+                [bobbin.bobbin_no]
+            );
+            const totalLength = bobbinData.rows[0]?.fiber_length || bobbin.total_length || 0;
+
+            // Update qc_entry with remark + grades = REW + balance_length
             await client.query(
-                `UPDATE bobbin_entries SET dispatch_status = 'REW' WHERE bobbin_no = $1`,
+                `UPDATE qc_entry SET remark = $1, temp_grade = 'REW', final_grade = 'REW' WHERE bobbin_no = $2`,
+                [formattedRemark, bobbin.bobbin_no]
+            );
+
+            // Update qc_entry_temp with remark + grades = REW + balance_length
+            await client.query(
+                `UPDATE qc_entry_temp SET remark = $1, temp_grade = 'REW', final_grade = 'REW' WHERE bobbin_no = $2`,
+                [formattedRemark, bobbin.bobbin_no]
+            );
+
+            // Update bobbin_entries grades + dispatch_status
+            await client.query(
+                `UPDATE bobbin_entries SET temp_grade = 'REW', final_grade = 'REW', dispatch_status = 'REW' WHERE bobbin_no = $1`,
                 [bobbin.bobbin_no]
             );
         }

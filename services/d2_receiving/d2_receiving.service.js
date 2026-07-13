@@ -32,6 +32,8 @@ export const getRunningBatchS = async (chamber_no) => {
 export const completeReceivingS = async (payload) => {
     const client = await pool.connect();
 
+    const MINIMUM_HOURS = 18; // Minimum hours before receiving is allowed
+
     try {
         await client.query("BEGIN");
 
@@ -40,12 +42,22 @@ export const completeReceivingS = async (payload) => {
 
         // Validate batch exists and is still running
         const batchCheck = await client.query(
-            `SELECT d2_batch_id FROM d2_issue WHERE d2_batch_id = $1 AND d2_end_date IS NULL LIMIT 1`,
+            `SELECT d2_batch_id, d2_start_date, d2_start_time FROM d2_issue WHERE d2_batch_id = $1 AND d2_end_date IS NULL LIMIT 1`,
             [d2_batch_id]
         );
 
         if (batchCheck.rows.length === 0) {
             throw new Error("D2 batch not found or already completed.");
+        }
+
+        // Validate minimum hours elapsed since start
+        const { d2_start_date, d2_start_time } = batchCheck.rows[0];
+        const startDateTime = new Date(`${d2_start_date}T${d2_start_time}`);
+        const now = new Date();
+        const elapsedHours = (now - startDateTime) / (1000 * 60 * 60);
+
+        if (elapsedHours < MINIMUM_HOURS) {
+            throw new Error(`Cannot receive yet. Minimum ${MINIMUM_HOURS}h required. Only ${elapsedHours.toFixed(1)}h elapsed since start.`);
         }
 
         // Step 1: Update all d2_issue records for this batch

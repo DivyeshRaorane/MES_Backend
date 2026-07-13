@@ -1,0 +1,28 @@
+CREATE TABLE f_coating_history (
+    id SERIAL PRIMARY KEY,
+    fiber_id VARCHAR(100),
+    length NUMERIC,
+    measurement_date DATE,
+    measurement_time TIME,
+    secondary_coating_dia_top NUMERIC,
+    secondary_coating_concentricity_top NUMERIC,
+    coating_ovality_top NUMERIC,
+    primary_coating_dia_top NUMERIC,
+    primary_coating_concentricity_top NUMERIC,
+    coating_inner_non_circularity_top NUMERIC,
+    coating_fiber_dia_top NUMERIC,
+    coating_fiber_concentricity_top NUMERIC,
+    coating_fiber_non_circularity_top NUMERIC,
+    secondary_coating_dia_bottom NUMERIC,
+    secondary_coating_concentricity_bottom NUMERIC,
+    coating_ovality_bottom NUMERIC,
+    primary_coating_dia_bottom NUMERIC,
+    primary_coating_concentricity_bottom NUMERIC,
+    coating_inner_non_circularity_bottom NUMERIC,
+    coating_fiber_dia_bottom NUMERIC,
+    coating_fiber_concentricity_bottom NUMERIC,
+    coating_fiber_non_circularity_bottom NUMERIC,
+    
+    Operator VARCHAR(100),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);

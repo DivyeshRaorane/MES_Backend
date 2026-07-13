@@ -74,7 +74,7 @@ export const saveColouringS = async (payload) => {
             `INSERT INTO coloring_entry (
                 bobbin_no, original_color, current_color, color_batch_code,
                 fiber_length, is_scrap, machine_no, fid,
-                bobbin_type, operator, bobbin_colour, remark, logged_in_user
+                bobbin_type, operator, bobbin_color, remark, logged_in_user
             ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
             [bobbin_no, original_color, require_color, color_batch_code,
              fiber_length, is_scrap || false, machine_no, generated_fid || null,

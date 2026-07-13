@@ -2,7 +2,7 @@ import pool from "../../db/postgres.js";
 
 export const validateBobbinForQcOutS = async (bobbin_no) => {
     const result = await pool.query(
-        `SELECT bobbin_no, fid, fiber_type, fiber_color, fiber_length, final_grade, is_qc_out
+        `SELECT bobbin_no, fid, fiber_type, fiber_color, fiber_length, is_qc_out
          FROM bobbin_entries WHERE bobbin_no = $1`,
         [bobbin_no]
     );
@@ -17,12 +17,24 @@ export const validateBobbinForQcOutS = async (bobbin_no) => {
         return { success: false, message: "This bobbin has already been QC Out." };
     }
 
-    if (!bobbin.final_grade || bobbin.final_grade === '') {
+    // Get final_grade from qc_entry — bobbin MUST exist here for QC Out
+    const qcEntryResult = await pool.query(
+        `SELECT final_grade FROM qc_entry WHERE bobbin_no = $1 LIMIT 1`,
+        [bobbin_no]
+    );
+
+    if (qcEntryResult.rows.length === 0) {
         return { success: false, message: "Final grade is pending for this bobbin." };
     }
 
-    if (bobbin.final_grade === 'FAIL' || bobbin.final_grade === 'REW') {
-        return { success: false, message: `This bobbin cannot be QC Out because its final grade is ${bobbin.final_grade}.` };
+    const final_grade = qcEntryResult.rows[0].final_grade?.toUpperCase();
+
+    if (!final_grade || final_grade === '' || final_grade === 'null') {
+        return { success: false, message: "Final grade is pending for this bobbin." };
+    }
+
+    if (final_grade === 'FAIL' || final_grade === 'REW') {
+        return { success: false, message: `This bobbin cannot be QC Out because its final grade is ${final_grade}.` };
     }
 
     return {
@@ -33,7 +45,7 @@ export const validateBobbinForQcOutS = async (bobbin_no) => {
             fiber_type: bobbin.fiber_type,
             fiber_color: bobbin.fiber_color,
             fiber_length: bobbin.fiber_length,
-            final_grade: bobbin.final_grade
+            final_grade
         }
     };
 };

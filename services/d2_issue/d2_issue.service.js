@@ -3,7 +3,7 @@ import pool from "../../db/postgres.js";
 export const validateBobbinForD2S = async (bobbin_no, restricted) => {
     // Step 1: Check bobbin exists
     const bobbinResult = await pool.query(
-        `SELECT bobbin_no, fid, fiber_type, fiber_color, temp_grade, final_grade, d2_issue
+        `SELECT bobbin_no, fid, fiber_type, fiber_color, d2_issue
          FROM bobbin_entries WHERE bobbin_no = $1`,
         [bobbin_no]
     );
@@ -13,6 +13,15 @@ export const validateBobbinForD2S = async (bobbin_no, restricted) => {
     }
 
     const bobbin = bobbinResult.rows[0];
+
+    // Get temp_grade and final_grade from qc_entry_temp
+    const qcTempResult = await pool.query(
+        `SELECT temp_grade, final_grade FROM qc_entry_temp WHERE bobbin_no = $1 LIMIT 1`,
+        [bobbin_no]
+    );
+
+    const temp_grade = qcTempResult.rows[0]?.temp_grade || null;
+    const final_grade = qcTempResult.rows[0]?.final_grade || null;
 
     // Step 2: Check d2_issue
     if (bobbin.d2_issue === true) {
@@ -34,18 +43,18 @@ export const validateBobbinForD2S = async (bobbin_no, restricted) => {
                 bobbin_fid: bobbin.fid,
                 fiber_type: bobbin.fiber_type,
                 fiber_color: bobbin.fiber_color,
-                temp_grade: bobbin.temp_grade,
-                final_grade: bobbin.final_grade,
+                temp_grade,
+                final_grade,
                 d2_issue: bobbin.d2_issue,
                 pv_completed: pvResult.rows.length > 0
             }
         };
     } else {
         // Check temp_grade
-        if (bobbin.temp_grade === 'REW') {
+        if (temp_grade === 'REW') {
             return { success: false, message: "This bobbin cannot be issued because its temporary grade is REW." };
         }
-        if (bobbin.temp_grade === 'FAIL') {
+        if (temp_grade === 'FAIL') {
             return { success: false, message: "This bobbin cannot be issued because its temporary grade is FAIL." };
         }
 
@@ -56,8 +65,8 @@ export const validateBobbinForD2S = async (bobbin_no, restricted) => {
                 bobbin_fid: bobbin.fid,
                 fiber_type: bobbin.fiber_type,
                 fiber_color: bobbin.fiber_color,
-                temp_grade: bobbin.temp_grade,
-                final_grade: bobbin.final_grade,
+                temp_grade,
+                final_grade,
                 d2_issue: bobbin.d2_issue,
                 pv_completed: null
             }

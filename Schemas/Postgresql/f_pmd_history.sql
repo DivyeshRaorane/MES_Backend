@@ -1,0 +1,13 @@
+CREATE TABLE f_pmd_history (
+    id SERIAL PRIMARY KEY,
+    bobbin_id VARCHAR(100) NOT NULL,
+    length DECIMAL(12,3),
+    measurement_date DATE,
+    measurement_time TIME,
+    reported_wavelength INT, -- 1310 or 1550
+    pmd DECIMAL(10,4),
+    pmd_coefficient DECIMAL(10,4),
+    gaussian_compliance DECIMAL(10,4),
+    second_order_pmd DECIMAL(10,4),
+    second_order_pmd_coeff DECIMAL(10,4)
+);

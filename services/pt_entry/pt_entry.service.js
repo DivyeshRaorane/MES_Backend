@@ -95,7 +95,7 @@ export const ptEntryS = async (payload) => {
             payload.dancer_vibration,
 
             rejection,
-            payload.rejection_reason || null,
+            rejection ? (payload.rejection_reason || null) : null,
 
             rejectionFlags.bal_draw_rejection,
             payload.bal_draw_rejection_reason || null,
@@ -206,6 +206,8 @@ export const ptEntryS = async (payload) => {
                     fid,
                     spool_id,
                     bobbin_no,
+                    tower_no,
+                    pt_machine_no,
                     fiber_length,
                     drawn_date,
                     pt_date,
@@ -220,13 +222,15 @@ export const ptEntryS = async (payload) => {
                     fiber_type
                 )
                 VALUES (
-                    $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15
+                    $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17
                 )
                 `,
                 [
                     payload.fid,
                     payload.spool_id,
                     payload.bobbin_no || null,
+                    payload.tower_no,
+                    payload.pt_machine_no,
                     Number(payload.pt_length),
                     payload.drawn_date,
                     payload.pt_entry || new Date(),
@@ -280,8 +284,77 @@ export const ptEntryS = async (payload) => {
             [startLen, endLen, currentId]
         );
 
-        // Determine is_first
-        if (fid !== '') {
+        // ── Determine rejection type string ──
+        const isRejection = !!activeRejType || (!fid && !activeRejType);
+        let rejectionType = null;
+
+        if (isRejection) {
+            if (activeRejType === 'rejection') {
+                rejectionType = payload.rejection_reason || 'REJECTION';
+            } else if (activeRejType === 'pt_scrap') {
+                rejectionType = 'PT_SCRAP';
+            } else if (activeRejType === 'multiple_end') {
+                rejectionType = 'MULTIPLE_END';
+            } else if (activeRejType === 'scratch') {
+                rejectionType = 'SCRATCH';
+            } else if (activeRejType === 'ztmd') {
+                rejectionType = 'ZTMD';
+            } else if (activeRejType === 'doc') {
+                rejectionType = 'DOC';
+            } else if (activeRejType === 'bal_draw_rejection') {
+                rejectionType = 'BAL_DRAW_REJ';
+            } else {
+                rejectionType = 'PT_SCRAP';
+            }
+        }
+
+        if (isRejection && rejectionType) {
+            // ═══ THIS IS A REJECTION ENTRY ═══
+
+            // STEP 1: Update ONLY the immediately previous PT entry (via mat_stock.last_fid)
+            const lastFidResult = await client.query(
+                `SELECT last_fid FROM mat_stock WHERE batch_id = $1`,
+                [payload.spool_id]
+            );
+            const lastFid = lastFidResult.rows[0]?.last_fid;
+
+            if (lastFid) {
+                await client.query(
+                    `UPDATE pt_entry SET before_rejection = $1 WHERE spool_id = $2 AND fid = $3 AND before_rejection IS NULL`,
+                    [rejectionType, payload.spool_id, lastFid]
+                );
+            }
+
+            // STEP 2: Store pending_after_rejection in mat_stock for the next good entry
+            await client.query(
+                `UPDATE mat_stock SET pending_after_rejection = $1 WHERE batch_id = $2`,
+                [rejectionType, payload.spool_id]
+            );
+
+        } else if (fid !== '') {
+            // ═══ THIS IS A NORMAL (GOOD) PT ENTRY WITH FID ═══
+
+            // Check if there's a pending after_rejection
+            const matStockPending = await client.query(
+                `SELECT pending_after_rejection FROM mat_stock WHERE batch_id = $1`,
+                [payload.spool_id]
+            );
+            const pendingRej = matStockPending.rows[0]?.pending_after_rejection;
+
+            if (pendingRej) {
+                // Mark THIS entry with after_rejection
+                await client.query(
+                    `UPDATE pt_entry SET after_rejection = $1 WHERE pt_entry_id = $2`,
+                    [pendingRej, currentId]
+                );
+                // Clear the pending flag
+                await client.query(
+                    `UPDATE mat_stock SET pending_after_rejection = NULL WHERE batch_id = $1`,
+                    [payload.spool_id]
+                );
+            }
+
+            // Determine is_first (only for FID entries)
             const firstCheck = await client.query(
                 `SELECT COUNT(*) as count FROM pt_entry WHERE spool_id = $1 AND is_first = TRUE`,
                 [payload.spool_id]
@@ -294,50 +367,20 @@ export const ptEntryS = async (payload) => {
             }
         }
 
-        // Set before_rejection
-        const prevRej = await client.query(
-            `SELECT COALESCE(rejection_reason, active_rejection_type) as rej FROM pt_entry
-             WHERE spool_id = $1 AND pt_entry_id < $2 AND active_rejection_type IS NOT NULL AND active_rejection_type != ''
-             ORDER BY pt_entry_id DESC LIMIT 1`,
-            [payload.spool_id, currentId]
-        );
-        if (prevRej.rows.length > 0) {
-            await client.query(
-                `UPDATE pt_entry SET before_rejection = $1 WHERE pt_entry_id = $2`,
-                [prevRej.rows[0].rej, currentId]
-            );
-        }
-
-        // If current is rejection, update after_rejection for previous normal entries
-        if (activeRejType !== '') {
-            const rejName = payload.rejection_reason || activeRejType;
-            await client.query(
-                `UPDATE pt_entry SET after_rejection = $1
-                 WHERE spool_id = $2 AND pt_entry_id < $3 AND after_rejection IS NULL
-                 AND (active_rejection_type IS NULL OR active_rejection_type = '')`,
-                [rejName, payload.spool_id, currentId]
-            );
-        }
-
-        // Determine is_last (check if balance is 0)
-        const balanceCheck = await client.query(
-            `SELECT balance_qty FROM mat_stock WHERE batch_id = $1`,
-            [payload.spool_id]
-        );
-        if (balanceCheck.rows.length > 0 && Number(balanceCheck.rows[0].balance_qty) <= 0) {
-            await client.query(
-                `UPDATE pt_entry SET is_last = FALSE WHERE spool_id = $1 AND is_last = TRUE`,
+        // Determine is_last (only for entries WITH FID, when balance <= 0)
+        if (fid !== '') {
+            const balanceCheck = await client.query(
+                `SELECT balance_qty FROM mat_stock WHERE batch_id = $1`,
                 [payload.spool_id]
             );
-            const lastFid = await client.query(
-                `SELECT pt_entry_id FROM pt_entry WHERE spool_id = $1 AND fid IS NOT NULL AND fid != ''
-                 ORDER BY end_length DESC LIMIT 1`,
-                [payload.spool_id]
-            );
-            if (lastFid.rows.length > 0) {
+            if (balanceCheck.rows.length > 0 && Number(balanceCheck.rows[0].balance_qty) <= 0) {
+                await client.query(
+                    `UPDATE pt_entry SET is_last = FALSE WHERE spool_id = $1 AND is_last = TRUE`,
+                    [payload.spool_id]
+                );
                 await client.query(
                     `UPDATE pt_entry SET is_last = TRUE WHERE pt_entry_id = $1`,
-                    [lastFid.rows[0].pt_entry_id]
+                    [currentId]
                 );
             }
         }

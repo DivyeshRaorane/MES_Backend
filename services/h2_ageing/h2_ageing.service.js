@@ -11,7 +11,7 @@ export const getBatchesForIssueS = async () => {
     const result = await pool.query(
         `SELECT DISTINCT d2_batch_id
          FROM d2_issue
-         WHERE is_h2 = FALSE
+         WHERE (is_h2 = FALSE OR is_h2 = 'false' OR is_h2 IS NULL)
          AND d2_end_date IS NOT NULL
          ORDER BY d2_batch_id`
     );
@@ -187,6 +187,12 @@ export const saveAfterEntryS = async (payload) => {
     if (result.rowCount === 0) {
         throw new Error("H2 batch not found.");
     }
+
+    // Update bobbin_entries.is_h2_after = true for all bobbins in this batch
+    await pool.query(
+        `UPDATE bobbin_entries SET is_h2_after = true WHERE bobbin_no IN (SELECT bobbin_no FROM h2_ageing WHERE h2_batch_id = $1)`,
+        [h2_batch_id]
+    );
 
     return { success: true, message: "After entry saved successfully." };
 };

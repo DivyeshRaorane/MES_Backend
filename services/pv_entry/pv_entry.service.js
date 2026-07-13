@@ -38,14 +38,21 @@ export const getBobbinForPvS = async (bobbin_no) => {
 
     const bobbin = result.rows[0];
 
-    // Validation: temp_grade check
-    if (bobbin.temp_grade === null || bobbin.temp_grade === undefined) {
+    // Validation: temp_grade check from qc_entry_temp table
+    const qcTempResult = await pool.query(
+        `SELECT temp_grade FROM qc_entry_temp WHERE bobbin_no = $1 LIMIT 1`,
+        [bobbin_no]
+    );
+
+    const tempGrade = qcTempResult.rows[0]?.temp_grade || null;
+
+    if (tempGrade === null || tempGrade === undefined) {
         return { found: true, valid: false, message: "QC is not completed for this bobbin." };
     }
-    if (bobbin.temp_grade === "REW") {
+    if (tempGrade === "REW") {
         return { found: true, valid: false, message: "Bobbin is in REW status." };
     }
-    if (bobbin.temp_grade === "FAIL") {
+    if (tempGrade === "FAIL") {
         return { found: true, valid: false, message: "Bobbin has failed QC." };
     }
 
@@ -210,8 +217,15 @@ export const getBobbinForRePvS = async (bobbin_no) => {
 
     const bobbin = bobbinResult.rows[0];
 
-    // Step 2: Check final_grade exists
-    if (!bobbin.final_grade || bobbin.final_grade === '') {
+    // Step 2: Check final_grade from qc_entry_temp
+    const qcTempResult = await pool.query(
+        `SELECT final_grade FROM qc_entry_temp WHERE bobbin_no = $1 LIMIT 1`,
+        [bobbin_no]
+    );
+
+    const finalGrade = qcTempResult.rows[0]?.final_grade || null;
+
+    if (!finalGrade || finalGrade === '') {
         return { success: false, message: "This bobbin does not have a Final Grade. Re-Physical Verification cannot be performed." };
     }
 
