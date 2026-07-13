@@ -86,6 +86,17 @@ export const loginService = async({emp_id,password})=>{
 
     delete user.password;
 
+    // Fetch user departments
+    const deptResult = await pool.query(
+        `SELECT d.d_name FROM user_departments ud
+         INNER JOIN departments d ON d.id = ud.department_id
+         WHERE ud.emp_id = $1 AND d.disable = false`,
+        [user.emp_id]
+    );
+    const departments = deptResult.rows.map(r => r.d_name);
+
+    user.departments = departments;
+
     return{
         user,
         token

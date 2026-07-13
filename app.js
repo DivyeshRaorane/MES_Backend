@@ -52,6 +52,7 @@ import drawShiftPlanRoutes from "./routes/postgress/draw_shift_plan.routes.js"
 import colouringRoutes from "./routes/postgress/colouring.routes.js"
 import rewindingRoutes from "./routes/postgress/rewinding.routes.js"
 import breakAnalysisRoutes from "./routes/postgress/break_analysis.routes.js"
+import drawReportsRoutes from "./routes/postgress/draw_reports.routes.js"
 import tempEntryRoutes from "./routes/postgress/temp_entry.routes.js"
 import tempCycleEntryRoutes from "./routes/postgress/temp_cycle_entry.routes.js"
 import trhEntryRoutes from "./routes/postgress/trh_entry.routes.js"
@@ -111,6 +112,7 @@ app.use("/api", drawShiftPlanRoutes)
 app.use("/api", colouringRoutes)
 app.use("/api", rewindingRoutes)
 app.use("/api", breakAnalysisRoutes)
+app.use("/api", drawReportsRoutes)
 app.use("/api", tempEntryRoutes)
 app.use("/api", tempCycleEntryRoutes)
 app.use("/api", trhEntryRoutes)
