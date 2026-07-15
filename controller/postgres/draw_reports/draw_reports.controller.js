@@ -2,15 +2,17 @@ import {
     getDashboardS, getProductionSummaryS, getPreformReportS,
     getSpoolReportS, getFlawReportS, getBreakReportS,
     getTowerPerformanceS, getShiftPerformanceS, getOperatorPerformanceS,
-    getDrawParametersS, getScrapAnalysisS
+    getDrawParametersS, getScrapAnalysisS, getPreformAcceptReportS, getHandleJoinReportS, getPreformAllocReportS, getDrawEntryReportS
 } from "../../../services/draw_reports/draw_reports.service.js";
+import ExcelJS from "exceljs";
 
 const getFilters = (query) => ({
     date_from: query.date_from,
     date_to: query.date_to,
     tower_no: query.tower_no || null,
     shift: query.shift || null,
-    preform_id: query.preform_id || null
+    preform_id: query.preform_id || null,
+    spool_id: query.spool_id || null
 });
 
 export const getDashboardC = async (req, res) => {
@@ -112,13 +114,41 @@ export const getScrapAnalysisC = async (req, res) => {
     }
 };
 
-import ExcelJS from "exceljs";
-import {
-    getDashboardS as _d, getProductionSummaryS as _ps, getPreformReportS as _pr,
-    getSpoolReportS as _sr, getFlawReportS as _fr, getBreakReportS as _br,
-    getTowerPerformanceS as _tp, getShiftPerformanceS as _sp, getOperatorPerformanceS as _op,
-    getDrawParametersS as _dp, getScrapAnalysisS as _sa
-} from "../../../services/draw_reports/draw_reports.service.js";
+export const getPreformAcceptReportC = async (req, res) => {
+    try {
+        const result = await getPreformAcceptReportS(getFilters(req.query));
+        res.status(200).json({ success: true, data: result });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+export const getHandleJoinReportC = async (req, res) => {
+    try {
+        const result = await getHandleJoinReportS(getFilters(req.query));
+        res.status(200).json({ success: true, data: result });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+export const getPreformAllocReportC = async (req, res) => {
+    try {
+        const result = await getPreformAllocReportS(getFilters(req.query));
+        res.status(200).json({ success: true, data: result });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+export const getDrawEntryReportC = async (req, res) => {
+    try {
+        const result = await getDrawEntryReportS(req.query);
+        res.status(200).json({ success: true, data: result });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
 
 export const exportReportC = async (req, res) => {
     const { report, date_from, date_to, tower_no, shift } = req.query;
@@ -132,53 +162,97 @@ export const exportReportC = async (req, res) => {
         switch (report) {
             case 'production':
                 title = 'Production Summary';
-                data = await _ps(filters);
+                data = await getProductionSummaryS(filters);
                 columns = ['Date', 'Preforms', 'Drawn Length (km)', 'Drawn Weight (kg)', 'Spools', 'Avg Length', 'Total Scrap'];
                 break;
             case 'preform':
                 title = 'Preform Report';
-                data = await _pr(filters);
+                data = await getPreformReportS(filters);
                 columns = ['Preform ID', 'Weight', 'Expected Length', 'Actual Length', 'Spools'];
                 break;
             case 'spool':
                 title = 'Spool Report';
-                data = await _sr(filters);
+                data = await getSpoolReportS(filters);
                 columns = ['Spool ID', 'FID', 'Preform', 'Date', 'Tower', 'Shift', 'Length', 'Weight', 'Status'];
                 break;
             case 'flaw':
-                title = 'Flaw Report';
-                data = await _fr(filters);
-                columns = ['Date', 'Spool ID', 'Preform', 'Reason', 'From', 'To', 'Defect Length', 'Cutting'];
+            case 'flaws':
+                title = 'Draw Flaw Report';
+                data = await getFlawReportS(filters);
+                columns = ['Flaw ID', 'Spool ID', 'Reason', 'Pos 1', 'Pos 2',
+                    'Defect Length', 'Actual Cutting', 'Entry Date', 'Entry Time'];
                 break;
             case 'break':
                 title = 'Break Analysis';
-                data = await _br(filters);
+                data = await getBreakReportS(filters);
                 columns = ['Fiber ID', 'Machine', 'Break Length', 'Type', 'Category', 'Main Type', 'Sub Reason', 'Analyst', 'Date'];
                 break;
             case 'tower':
                 title = 'Tower Performance';
-                data = await _tp(filters);
+                data = await getTowerPerformanceS(filters);
                 columns = ['Tower', 'Preforms', 'Drawn (km)', 'Spools', 'Avg Speed', 'Yield %'];
                 break;
             case 'shift':
                 title = 'Shift Performance';
-                data = await _sp(filters);
+                data = await getShiftPerformanceS(filters);
                 columns = ['Shift', 'Preforms', 'Drawn (km)', 'Spools', 'Avg Speed', 'Yield %'];
                 break;
             case 'operator':
                 title = 'Operator Performance';
-                data = await _op(filters);
+                data = await getOperatorPerformanceS(filters);
                 columns = ['Operator', 'Preforms', 'Drawn (km)', 'Spools', 'Avg Speed'];
                 break;
             case 'parameters':
                 title = 'Draw Parameters';
-                data = await _dp(filters);
+                data = await getDrawParametersS(filters);
                 columns = ['Group', 'Avg Speed', 'Avg Tension', 'Furnace', 'Argon', 'Helium', 'CO2', 'N2', 'Pri Press', 'Sec Press'];
                 break;
             case 'scrap':
                 title = 'Scrap Analysis';
-                data = await _sa(filters);
+                data = await getScrapAnalysisS(filters);
                 columns = ['Group', 'Top Scrap', 'Bottom Scrap', 'Total Scrap', 'Scrap %'];
+                break;
+            case 'preform_accept':
+                title = 'Preform Acceptance Report';
+                data = await getPreformAcceptReportS(filters);
+                columns = ['Preform ID', 'Weight', 'Charge Weight', 'Preform Length', 'Charge Length',
+                    'Drawing Length', 'Material Code', 'Dia Variation', 'Cut Off', 'MFD', 'Accepted By',
+                    'Preform Type', 'Material Desc', 'Remarks', 'Draw Instruction',
+                    'Status', 'Rejection Note', 'Product Type', 'Entry Date', 'Entry Time'];
+                break;
+            case 'handle_join':
+                title = 'Handle Join Report';
+                data = await getHandleJoinReportS(filters);
+                columns = ['Preform ID', 'Handle No', 'Handle Length', 'Handle Diameter', 'Cone Length',
+                    'Dia1', 'Dia2', 'Dia3', 'Dia4', 'Dia5',
+                    'H2 Flow 1', 'H2 Flow 2', 'H2 Flow 3',
+                    'O2 Line1 Flow 1', 'O2 Line1 Flow 2', 'O2 Line1 Flow 3',
+                    'H2 Flow 1 Time', 'H2 Flow 2 Time', 'H2 Flow 3 Time',
+                    'O2 Flow 1 Time', 'O2 Flow 2 Time', 'O2 Flow 3 Time',
+                    'H2 Flow 1 Cons', 'H2 Flow 2 Cons', 'H2 Flow 3 Cons',
+                    'O2 Flow 1 Cons', 'O2 Flow 2 Cons', 'O2 Flow 3 Cons',
+                    'Joined By', 'Additional Notes', 'Handle Join', 'Allocated',
+                    'Handle Rejected', 'Entry Date', 'Entry Time'];
+                break;
+            case 'preform_alloc':
+                title = 'Preform Allocation Report';
+                data = await getPreformAllocReportS(filters);
+                columns = ['Preform ID', 'Allocation Date', 'Tower', 'Shift', 'Operator',
+                    'Preform Type', 'Product Type', 'Process Type', 'Draw Done',
+                    'Avg Diameter', 'Draw Instruction', 'Process Remarks', 'Entry Date', 'Entry Time'];
+                break;
+            case 'draw_entry':
+                title = 'Draw Entry Report';
+                data = await getDrawEntryReportS(filters);
+                columns = ['Spool ID', 'Spool FID', 'Preform ID', 'Tower', 'Start Date', 'End Date',
+                    'Start Time', 'End Time', 'Drawn Weight', 'Drawn Length', 'Balance Weight',
+                    'Shift', 'Line Speed', 'Tension', 'Furnace Power', 'Argon', 'Helium', 'Tube He',
+                    'CO2', 'N2', 'UV Air', 'Winding Obs', 'SCR Obs', 'Top Scrap', 'Bottom Scrap',
+                    'Die Clean', 'Status', 'Indication', 'Reason', 'Remark',
+                    'Pri Coating', 'Sec Coating', 'Coating Type', 'Pri Pressure', 'Sec Pressure',
+                    'Pri Batch', 'Sec Batch', 'Process Type', 'Shift Incharge', 'Furnace Op',
+                    'Die Op', 'Ground Op', 'PT Allocated', 'Preform Type', 'Product Type',
+                    'Spool No', 'Is First', 'Is Last'];
                 break;
             default:
                 return res.status(400).json({ success: false, message: 'Invalid report type' });

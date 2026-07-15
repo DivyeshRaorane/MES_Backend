@@ -89,16 +89,20 @@ export const getSpoolReportS = async (filters) => {
 };
 
 export const getFlawReportS = async (filters) => {
-    const { date_from, date_to } = filters;
-    const result = await pool.query(
-        `SELECT fd.entry_date, fd.spool_id, de.preform_id, fd.reason,
-                fd.pos1, fd.pos2, fd.defect_length, fd.actual_cutting
-         FROM draw_flaw_details fd
-         INNER JOIN draw_entry de ON de.spool_id = fd.spool_id
-         WHERE fd.entry_date BETWEEN $1 AND $2
-         ORDER BY fd.entry_date DESC`,
-        [date_from, date_to]
-    );
+    const { date_from, date_to, spool_id } = filters;
+    let query = `
+        SELECT draw_flaw_id, spool_id, reason, pos1, pos2,
+               defect_length, actual_cutting, entry_date, entry_time
+        FROM draw_flaw_details WHERE 1=1`;
+    const params = [];
+
+    if (date_from) { params.push(date_from); query += ` AND entry_date >= $${params.length}`; }
+    if (date_to) { params.push(date_to); query += ` AND entry_date <= $${params.length}`; }
+    if (spool_id) { params.push(spool_id); query += ` AND spool_id = $${params.length}`; }
+
+    query += ` ORDER BY entry_date DESC, entry_time DESC LIMIT 1000`;
+
+    const result = await pool.query(query, params);
     return result.rows;
 };
 
@@ -193,5 +197,100 @@ export const getScrapAnalysisS = async (filters) => {
          GROUP BY de.tower_no ORDER BY de.tower_no`,
         [date_from, date_to]
     );
+    return result.rows;
+};
+
+export const getPreformAcceptReportS = async (filters) => {
+    const { date_from, date_to } = filters;
+    let query = `
+        SELECT preform_id, preform_weight, charge_weight, preform_length, charge_length,
+               drawing_length, material_code, dia_variation, cut_off, mfd, accepted_by,
+               preform_type, material_description, remarks, draw_instruction,
+               acceptance_status, rejection_note, product_type, entry_date, entry_time
+        FROM preform_accept WHERE 1=1`;
+    const params = [];
+
+    if (date_from) { params.push(date_from); query += ` AND entry_date >= $${params.length}`; }
+    if (date_to) { params.push(date_to); query += ` AND entry_date <= $${params.length}`; }
+
+    query += ` ORDER BY entry_date DESC, entry_time DESC`;
+
+    const result = await pool.query(query, params);
+    return result.rows;
+};
+
+export const getHandleJoinReportS = async (filters) => {
+    const { date_from, date_to } = filters;
+    let query = `
+        SELECT preform_id, handle_number, handle_length, handle_diameter, cone_length,
+               dia1, dia2, dia3, dia4, dia5,
+               h2flow1, h2flow2, h2flow3,
+               o2line1_flow1, o2line1_flow2, o2line1_flow3,
+               h2flow1_time, h2flow2_time, h2flow3_time,
+               o2line1_flow1_time, o2line1_flow2_time, o2line1_flow3_time,
+               h2flow1_cons, h2flow2_cons, h2flow3_cons,
+               o2line1_flow1_cons, o2line1_flow2_cons, o2line1_flow3_cons,
+               joined_by, additional_notes, is_handle_join, is_allocate,
+               handle_rejected, entry_date, entry_time
+        FROM handle_join WHERE 1=1`;
+    const params = [];
+
+    if (date_from) { params.push(date_from); query += ` AND entry_date >= $${params.length}`; }
+    if (date_to) { params.push(date_to); query += ` AND entry_date <= $${params.length}`; }
+
+    query += ` ORDER BY entry_date DESC, entry_time DESC`;
+
+    const result = await pool.query(query, params);
+    return result.rows;
+};
+
+export const getPreformAllocReportS = async (filters) => {
+    const { date_from, date_to, tower_no, shift } = filters;
+    let query = `
+        SELECT preform_id, allocation_date, tower_no, shift, operator,
+               preform_type, product_type, process_type, preform_draw,
+               average_diameter, draw_instruction, process_remarks,
+               entry_date, entry_time
+        FROM preform_allocation WHERE 1=1`;
+    const params = [];
+
+    if (date_from) { params.push(date_from); query += ` AND allocation_date >= $${params.length}`; }
+    if (date_to) { params.push(date_to); query += ` AND allocation_date <= $${params.length}`; }
+    if (tower_no) { params.push(tower_no); query += ` AND tower_no = $${params.length}`; }
+    if (shift) { params.push(shift); query += ` AND shift = $${params.length}`; }
+
+    query += ` ORDER BY allocation_date DESC, entry_time DESC`;
+
+    const result = await pool.query(query, params);
+    return result.rows;
+};
+
+export const getDrawEntryReportS = async (filters) => {
+    const { date_from, date_to, tower_no, shift, preform_id, spool_id } = filters;
+    let query = `
+        SELECT spool_id, spool_fid, preform_id, tower_no, start_date, end_date,
+               start_time, end_time, drawn_weight, drawn_length, balance_weight,
+               shift, drawn_line_speed, draw_tension, furnace_power, furnace_argon,
+               furnace_he, tube_he, co2_flow, n2_flow, uv_air,
+               winding_observation, scr_observation, top_end_scrap, bottom_end_scrap,
+               die_clean, spool_status, indication_fiber_cut, indication_reason, remark,
+               primary_coating, secondary_coating, coating_type,
+               primary_pressure, secondary_pressure, primary_batch, secondary_batch,
+               process_type, shift_incharge, furnace_operator, die_operator, ground_operator,
+               is_pt_allocate, preform_type, product_type, spool_no, is_first, is_last,
+               entry_date, entry_time
+        FROM draw_entry WHERE 1=1`;
+    const params = [];
+
+    if (date_from) { params.push(date_from); query += ` AND start_date >= $${params.length}`; }
+    if (date_to) { params.push(date_to); query += ` AND start_date <= $${params.length}`; }
+    if (tower_no) { params.push(tower_no); query += ` AND tower_no = $${params.length}`; }
+    if (shift) { params.push(shift); query += ` AND shift = $${params.length}`; }
+    if (preform_id) { params.push(preform_id); query += ` AND preform_id = $${params.length}`; }
+    if (spool_id) { params.push(spool_id); query += ` AND spool_id = $${params.length}`; }
+
+    query += ` ORDER BY start_date DESC, start_time DESC LIMIT 1000`;
+
+    const result = await pool.query(query, params);
     return result.rows;
 };

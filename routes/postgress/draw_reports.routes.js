@@ -3,7 +3,7 @@ import {
     getDashboardC, getProductionSummaryC, getPreformReportC,
     getSpoolReportC, getFlawReportC, getBreakReportC,
     getTowerPerformanceC, getShiftPerformanceC, getOperatorPerformanceC,
-    getDrawParametersC, getScrapAnalysisC, exportReportC
+    getDrawParametersC, getScrapAnalysisC, exportReportC, getPreformAcceptReportC, getHandleJoinReportC, getPreformAllocReportC, getDrawEntryReportC
 } from '../../controller/postgres/draw_reports/draw_reports.controller.js';
 import { authMiddleware } from '../../middleware/aut_middleware.js';
 
@@ -20,6 +20,10 @@ router.get('/draw-reports/shift-performance', authMiddleware, getShiftPerformanc
 router.get('/draw-reports/operator-performance', authMiddleware, getOperatorPerformanceC);
 router.get('/draw-reports/draw-parameters', authMiddleware, getDrawParametersC);
 router.get('/draw-reports/scrap-analysis', authMiddleware, getScrapAnalysisC);
+router.get('/draw-reports/preform-accept', authMiddleware, getPreformAcceptReportC);
+router.get('/draw-reports/handle-join', authMiddleware, getHandleJoinReportC);
+router.get('/draw-reports/preform-allocation', authMiddleware, getPreformAllocReportC);
+router.get('/draw-reports/draw-entry', authMiddleware, getDrawEntryReportC);
 router.get('/draw-reports/export', authMiddleware, exportReportC);
 
 export default router;
