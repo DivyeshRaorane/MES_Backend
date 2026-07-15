@@ -186,7 +186,8 @@ export const ptEntryS = async (payload) => {
                     pa.preform_type,
                     pa.product_type,
                     de.spool_fid,
-                    de.preform_id
+                    de.preform_id,
+                    de.process_type
                 FROM draw_entry de
                 LEFT JOIN preform_accept pa ON de.preform_id = pa.preform_id
                 WHERE de.spool_id = $1
@@ -195,6 +196,14 @@ export const ptEntryS = async (payload) => {
             );
 
             const extra = extraResult.rows[0] || {};
+            const combinedProductType = [extra.product_type, extra.process_type].filter(Boolean).map(s => s.trim()).join('');
+
+            // Get pt_strain from pt_allocation
+            const ptAllocResult = await client.query(
+                `SELECT pt_strain FROM pt_allocation WHERE spool_id = $1 LIMIT 1`,
+                [payload.spool_id]
+            );
+            const ptStrain = ptAllocResult.rows[0]?.pt_strain || null;
 
             //-------------------------
             // Insert Bobbin Entry
@@ -219,10 +228,11 @@ export const ptEntryS = async (payload) => {
                     spool_fid,
                     preform_id,
                     fiber_color,
-                    fiber_type
+                    fiber_type,
+                    pt_strain
                 )
                 VALUES (
-                    $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17
+                    $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18
                 )
                 `,
                 [
@@ -238,11 +248,12 @@ export const ptEntryS = async (payload) => {
                     payload.operator_name || null,
                     payload.logged_in_user,
                     extra.preform_type || null,
-                    extra.product_type || null,
+                    combinedProductType || null,
                     extra.spool_fid || null,
                     extra.preform_id || null,
                     "Natural",
-                    extra.preform_type || null
+                    extra.preform_type || null,
+                    ptStrain
                 ]
             );
         }

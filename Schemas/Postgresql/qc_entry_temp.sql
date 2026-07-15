@@ -172,9 +172,10 @@ CREATE TABLE qc_entry_temp(
    m_1T_10mm_1625 DECIMAL(10,3),
 
    temp_grade VARCHAR(10),
-   final_grade VARCHAR(10)
+   final_grade VARCHAR(10),
 
-
-
-
-)
+   status VARCHAR(20),
+   reason VARCHAR(20),
+   remark VARCHAR(300),
+   is_rew_done BOOLEAN DEFAULT FALSE
+);

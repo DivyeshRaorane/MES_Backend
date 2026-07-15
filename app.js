@@ -59,6 +59,8 @@ import trhEntryRoutes from "./routes/postgress/trh_entry.routes.js"
 import hthaEntryRoutes from "./routes/postgress/htha_entry.routes.js"
 import waterImmersionRoutes from "./routes/postgress/water_immersion.routes.js"
 import acceleratedAgeingRoutes from "./routes/postgress/accelerated_ageing.routes.js"
+import specRoutes from "./routes/postgress/spec.routes.js"
+import customerAllocationRoutes from "./routes/postgress/customer_allocation.routes.js"
 
 
 const app = express();
@@ -119,6 +121,8 @@ app.use("/api", trhEntryRoutes)
 app.use("/api", hthaEntryRoutes)
 app.use("/api", waterImmersionRoutes)
 app.use("/api", acceleratedAgeingRoutes)
+app.use("/api", specRoutes)
+app.use("/api", customerAllocationRoutes)
 
 app.use("/api", towerDataRoutes)
 
