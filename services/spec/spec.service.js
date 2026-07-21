@@ -8,83 +8,44 @@ export const getSpecListS = async () => {
 };
 
 export const getSpecByIdS = async (id) => {
-    const master = await pool.query(`SELECT * FROM spec_master WHERE spec_id = $1`, [id]);
-    if (master.rows.length === 0) return null;
-
-    const parameters = await pool.query(
-        `SELECT * FROM spec_parameter WHERE spec_id = $1 ORDER BY spec_parameter_id`, [id]
-    );
-
-    return { master: master.rows[0], parameters: parameters.rows };
+    const result = await pool.query(`SELECT * FROM spec_master WHERE spec_id = $1`, [id]);
+    if (result.rows.length === 0) return null;
+    return result.rows[0];
 };
 
 export const createSpecS = async (payload) => {
-    const client = await pool.connect();
-    try {
-        await client.query("BEGIN");
+    const { logged_in_user, ...data } = payload;
 
-        const { master, parameters, logged_in_user } = payload;
+    const keys = Object.keys(data);
+    const values = keys.map(k => data[k] === '' ? null : data[k]);
+    keys.push('created_by');
+    values.push(logged_in_user);
 
-        const masterResult = await client.query(
-            `INSERT INTO spec_master (customer_name, po_number, pt_strain, cust_spec_name, product_type, coating_type, quantity_km, color, priority, remarks, created_by)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING spec_id`,
-            [master.customer_name, master.po_number, master.pt_strain, master.cust_spec_name,
-             master.product_type, master.coating_type, master.quantity_km, master.color,
-             master.priority, master.remarks, logged_in_user]
-        );
+    const placeholders = values.map((_, i) => `$${i + 1}`).join(',');
 
-        const spec_id = masterResult.rows[0].spec_id;
+    const result = await pool.query(
+        `INSERT INTO spec_master (${keys.join(',')}) VALUES (${placeholders}) RETURNING spec_id`,
+        values
+    );
 
-        for (const param of parameters) {
-            await client.query(
-                `INSERT INTO spec_parameter (spec_id, parameter_name, min_value, max_value) VALUES ($1,$2,$3,$4)`,
-                [spec_id, param.parameter_name, param.min_value, param.max_value]
-            );
-        }
-
-        await client.query("COMMIT");
-        return { success: true, message: "Specification created", spec_id };
-    } catch (error) {
-        await client.query("ROLLBACK");
-        throw error;
-    } finally {
-        client.release();
-    }
+    return { success: true, message: "Specification created", spec_id: result.rows[0].spec_id };
 };
 
 export const updateSpecS = async (id, payload) => {
-    const client = await pool.connect();
-    try {
-        await client.query("BEGIN");
+    const { logged_in_user, ...data } = payload;
 
-        const { master, parameters } = payload;
+    const keys = Object.keys(data);
+    const values = keys.map(k => data[k] === '' ? null : data[k]);
 
-        await client.query(
-            `UPDATE spec_master SET customer_name=$1, po_number=$2, pt_strain=$3, cust_spec_name=$4,
-             product_type=$5, coating_type=$6, quantity_km=$7, color=$8, priority=$9, remarks=$10, updated_at=NOW()
-             WHERE spec_id = $11`,
-            [master.customer_name, master.po_number, master.pt_strain, master.cust_spec_name,
-             master.product_type, master.coating_type, master.quantity_km, master.color,
-             master.priority, master.remarks, id]
-        );
+    const setClause = keys.map((k, i) => `${k} = $${i + 1}`).join(', ');
+    values.push(id);
 
-        await client.query(`DELETE FROM spec_parameter WHERE spec_id = $1`, [id]);
+    await pool.query(
+        `UPDATE spec_master SET ${setClause}, updated_at = NOW() WHERE spec_id = $${values.length}`,
+        values
+    );
 
-        for (const param of parameters) {
-            await client.query(
-                `INSERT INTO spec_parameter (spec_id, parameter_name, min_value, max_value) VALUES ($1,$2,$3,$4)`,
-                [id, param.parameter_name, param.min_value, param.max_value]
-            );
-        }
-
-        await client.query("COMMIT");
-        return { success: true, message: "Specification updated" };
-    } catch (error) {
-        await client.query("ROLLBACK");
-        throw error;
-    } finally {
-        client.release();
-    }
+    return { success: true, message: "Specification updated" };
 };
 
 export const deactivateSpecS = async (id) => {

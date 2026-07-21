@@ -178,4 +178,14 @@ CREATE TABLE qc_entry_temp(
    reason VARCHAR(20),
    remark VARCHAR(300),
    is_rew_done BOOLEAN DEFAULT FALSE
+
+   disp_1270_1360 DECIMAL(10,3),
+disp_1460 DECIMAL(10,3),
+disp_1490 DECIMAL(10,3),
+
+slope_1550 DECIMAL(10,3),
+slope_1290 DECIMAL(10,3),
+slope_1490 DECIMAL(10,3)
+
+
 );

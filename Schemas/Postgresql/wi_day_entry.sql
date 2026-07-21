@@ -1,5 +1,6 @@
 CREATE TABLE wi_day_entry (
   wi_day_entry_id SERIAL PRIMARY KEY,
+  wi_entry_id INT REFERENCES wi_entry(wi_entry_id) ON DELETE CASCADE,
   bobbin_no VARCHAR(50),
   wi_date DATE,
   wi_day INT,

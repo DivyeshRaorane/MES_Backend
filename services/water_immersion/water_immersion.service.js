@@ -1,88 +1,117 @@
 import pool from "../../db/postgres.js";
 
-export const getWiByBarcodeS = async (bobbin_no) => {
-    const bobbinResult = await pool.query(
-        `SELECT preform_id, spool_id, tower_no, fiber_length AS total_length
-         FROM bobbin_entries WHERE bobbin_no = $1 LIMIT 1`,
-        [bobbin_no]
-    );
+export const getWiEntryListS = async (filters) => {
+    const { bobbin_no, date_from, date_to } = filters;
+    let query = `SELECT * FROM wi_entry WHERE 1=1`;
+    const params = [];
 
-    if (bobbinResult.rows.length === 0) {
-        return null;
-    }
+    if (bobbin_no) { params.push(`%${bobbin_no}%`); query += ` AND bobbin_no ILIKE $${params.length}`; }
+    if (date_from) { params.push(date_from); query += ` AND start_date >= $${params.length}`; }
+    if (date_to) { params.push(date_to); query += ` AND start_date <= $${params.length}`; }
 
-    const wiResult = await pool.query(
-        `SELECT * FROM wi_entry WHERE bobbin_no = $1 LIMIT 1`,
-        [bobbin_no]
-    );
+    query += ` ORDER BY wi_entry_id DESC`;
 
-    const dayResult = await pool.query(
-        `SELECT * FROM wi_day_entry WHERE bobbin_no = $1 ORDER BY wi_day_entry_id ASC`,
-        [bobbin_no]
-    );
-
-    return {
-        bobbin: bobbinResult.rows[0],
-        wi_entry: wiResult.rows[0] || null,
-        days: dayResult.rows
-    };
+    const result = await pool.query(query, params);
+    return result.rows;
 };
 
-export const saveWiEntryS = async (payload) => {
+export const getWiEntryByIdS = async (id) => {
+    const master = await pool.query(`SELECT * FROM wi_entry WHERE wi_entry_id = $1`, [id]);
+    if (master.rows.length === 0) return null;
+
+    const days = await pool.query(
+        `SELECT * FROM wi_day_entry WHERE wi_entry_id = $1 ORDER BY wi_day ASC`,
+        [id]
+    );
+
+    return { master: master.rows[0], days: days.rows };
+};
+
+export const createWiEntryS = async (payload) => {
+    const client = await pool.connect();
+console.log("Payload:", payload)
+    try {
+        await client.query("BEGIN");
+
+        const { master, days, logged_in_user } = payload;
+
+        const masterResult = await client.query(
+            `INSERT INTO wi_entry (
+                bobbin_no, format_no, tite, temp, testing_standard,
+                marker_a, marker_b, start_date, start_time, end_date, end_time,
+                fiber_length, remark, tested_by, checked_by, at_1310, at_1550, at_1625, logged_in_user
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+            RETURNING wi_entry_id`,
+            [
+                master.bobbin_no, master.format_no, master.tite, master.temp, master.testing_standard,
+                master.marker_a, master.marker_b, master.start_date, master.start_time,
+                master.end_date || null, master.end_time || null, master.fiber_length,
+                master.remark || null, master.tested_by || null, master.checked_by || null,
+                master.at_1310 || null, master.at_1550 || null, master.at_1625 || null, logged_in_user
+            ]
+        );
+
+        const wi_entry_id = masterResult.rows[0].wi_entry_id;
+
+        if (days && days.length > 0) {
+            for (const day of days) {
+                await client.query(
+                    `INSERT INTO wi_day_entry (wi_entry_id, bobbin_no, wi_date, wi_day, at_1310, at_1550, at_1625, logged_in_user)
+                     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+                    [wi_entry_id, master.bobbin_no, day.wi_date || null, day.wi_day, day.at_1310 || null, day.at_1550 || null, day.at_1625 || null, logged_in_user]
+                );
+            }
+        }
+
+        await client.query("COMMIT");
+        return { success: true, message: "Water Immersion entry created", wi_entry_id };
+
+    } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+    } finally {
+        client.release();
+    }
+};
+
+export const updateWiEntryS = async (id, payload) => {
     const client = await pool.connect();
 
     try {
         await client.query("BEGIN");
 
-        const {
-            bobbin_no, preform_id, tower_no, spool_id, total_length,
-            testing_standard, start_date, start_time, end_date, end_time,
-            remark, tested_by, checked_by, at_1310, at_1550, at_1625,
-            existing_id, rows, logged_in_user
-        } = payload;
+        const { master, days, logged_in_user } = payload;
 
-        if (existing_id) {
-            await client.query(
-                `UPDATE wi_entry SET
-                    preform_id=$1, tower_no=$2, spool_id=$3, total_length=$4,
-                    testing_standard=$5, start_date=$6, start_time=$7,
-                    end_date=$8, end_time=$9, remark=$10,
-                    tested_by=$11, checked_by=$12,
-                    at_1310=$13, at_1550=$14, at_1625=$15, logged_in_user=$16
-                 WHERE wi_entry_id = $17`,
-                [preform_id, tower_no, spool_id, total_length,
-                 testing_standard, start_date, start_time,
-                 end_date || null, end_time || null, remark || null,
-                 tested_by || null, checked_by || null,
-                 at_1310 || null, at_1550 || null, at_1625 || null, logged_in_user, existing_id]
-            );
-        } else {
-            await client.query(
-                `INSERT INTO wi_entry (
-                    bobbin_no, preform_id, tower_no, spool_id, total_length,
-                    testing_standard, start_date, start_time, end_date, end_time,
-                    remark, tested_by, checked_by, at_1310, at_1550, at_1625, logged_in_user
-                ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
-                [bobbin_no, preform_id, tower_no, spool_id, total_length,
-                 testing_standard, start_date, start_time,
-                 end_date || null, end_time || null, remark || null,
-                 tested_by || null, checked_by || null,
-                 at_1310 || null, at_1550 || null, at_1625 || null, logged_in_user]
-            );
-        }
+        await client.query(
+            `UPDATE wi_entry SET
+                bobbin_no=$1, format_no=$2, tite=$3, temp=$4, testing_standard=$5,
+                marker_a=$6, marker_b=$7, start_date=$8, start_time=$9, end_date=$10, end_time=$11,
+                fiber_length=$12, remark=$13, tested_by=$14, checked_by=$15,
+                at_1310=$16, at_1550=$17, at_1625=$18, logged_in_user=$19
+             WHERE wi_entry_id = $20`,
+            [
+                master.bobbin_no, master.format_no, master.tite, master.temp, master.testing_standard,
+                master.marker_a, master.marker_b, master.start_date, master.start_time,
+                master.end_date || null, master.end_time || null, master.fiber_length,
+                master.remark || null, master.tested_by || null, master.checked_by || null,
+                master.at_1310 || null, master.at_1550 || null, master.at_1625 || null, logged_in_user, id
+            ]
+        );
 
-        await client.query(`DELETE FROM wi_day_entry WHERE bobbin_no = $1`, [bobbin_no]);
+        await client.query(`DELETE FROM wi_day_entry WHERE wi_entry_id = $1`, [id]);
 
-        for (const row of rows) {
-            await client.query(
-                `INSERT INTO wi_day_entry (bobbin_no, wi_date, wi_day, at_1310, at_1550, at_1625, logged_in_user)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-                [bobbin_no, row.wi_date || null, row.wi_day, row.at_1310 || null, row.at_1550 || null, row.at_1625 || null, logged_in_user]
-            );
+        if (days && days.length > 0) {
+            for (const day of days) {
+                await client.query(
+                    `INSERT INTO wi_day_entry (wi_entry_id, bobbin_no, wi_date, wi_day, at_1310, at_1550, at_1625, logged_in_user)
+                     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+                    [id, master.bobbin_no, day.wi_date || null, day.wi_day, day.at_1310 || null, day.at_1550 || null, day.at_1625 || null, logged_in_user]
+                );
+            }
         }
 
         await client.query("COMMIT");
-        return { success: true, message: "Water Immersion entry saved successfully" };
+        return { success: true, message: "Water Immersion entry updated" };
 
     } catch (error) {
         await client.query("ROLLBACK");

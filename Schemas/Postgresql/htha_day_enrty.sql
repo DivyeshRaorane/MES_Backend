@@ -1,5 +1,6 @@
 CREATE TABLE htha_day_entry(
     htha_day_entry_id SERIAL PRIMARY KEY,
+    htha_entry_id INT REFERENCES htha_entry(htha_entry_id) ON DELETE CASCADE, 
     bobbin_no VARCHAR(50),
     htha_date DATE,
     htha_day INT,

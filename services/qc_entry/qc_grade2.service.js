@@ -1,6 +1,5 @@
 import pool from "../../db/postgres.js";
 
-// 2. Full list of your parameters to dynamically loop through
 const parametersToCheck = [
   'avg_lsa_atn_1310', 'avg_lsa_atn_1550', 'avg_lsa_atn_1625', 'avg_lsa_atn_1383',
   'max_lsa_atn_1310', 'max_lsa_atn_1550', 'max_lsa_atn_1625', 'max_lsa_atn_1383',
@@ -36,10 +35,33 @@ const parametersToCheck = [
   'm_1T_10mm_1550', 'm_1T_10mm_1310', 'm_1T_10mm_1625'
 ];
 
+// Defined Top/Bottom Mapping Pairs for processing rules
+const topBottomPairs = [
+  { top: 'mfd_1310_top', bottom: 'mfd_1310_bottom' },
+  { top: 'mfd_1550_top', bottom: 'mfd_1550_bottom' },
+  { top: 'cut_off_top', bottom: 'cut_off_bottom' },
+  { top: 'clad_dia_top', bottom: 'clad_dia_bottom' },
+  { top: 'core_clad_concentricity_top', bottom: 'core_clad_concentricity_bottom' },
+  { top: 'clad_ovality_top', bottom: 'clad_ovality_bottom' },
+  { top: 'core_dia_top', bottom: 'core_dia_bottom' },
+  { top: 'core_ovality_top', bottom: 'core_ovality_bottom' },
+  { top: 'primary_coating_dia_top', bottom: 'primary_coating_dia_bottom' },
+  { top: 'secondary_coating_dia_top', bottom: 'secondary_coating_dia_bottom' },
+  { top: 'primary_coating_concentricity_top', bottom: 'primary_coating_concentricity_bottom' },
+  { top: 'secondary_coating_concentricity_top', bottom: 'secondary_coating_concentricity_bottom' },
+  { top: 'coating_ovality_top', bottom: 'coating_ovality_bottom' },
+  { top: 'fiber_curl_top', bottom: 'fiber_curl_bottom' },
+  { top: 'curl_defection_top', bottom: 'curl_defection_bottom' }
+];
+
+// Helper to determine if a specific string parameter represents a Top/Bottom rule group
+function isTopBottomParameter(paramName) {
+  return topBottomPairs.some(pair => pair.top === paramName || pair.bottom === paramName);
+}
+
 // 3. Core Validation Engine Function
 export async function validateBobbinQC(bobbinNo) {
   const client = await pool.connect();
-  
 
   try {
     // A. Fetch the measured data for the bobbin
@@ -51,23 +73,38 @@ export async function validateBobbinQC(bobbinNo) {
     }
 
     const measurement = measurementRes.rows[0];
-    const matcode = measurement.matcode;
+    const productType = measurement.product_type;
+
+    // --- NEW LOGIC: Look for missing bottom data and simulate using top data ---
+    const synchronizedPairsToUpdate = [];
+    
+    for (const pair of topBottomPairs) {
+      const topVal = measurement[pair.top];
+      const bottomVal = measurement[pair.bottom];
+
+      // If bottom value is missing/null, but top value exists, borrow top value for testing
+      if ((bottomVal === null || bottomVal === undefined || bottomVal === '') && 
+          (topVal !== null && topVal !== undefined && topVal !== '')) {
+        measurement[pair.bottom] = topVal; 
+        synchronizedPairsToUpdate.push(pair); // Track this pair to write into DB later if it passes
+      }
+    }
+    // --------------------------------------------------------------------------
 
     // B. Fetch all active specifications for this Matcode, sorted by priority (1 is best/strictest)
     const specsQuery = `
       SELECT * FROM qc_grade 
-      WHERE Matcode = $1 AND Status = true 
+      WHERE product_type = $1 AND Status = true 
       ORDER BY priority ASC;
     `;
-    const specsRes = await client.query(specsQuery, [matcode]);
+    const specsRes = await client.query(specsQuery, [productType]);
 
     if (specsRes.rows.length === 0) {
-      return { status: 'ERROR', message: `No active specification tiers found for Matcode ${matcode}.` };
+      return { status: 'ERROR', message: `No active specification tiers found for Product Type ${productType}.` };
     }
 
     const specificationTiers = specsRes.rows;
     
-    // Track execution metrics for analysis
     let totalChecksPerformed = 0;
     let finalMatchedTier = null;
     let validationFailureLog = null;
@@ -84,38 +121,61 @@ export async function validateBobbinQC(bobbinNo) {
         const minAllowed = parseFloat(tier[`min_${paramName}`]);
         const maxAllowed = parseFloat(tier[`max_${paramName}`]);
 
-        // If either rule bounds are configured as null, skip evaluating that specific ceiling/floor
         const passesMin = isNaN(minAllowed) || measuredValue >= minAllowed;
         const passesMax = isNaN(maxAllowed) || measuredValue <= maxAllowed;
 
         if (!passesMin || !passesMax) {
           tierPassed = false;
           
-          // Log the worst case scenario failure metadata to help track down precisely what broke
+          // Determine advice message based on whether a top/bottom field failed bounds validation
+          const notice = isTopBottomParameter(paramName) ? "Test from Bottom" : "Standard parameter mismatch";
+
           validationFailureLog = {
             grade_checked: tier.grade,
             priority: tier.priority,
             failed_parameter: paramName,
             measured_value: measuredValue,
-            allowed_range: `[${isNaN(minAllowed) ? '-∞' : minAllowed} to ${isNaN(maxAllowed) ? '+∞' : maxAllowed}]`
+            allowed_range: `[${isNaN(minAllowed) ? '-∞' : minAllowed} to ${isNaN(maxAllowed) ? '+∞' : maxAllowed}]`,
+            recommendation: notice
           };
 
-          // EARLY EXIT (Inner Loop): Stop evaluating remaining parameters for this failing tier!
           break;
         }
       }
 
-      // If a tier passes entirely without hitting a single parameter mismatch, we found our optimal tier!
       if (tierPassed) {
         finalMatchedTier = tier;
-        validationFailureLog = null; // Clear old lower priority logs since it found a successful tier
-        // EARLY EXIT (Outer Loop): Stop checking lower quality/priority rules!
+        validationFailureLog = null; 
         break;
       }
     }
 
-    // E. Structure Final Result Payload
+    // E. Structure Final Result Payload & Save Updates
     if (finalMatchedTier) {
+      
+      // --- NEW LOGIC: If passing and values were borrowed, update the table ---
+      if (synchronizedPairsToUpdate.length > 0) {
+        let updateFields = [];
+        let queryParams = [bobbinNo];
+        let placeholderIndex = 2;
+
+        for (const pair of synchronizedPairsToUpdate) {
+          updateFields.push(`${pair.bottom} = $${placeholderIndex}`);
+          queryParams.push(measurement[pair.top]); // Copy top value to bottom placeholder
+          placeholderIndex++;
+        }
+
+        const updateQuery = `
+          UPDATE qc_entry 
+          SET ${updateFields.join(', ')} 
+          WHERE bobbin_no = $1;
+        `;
+        
+        await client.query(updateQuery, queryParams);
+        console.log(`[DB Sync] Successfully copied missing top values into bottom rows for ${bobbinNo}.`);
+      }
+      // --------------------------------------------------------------------------
+
       return {
         status: 'PASSED',
         matched_grade: finalMatchedTier.grade,
@@ -129,7 +189,7 @@ export async function validateBobbinQC(bobbinNo) {
         matched_grade: null,
         matched_priority: null,
         metrics: { total_checks_performed: totalChecksPerformed },
-        failure_details: validationFailureLog // Shows exactly why it failed its last available tier (Priority 4)
+        failure_details: validationFailureLog
       };
     }
 
@@ -137,22 +197,6 @@ export async function validateBobbinQC(bobbinNo) {
     console.error('Validation Script Runtime Exception:', error);
     return { status: 'CRITICAL_ERROR', message: error.message };
   } finally {
-    client.release();
+    await client.end();
   }
 }
-
-// 4. Test Runner Routine execution
-// async function runTests() {
-//   console.log('--- Starting Wide QC Table Automated Boundary Tests --- \n');
-  
-//   const testBobbins = ['B-FAIL-01', 'B-FAIL-02', 'B-FAIL-03', 'B-FAIL-04', 'B-FAIL-05','B-PASS-APLUS','B-PASS-GRADEA','B-PASS-GRADEB','B-PASS-GRADEC'];
-
-//   for (const bobbin of testBobbins) {
-//     console.log(`Evaluating Spool: ${bobbin}...`);
-//     const report = await validateBobbinQC(bobbin);
-//     console.log(JSON.stringify(report, null, 2));
-//     console.log('\n-------------------------------------------------------\n');
-//   }
-// }
-
-//runTests();

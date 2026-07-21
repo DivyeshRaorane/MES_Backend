@@ -8,17 +8,9 @@ export const runAllocationS = async (spec_ids) => {
     );
     const specs = specResult.rows;
 
-    // Load parameters for each spec
-    const paramResult = await pool.query(
-        `SELECT * FROM spec_parameter WHERE spec_id = ANY($1)`,
-        [spec_ids]
-    );
-
-    const paramsBySpec = {};
-    paramResult.rows.forEach(p => {
-        if (!paramsBySpec[p.spec_id]) paramsBySpec[p.spec_id] = [];
-        paramsBySpec[p.spec_id].push(p);
-    });
+    if (specs.length === 0) {
+        throw new Error("No active specifications found for the selected IDs.");
+    }
 
     // Step 2: Get all eligible bobbins
     const ptStrains = [...new Set(specs.map(s => s.pt_strain).filter(Boolean))];
@@ -66,11 +58,29 @@ export const runAllocationS = async (spec_ids) => {
     const allRejected = [];
 
     for (const spec of specs) {
-        const params = paramsBySpec[spec.spec_id] || [];
         const requiredKm = parseFloat(spec.quantity_km) || 0;
         let allocatedKm = 0;
         const specAllocated = [];
 
+        // Dynamically determine which parameters to check from this spec
+        // Only check parameters where BOTH min and max are NOT null (at least one limit defined)
+        const paramsToCheck = [];
+        const specKeys = Object.keys(spec);
+
+        for (const key of specKeys) {
+            if (key.startsWith('min_') && spec[key] !== null) {
+                const paramName = key.slice(4); // remove 'min_'
+                paramsToCheck.push({ paramName, min: parseFloat(spec[key]), max: spec[`max_${paramName}`] !== null ? parseFloat(spec[`max_${paramName}`]) : null });
+            } else if (key.startsWith('max_') && spec[key] !== null) {
+                const paramName = key.slice(4); // remove 'max_'
+                // Only add if not already added by min_ check
+                if (!paramsToCheck.some(p => p.paramName === paramName)) {
+                    paramsToCheck.push({ paramName, min: spec[`min_${paramName}`] !== null ? parseFloat(spec[`min_${paramName}`]) : null, max: parseFloat(spec[key]) });
+                }
+            }
+        }
+
+        // Filter bobbins for this spec
         const eligible = availableBobbins.filter(b => {
             if (allocatedPool.has(b.bobbin_no)) return false;
             if (spec.pt_strain && String(b.pt_strain) !== String(spec.pt_strain)) return false;
@@ -85,34 +95,30 @@ export const runAllocationS = async (spec_ids) => {
             const qcData = qcMap[bobbin.bobbin_no];
             if (!qcData) continue;
 
-            // Validate all parameters
+            // Validate only the parameters that have limits defined in this spec
             let passed = true;
             let failedParam = null;
 
-            for (const param of params) {
-                const qcValue = qcData[param.parameter_name];
-                const minVal = param.min_value !== null ? parseFloat(param.min_value) : null;
-                const maxVal = param.max_value !== null ? parseFloat(param.max_value) : null;
-
-                if (minVal === null && maxVal === null) continue;
+            for (const param of paramsToCheck) {
+                const qcValue = qcData[param.paramName];
 
                 if (qcValue === null || qcValue === undefined) {
                     passed = false;
-                    failedParam = { parameter: param.parameter_name, qc_value: null, min: minVal, max: maxVal, reason: 'QC value is NULL' };
+                    failedParam = { parameter: param.paramName, qc_value: null, min: param.min, max: param.max, reason: 'QC value is NULL' };
                     break;
                 }
 
                 const numVal = parseFloat(qcValue);
 
-                if (minVal !== null && numVal < minVal) {
+                if (param.min !== null && numVal < param.min) {
                     passed = false;
-                    failedParam = { parameter: param.parameter_name, qc_value: numVal, min: minVal, max: maxVal, reason: 'Below minimum' };
+                    failedParam = { parameter: param.paramName, qc_value: numVal, min: param.min, max: param.max, reason: 'Below minimum' };
                     break;
                 }
 
-                if (maxVal !== null && numVal > maxVal) {
+                if (param.max !== null && numVal > param.max) {
                     passed = false;
-                    failedParam = { parameter: param.parameter_name, qc_value: numVal, min: minVal, max: maxVal, reason: 'Exceeds maximum' };
+                    failedParam = { parameter: param.paramName, qc_value: numVal, min: param.min, max: param.max, reason: 'Exceeds maximum' };
                     break;
                 }
             }
@@ -124,11 +130,13 @@ export const runAllocationS = async (spec_ids) => {
                 allAllocated.push({
                     ...bobbin,
                     assigned_spec: spec.cust_spec_name,
+                    spec_id: spec.spec_id,
                     draw_date: bobbin.drawn_date || bobbin.created_at?.toString().split('T')[0],
                 });
             } else {
                 allRejected.push({
                     bobbin_no: bobbin.bobbin_no,
+                    spec_id: spec.spec_id,
                     failed_parameter: failedParam.parameter,
                     qc_value: failedParam.qc_value,
                     spec_min: failedParam.min,
@@ -151,6 +159,7 @@ export const runAllocationS = async (spec_ids) => {
             allocated_km: parseFloat(allocatedKm.toFixed(3)),
             remaining_km: parseFloat(remainingKm.toFixed(3)),
             bobbin_count: specAllocated.length,
+            parameters_checked: paramsToCheck.length,
             status: remainingKm <= 0 ? 'FULLY_ALLOCATED' : allocatedKm > 0 ? 'PARTIALLY_ALLOCATED' : 'WAITING_FOR_PRODUCTION',
         });
     }

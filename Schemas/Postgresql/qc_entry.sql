@@ -172,9 +172,24 @@ CREATE TABLE qc_entry(
    m_1T_10mm_1625 DECIMAL(10,3),
 
    temp_grade VARCHAR(10),
-   final_grade VARCHAR(10)
+   final_grade VARCHAR(10),
+   optical_length DECIMAL(10,3),
+   status VARCHAR(20),
+   reason VARCHAR(20),
+   remark VARCHAR(300),
+   is_rew_done BOOLEAN DEFAULT FALSE,
+   otdr_test_date TIMESTAMP,
+   nc_clause VARCHAR(100),
+   otdr_operator VARCHAR(100),
+   otdr_macine VARCHAR(100)
 
 
+disp_1270_1360 DECIMAL(10,3),
+disp_1460 DECIMAL(10,3),
+disp_1490 DECIMAL(10,3),
 
+slope_1550 DECIMAL(10,3),
+slope_1290 DECIMAL(10,3),
+slope_1490 DECIMAL(10,3)
 
 )

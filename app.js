@@ -59,6 +59,9 @@ import trhEntryRoutes from "./routes/postgress/trh_entry.routes.js"
 import hthaEntryRoutes from "./routes/postgress/htha_entry.routes.js"
 import waterImmersionRoutes from "./routes/postgress/water_immersion.routes.js"
 import acceleratedAgeingRoutes from "./routes/postgress/accelerated_ageing.routes.js"
+import hotWaterEntryRoutes from "./routes/postgress/hot_water_entry.routes.js"
+import dynamicFatigueRoutes from "./routes/postgress/dynamic_fatigue.routes.js"
+import splicingRoutes from "./routes/postgress/splicing.routes.js"
 import specRoutes from "./routes/postgress/spec.routes.js"
 import customerAllocationRoutes from "./routes/postgress/customer_allocation.routes.js"
 
@@ -121,6 +124,9 @@ app.use("/api", trhEntryRoutes)
 app.use("/api", hthaEntryRoutes)
 app.use("/api", waterImmersionRoutes)
 app.use("/api", acceleratedAgeingRoutes)
+app.use("/api", hotWaterEntryRoutes)
+app.use("/api", dynamicFatigueRoutes)
+app.use("/api", splicingRoutes)
 app.use("/api", specRoutes)
 app.use("/api", customerAllocationRoutes)
 

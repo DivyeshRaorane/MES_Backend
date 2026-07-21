@@ -1,5 +1,6 @@
-CREATE TABLE trh_cyce_entry(
+CREATE TABLE trh_cycle_entry(
     trh_cyce_entry_id SERIAL PRIMARY KEY,
+    trh_entry_id INT REFERENCES trh_entry(trh_entry_id) ON DELETE CASCADE,
     bobbin_no VARCHAR(50),
     cycle_no INT,
     temperature INT,

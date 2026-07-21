@@ -6,24 +6,24 @@ export const getAllGradesS = async () => {
 };
 
 export const createGradeS = async (data) => {
-    // Check priority uniqueness per matcode
+    // Check priority uniqueness per product_type
     const priCheck = await pool.query(
-        `SELECT qc_entry_id FROM qc_grade WHERE matcode = $1 AND priority = $2 LIMIT 1`,
-        [data.matcode, data.priority]
+        `SELECT qc_entry_id FROM qc_grade WHERE product_type = $1 AND priority = $2 LIMIT 1`,
+        [data.product_type, data.priority]
     );
 
     if (priCheck.rows.length > 0) {
-        throw new Error(`Priority ${data.priority} already exists for matcode ${data.matcode}.`);
+        throw new Error(`Priority ${data.priority} already exists for product_type ${data.product_type}.`);
     }
 
-    // Check grade uniqueness per matcode
+    // Check grade uniqueness per product_type
     const gradeCheck = await pool.query(
-        `SELECT qc_entry_id FROM qc_grade WHERE matcode = $1 AND grade = $2 LIMIT 1`,
-        [data.matcode, data.grade]
+        `SELECT qc_entry_id FROM qc_grade WHERE product_type = $1 AND grade = $2 LIMIT 1`,
+        [data.product_type, data.grade]
     );
 
     if (gradeCheck.rows.length > 0) {
-        throw new Error(`Grade "${data.grade}" already exists for matcode ${data.matcode}.`);
+        throw new Error(`Grade "${data.grade}" already exists for product_type ${data.product_type}.`);
     }
 
     const keys = Object.keys(data);
@@ -38,11 +38,11 @@ export const createGradeS = async (data) => {
 };
 
 export const updateGradeS = async (qc_entry_id, data) => {
-    // If priority or matcode is being updated, check for duplicates
-    if (data.priority !== undefined || data.matcode !== undefined || data.grade !== undefined) {
+    // If priority or product_type is being updated, check for duplicates
+    if (data.priority !== undefined || data.product_type !== undefined || data.grade !== undefined) {
         // Get current record to fill in missing fields
         const current = await pool.query(
-            `SELECT matcode, priority, grade FROM qc_grade WHERE qc_entry_id = $1`,
+            `SELECT product_type, priority, grade FROM qc_grade WHERE qc_entry_id = $1`,
             [qc_entry_id]
         );
 
@@ -50,26 +50,26 @@ export const updateGradeS = async (qc_entry_id, data) => {
             throw new Error("Grade record not found.");
         }
 
-        const matcode = data.matcode || current.rows[0].matcode;
+        const product_type = data.product_type || current.rows[0].product_type;
         const priority = data.priority !== undefined ? data.priority : current.rows[0].priority;
         const grade = data.grade || current.rows[0].grade;
 
         const priCheck = await pool.query(
-            `SELECT qc_entry_id FROM qc_grade WHERE matcode = $1 AND priority = $2 AND qc_entry_id != $3 LIMIT 1`,
-            [matcode, priority, qc_entry_id]
+            `SELECT qc_entry_id FROM qc_grade WHERE product_type = $1 AND priority = $2 AND qc_entry_id != $3 LIMIT 1`,
+            [product_type, priority, qc_entry_id]
         );
 
         if (priCheck.rows.length > 0) {
-            throw new Error(`Priority ${priority} already exists for matcode ${matcode}.`);
+            throw new Error(`Priority ${priority} already exists for product_type ${product_type}.`);
         }
 
         const gradeCheck = await pool.query(
-            `SELECT qc_entry_id FROM qc_grade WHERE matcode = $1 AND grade = $2 AND qc_entry_id != $3 LIMIT 1`,
-            [matcode, grade, qc_entry_id]
+            `SELECT qc_entry_id FROM qc_grade WHERE product_type = $1 AND grade = $2 AND qc_entry_id != $3 LIMIT 1`,
+            [product_type, grade, qc_entry_id]
         );
 
         if (gradeCheck.rows.length > 0) {
-            throw new Error(`Grade "${grade}" already exists for matcode ${matcode}.`);
+            throw new Error(`Grade "${grade}" already exists for product_type ${product_type}.`);
         }
     }
 

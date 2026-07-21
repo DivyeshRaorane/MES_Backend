@@ -1,17 +1,51 @@
-CREATE TABLE bobbin_entries(
+CREATE TABLE bobbin_entries (
     fid_create_id SERIAL PRIMARY KEY,
-    fid VARCHAR(20) NOT NULL UNIQUE,
-    spool_id VARCHAR(20) NOT NULL,
-    bobbin_no VARCHAR(2) NOT NULL,
-    tower_no INT,
-	pt_machine_no INT,
-    fiber_length DECIMAL(10,2) NOT NULL,
-    drawn_date DATE NOT NULL,
-    pt_date DATE NOT NULL,
-    drawn_length DECIMAL(10,2),
-    operator VARCHAR(50),
-    
+    fid VARCHAR(100) UNIQUE,
+    spool_id VARCHAR(100),
+    bobbin_no VARCHAR(100) UNIQUE,
+    tower_no VARCHAR(50),
+    pt_machine_no VARCHAR(50),
 
-    logged_in_user INT NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    fiber_length DECIMAL(10,3),
+    drawn_date TIMESTAMP,
+    pt_date TIMESTAMP,
+    drawn_length DECIMAL(10,3),
+
+    operator VARCHAR(100),
+    logged_in_user INT,
+
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    is_pv BOOLEAN DEFAULT FALSE,
+
+    preform_type VARCHAR(100),
+    product_type VARCHAR(100),
+
+    spool_fid VARCHAR(100),
+    preform_id VARCHAR(100),
+
+    fiber_type VARCHAR(100),
+    fiber_color VARCHAR(50),
+
+    d2_issue VARCHAR(255),
+    is_d2 BOOLEAN DEFAULT FALSE,
+
+    is_h2 BOOLEAN DEFAULT FALSE,
+    h2_issue VARCHAR(255),
+
+    d2_batch_id VARCHAR(100),
+    h2_batch_id VARCHAR(100),
+
+    temp_grade VARCHAR(20),
+    final_grade VARCHAR(20),
+
+    lock BOOLEAN DEFAULT FALSE,
+
+    is_qc_out BOOLEAN DEFAULT FALSE,
+
+    dispatch_status VARCHAR(20) DEFAULT 'No',
+
+    is_h2_after BOOLEAN DEFAULT FALSE,
+
+    pt_strain VARCHAR(100)
 );

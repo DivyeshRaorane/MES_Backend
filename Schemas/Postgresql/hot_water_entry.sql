@@ -1,5 +1,5 @@
-CREATE TABLE aat_entry (
-  aat_entry_id SERIAL PRIMARY KEY,
+CREATE TABLE hot_water_entry (
+  hot_water_entry_id SERIAL PRIMARY KEY,
   bobbin_no VARCHAR(50),
   format_no VARCHAR(100),
   title VARCHAR(200),
