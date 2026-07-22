@@ -1,5 +1,57 @@
 import pool from "../../db/postgres.js";
 
+// Top/Bottom pairs — if bottom is null but top has value, use top value for comparison
+const topBottomPairs = [
+    { top: 'mfd_1310_top', bottom: 'mfd_1310_bottom' },
+    { top: 'mfd_1550_top', bottom: 'mfd_1550_bottom' },
+    { top: 'cut_off_top', bottom: 'cut_off_bottom' },
+    { top: 'clad_dia_top', bottom: 'clad_dia_bottom' },
+    { top: 'core_clad_concentricity_top', bottom: 'core_clad_concentricity_bottom' },
+    { top: 'clad_ovality_top', bottom: 'clad_ovality_bottom' },
+    { top: 'core_dia_top', bottom: 'core_dia_bottom' },
+    { top: 'core_ovality_top', bottom: 'core_ovality_bottom' },
+    { top: 'primary_coating_dia_top', bottom: 'primary_coating_dia_bottom' },
+    { top: 'secondary_coating_dia_top', bottom: 'secondary_coating_dia_bottom' },
+    { top: 'primary_coating_concentricity_top', bottom: 'primary_coating_concentricity_bottom' },
+    { top: 'secondary_coating_concentricity_top', bottom: 'secondary_coating_concentricity_bottom' },
+    { top: 'coating_ovality_top', bottom: 'coating_ovality_bottom' },
+    { top: 'fiber_curl_top', bottom: 'fiber_curl_bottom' },
+    { top: 'curl_defection_top', bottom: 'curl_defection_bottom' }
+];
+
+// Apply top/bottom copy logic to QC data
+function applyTopBottomCopy(qcData) {
+    for (const pair of topBottomPairs) {
+        const topVal = qcData[pair.top];
+        const bottomVal = qcData[pair.bottom];
+        if ((bottomVal === null || bottomVal === undefined || bottomVal === '') &&
+            (topVal !== null && topVal !== undefined && topVal !== '')) {
+            qcData[pair.bottom] = topVal;
+        }
+    }
+    return qcData;
+}
+
+// Fixed list of parameters to check (same as qc_grade engine)
+const parametersToCheck = [
+  'avg_lsa_atn_1310', 'avg_lsa_atn_1550', 'avg_lsa_atn_1625', 'avg_lsa_atn_1383',
+  'spec_1285_1330' , 'mfd_1310_top', 'mfd_1310_bottom', 'mfd_1550_top', 'mfd_1550_bottom',
+  'cut_off_top', 'cut_off_bottom', 'core_clad_concentricity_top', 'core_clad_concentricity_bottom',
+  'clad_ovality_top', 'clad_ovality_bottom', 'core_ovality_top', 'core_ovality_bottom',
+   'clad_dia_top', 'clad_dia_bottom', 'primary_coating_dia_top', 'primary_coating_dia_bottom',
+   'secondary_coating_dia_top', 'secondary_coating_dia_bottom', 'primary_coating_concentricity_top', 'primary_coating_concentricity_bottom',
+   'secondary_coating_concentricity_top', 'secondary_coating_concentricity_bottom', 'coating_ovality_top', 'coating_ovality_bottom',
+   'fiber_curl_top', 'fiber_curl_bottom', 'zero_disp_wave', 'slope_zero_disp', 
+   'disp_1550', 'disp_1285_1330', 'disp_1270_1360', 'pmd_1310', 
+   'pmd_1550', 'disp_1575', 'disp_1460', 'disp_1490', 
+   'spike_1310_size', 'spike_1550_size', 'cable_cut_off', 'disp_1625', 
+   'disp_1570', 'slope_1550', 'slope_1290', 'slope_1490',
+   'm_1T_10mm_1550', 'm_1T_10mm_1625', 'm_1T_15mm_1550', 'm_1T_15mm_1625',
+   'm_1T_20mm_1550', 'm_1T_20mm_1625', 'm_10T_30mm_1550', 'm_10T_30mm_1625',
+   'm_1T_32mm_1550', 'm_1T_32mm_1625', 'm_100T_50mm_1550', 'm_100T_50mm_1310', 
+   'm_100T_50mm_1625', 'm_100T_60mm_1550', 'm_100T_60mm_1625',
+]
+
 export const runAllocationS = async (spec_ids) => {
     // Step 1: Load selected specs sorted by priority
     const specResult = await pool.query(
@@ -13,7 +65,13 @@ export const runAllocationS = async (spec_ids) => {
     }
 
     // Step 2: Get all eligible bobbins
-    const ptStrains = [...new Set(specs.map(s => s.pt_strain).filter(Boolean))];
+    const ptStrains = [
+    ...new Set(
+        specs
+            .map(s => parseInt(s.pt_strain, 10))
+            .filter(n => !isNaN(n))
+    )
+];
     const productTypes = [...new Set(specs.map(s => s.product_type).filter(Boolean))];
 
     let bobbinQuery = `
@@ -27,7 +85,7 @@ export const runAllocationS = async (spec_ids) => {
 
     if (ptStrains.length > 0) {
         queryParams.push(ptStrains);
-        bobbinQuery += ` AND be.pt_strain = ANY($${queryParams.length})`;
+        bobbinQuery += ` AND be.pt_strain = ANY($${queryParams.length}::int[])`;
     }
     if (productTypes.length > 0) {
         queryParams.push(productTypes);
@@ -36,8 +94,11 @@ export const runAllocationS = async (spec_ids) => {
 
     bobbinQuery += ` ORDER BY be.created_at ASC`;
 
+
     const bobbinResult = await pool.query(bobbinQuery, queryParams);
     const availableBobbins = bobbinResult.rows;
+
+    
 
     // Step 3: Load QC data for all eligible bobbins
     const bobbinNos = availableBobbins.map(b => b.bobbin_no);
@@ -63,20 +124,17 @@ export const runAllocationS = async (spec_ids) => {
         const specAllocated = [];
 
         // Dynamically determine which parameters to check from this spec
-        // Only check parameters where BOTH min and max are NOT null (at least one limit defined)
+        // Only check parameters that are in parametersToCheck AND have at least one limit defined
         const paramsToCheck = [];
-        const specKeys = Object.keys(spec);
 
-        for (const key of specKeys) {
-            if (key.startsWith('min_') && spec[key] !== null) {
-                const paramName = key.slice(4); // remove 'min_'
-                paramsToCheck.push({ paramName, min: parseFloat(spec[key]), max: spec[`max_${paramName}`] !== null ? parseFloat(spec[`max_${paramName}`]) : null });
-            } else if (key.startsWith('max_') && spec[key] !== null) {
-                const paramName = key.slice(4); // remove 'max_'
-                // Only add if not already added by min_ check
-                if (!paramsToCheck.some(p => p.paramName === paramName)) {
-                    paramsToCheck.push({ paramName, min: spec[`min_${paramName}`] !== null ? parseFloat(spec[`min_${paramName}`]) : null, max: parseFloat(spec[key]) });
-                }
+        for (const paramName of parametersToCheck) {
+            const minVal = spec[`min_${paramName}`];
+            const maxVal = spec[`max_${paramName}`];
+
+            if (minVal !== null && minVal !== undefined) {
+                paramsToCheck.push({ paramName, min: parseFloat(minVal), max: maxVal !== null && maxVal !== undefined ? parseFloat(maxVal) : null });
+            } else if (maxVal !== null && maxVal !== undefined) {
+                paramsToCheck.push({ paramName, min: null, max: parseFloat(maxVal) });
             }
         }
 
@@ -94,6 +152,9 @@ export const runAllocationS = async (spec_ids) => {
 
             const qcData = qcMap[bobbin.bobbin_no];
             if (!qcData) continue;
+
+            // Apply top/bottom copy (same as qc_grade engine)
+            applyTopBottomCopy(qcData);
 
             // Validate only the parameters that have limits defined in this spec
             let passed = true;

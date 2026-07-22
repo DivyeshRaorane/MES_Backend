@@ -1,5 +1,8 @@
 import pool from "../../db/postgres.js";
 
+// 2. Full list of parameters to dynamically loop through
+
+
 const parametersToCheck = [
   'avg_lsa_atn_1310', 'avg_lsa_atn_1550', 'avg_lsa_atn_1625', 'avg_lsa_atn_1383',
   'spec_1285_1330' , 'mfd_1310_top', 'mfd_1310_bottom', 'mfd_1550_top', 'mfd_1550_bottom',
@@ -19,6 +22,7 @@ const parametersToCheck = [
    'm_100T_50mm_1625', 'm_100T_60mm_1550', 'm_100T_60mm_1625',
 ]
 
+
 const parametersToCheck1 = [
   'avg_lsa_atn_1310', 'avg_lsa_atn_1550', 'avg_lsa_atn_1625', 'avg_lsa_atn_1383',
   'max_lsa_atn_1310', 'max_lsa_atn_1550', 'max_lsa_atn_1625', 'max_lsa_atn_1383',
@@ -33,6 +37,7 @@ const parametersToCheck1 = [
   'mfd_uniformity_1310', 'mfd_uniformity_1550', 'mfd_uniformity_1625', 'mfd_uniformity_1383',
   'step_1310_size', 'step_1550_size', 'step_1625_size', 'step_1383_size',
   'spike_1310_size', 'spike_1550_size', 'spike_1625_size', 'spike_1383_size',
+  'spec_1310', 'spec_1550', 'spec_1285_1330',
   'mfd_1310_top', 'mfd_1310_bottom', 'mfd_1550_top', 'mfd_1550_bottom',
   'effective_area_1310', 'effective_area_1550',
   'cut_off_top', 'cut_off_bottom', 'cable_cut_off', 'mac_value',
@@ -43,8 +48,7 @@ const parametersToCheck1 = [
   'secondary_coating_concentricity_top', 'secondary_coating_concentricity_bottom', 'coating_ovality_top', 'coating_ovality_bottom',
   'fiber_curl_top', 'fiber_curl_bottom', 'curl_defection_top', 'curl_defection_bottom',
   'zero_disp_wave', 'slope_zero_disp', 'disp_1550', 'disp_1285_1330', 'disp_1270_1340', 'disp_1575',
-  'cd_1460', 'disp_1625', 'disp_1570', 'disp_1260','disp_1460', 'disp_1490', 'pmd_1310', 'disp_1270_1360', 'pmd_1550', 
-  'disp_slope', 'slope_1550', 'slope_1290', 'slope_1490',
+  'cd_1460', 'disp_1625', 'disp_1570', 'disp_1260', 'pmd_1310', 'pmd_1550', 'disp_slope',
   'm_100T_50mm_1550', 'm_100T_50mm_1310', 'm_100T_50mm_1625',
   'm_100T_60mm_1550', 'm_100T_60mm_1310', 'm_100T_60mm_1625',
   'm_1T_32mm_1550', 'm_1T_32mm_1310', 'm_1T_32mm_1625',
@@ -92,53 +96,67 @@ export async function validateBobbinQC(bobbinNo) {
     }
 
     const measurement = measurementRes.rows[0];
-    const productType = measurement.product_type;
+    const product_type = measurement.product_type;
 
-    // --- VALIDATION: Check if mandatory parameters have NULL values ---
-    const nullParams = parametersToCheck.filter(param => {
-      const val = measurement[param];
-      return val === null || val === undefined || val === '';
-    });
+    // --- NEW LOGIC: Look for missing top/bottom data and copy from whichever side is present ---
+    const synchronizedPairsToUpdate = []; // now stores { field, value } to write back to DB
 
-    if (nullParams.length > 0) {
-      return {
-        status: 'ERROR',
-        message: `Grading cannot proceed. ${nullParams.length} mandatory parameter(s) have no data.`,
-        missing_parameters: nullParams
-      };
-    }
-    // -----------------------------------------------------------------
+    const isEmpty = (v) => (v === null || v === undefined || v === '');
 
-    // --- NEW LOGIC: Look for missing bottom data and simulate using top data ---
-    const synchronizedPairsToUpdate = [];
-    
     for (const pair of topBottomPairs) {
       const topVal = measurement[pair.top];
       const bottomVal = measurement[pair.bottom];
 
       // If bottom value is missing/null, but top value exists, borrow top value for testing
-      if ((bottomVal === null || bottomVal === undefined || bottomVal === '') && 
-          (topVal !== null && topVal !== undefined && topVal !== '')) {
-        measurement[pair.bottom] = topVal; 
-        synchronizedPairsToUpdate.push(pair); // Track this pair to write into DB later if it passes
+      if (isEmpty(bottomVal) && !isEmpty(topVal)) {
+        measurement[pair.bottom] = topVal;
+        synchronizedPairsToUpdate.push({ field: pair.bottom, value: topVal });
+      }
+      // If top value is missing/null, but bottom value exists, borrow bottom value for testing
+      else if (isEmpty(topVal) && !isEmpty(bottomVal)) {
+        measurement[pair.top] = bottomVal;
+        synchronizedPairsToUpdate.push({ field: pair.top, value: bottomVal });
       }
     }
     // --------------------------------------------------------------------------
 
-    // B. Fetch all active specifications for this Matcode, sorted by priority (1 is best/strictest)
+    // B. Fetch all active specifications for this product_type, sorted by priority (1 is best/strictest)
     const specsQuery = `
       SELECT * FROM qc_grade 
       WHERE product_type = $1 AND Status = true 
       ORDER BY priority ASC;
     `;
-    const specsRes = await client.query(specsQuery, [productType]);
+    const specsRes = await client.query(specsQuery, [product_type]);
 
     if (specsRes.rows.length === 0) {
-      return { status: 'ERROR', message: `No active specification tiers found for Product Type ${productType}.` };
+      return { status: 'ERROR', message: `No active specification tiers found for product_type ${product_type}.` };
     }
 
     const specificationTiers = specsRes.rows;
-    
+
+    // --- NEW LOGIC: Determine which parameters are still null/missing AFTER top-bottom sync.
+    // If ANY parameter is missing, we do NOT enter the grade-check loop at all for ANY tier -
+    // we just report back which parameters are missing so the operator knows what to test. ---
+    const missingParameters = [];
+    for (const paramName of parametersToCheck) {
+      const rawValue = measurement[paramName];
+      if (rawValue === null || rawValue === undefined || rawValue === '') {
+        missingParameters.push(paramName);
+      }
+    }
+
+    if (missingParameters.length > 0) {
+      return {
+        status: 'MISSING_DATA',
+        matched_grade: null,
+        matched_priority: null,
+        metrics: { total_checks_performed: 0 },
+        missing_parameters: missingParameters, // params null/missing after top-bottom sync - no grade check was run
+        failure_details: null
+      };
+    }
+    // --------------------------------------------------------------------------
+
     let totalChecksPerformed = 0;
     let finalMatchedTier = null;
     let validationFailureLog = null;
@@ -149,6 +167,7 @@ export async function validateBobbinQC(bobbinNo) {
 
       // D. INNER LOOP: Check every single parameter against this tier's rules
       for (const paramName of parametersToCheck) {
+
         totalChecksPerformed++;
 
         const measuredValue = parseFloat(measurement[paramName]);
@@ -179,7 +198,7 @@ export async function validateBobbinQC(bobbinNo) {
 
       if (tierPassed) {
         finalMatchedTier = tier;
-        validationFailureLog = null; 
+        validationFailureLog = null;
         break;
       }
     }
@@ -193,9 +212,9 @@ export async function validateBobbinQC(bobbinNo) {
         let queryParams = [bobbinNo];
         let placeholderIndex = 2;
 
-        for (const pair of synchronizedPairsToUpdate) {
-          updateFields.push(`${pair.bottom} = $${placeholderIndex}`);
-          queryParams.push(measurement[pair.top]); // Copy top value to bottom placeholder
+        for (const item of synchronizedPairsToUpdate) {
+          updateFields.push(`${item.field} = $${placeholderIndex}`);
+          queryParams.push(item.value);
           placeholderIndex++;
         }
 
@@ -215,6 +234,7 @@ export async function validateBobbinQC(bobbinNo) {
         matched_grade: finalMatchedTier.grade,
         matched_priority: finalMatchedTier.priority,
         metrics: { total_checks_performed: totalChecksPerformed },
+        missing_parameters: missingParameters, // NEW: params null/missing after top-bottom sync, excluded from grade check
         failure_details: null
       };
     } else {
@@ -223,6 +243,7 @@ export async function validateBobbinQC(bobbinNo) {
         matched_grade: null,
         matched_priority: null,
         metrics: { total_checks_performed: totalChecksPerformed },
+        missing_parameters: missingParameters, // NEW: params null/missing after top-bottom sync, excluded from grade check
         failure_details: validationFailureLog
       };
     }
@@ -231,6 +252,22 @@ export async function validateBobbinQC(bobbinNo) {
     console.error('Validation Script Runtime Exception:', error);
     return { status: 'CRITICAL_ERROR', message: error.message };
   } finally {
-    client.release();
+    await client.end();
   }
 }
+
+// 4. Test Runner Routine execution
+//async function runTests() {
+//  console.log('--- Starting Wide QC Table Dynamic Top/Bottom Sync Tests --- \n');
+//  
+//  const testBobbins = ['B-FAIL-01', 'B-FAIL-02', 'B-FAIL-03', 'B-FAIL-04', 'B-FAIL-05','B-PASS-APLUS','B-PASS-GRADEA','B-PASS-GRADEB','B-PASS-GRADEC'];
+//
+//  for (const bobbin of testBobbins) {
+//    console.log(`Evaluating Spool: ${bobbin}...`);
+//    const report = await validateBobbinQC(bobbin);
+//    console.log(JSON.stringify(report, null, 2));
+//    console.log('\n-------------------------------------------------------\n');
+//  }
+//}
+//
+//runTests();
