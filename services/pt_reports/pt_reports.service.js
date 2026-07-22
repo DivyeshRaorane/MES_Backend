@@ -87,12 +87,16 @@ export const getRewindingReportS = async (filters) => {
     let query = `SELECT * FROM rewinding_entry WHERE 1=1`;
     const params = [];
 
+    
     if (date_from) { params.push(date_from); query += ` AND created_at::date >= $${params.length}`; }
     if (date_to) { params.push(date_to); query += ` AND created_at::date <= $${params.length}`; }
     if (spool_id) { params.push(`%${spool_id}%`); query += ` AND (bobbin_no ILIKE $${params.length} OR parent_bobbin_no ILIKE $${params.length})`; }
 
-    query += ` ORDER BY rewinding_entry_id DESC LIMIT 1000`;
+    query += ` ORDER BY rewinding_id DESC LIMIT 1000`;
+    console.log(typeof query);
+console.log("Filter",query, params)
 
     const result = await pool.query(query, params);
+    
     return result.rows;
 };

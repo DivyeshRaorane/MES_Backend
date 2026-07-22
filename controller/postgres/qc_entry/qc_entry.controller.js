@@ -1,4 +1,4 @@
-import { fetchBobbinQcS, checkProcessCompletionS, submitQcEntryS } from "../../../services/qc_entry/qc_entry.service.js";
+import { fetchBobbinQcS, checkProcessCompletionS, submitQcEntryS, updateMissingValuesS } from "../../../services/qc_entry/qc_entry.service.js";
 import { validateBobbinQC } from "../../../services/qc_entry/qc_grade.service.js";
 
 export const fetchBobbinQcC = async (req, res) => {
@@ -54,6 +54,24 @@ export const submitQcEntryC = async (req, res) => {
         res.status(201).json(result);
     } catch (error) {
         console.error("QC Entry Error:", error.message);
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+export const updateMissingValuesC = async (req, res) => {
+    try {
+        const { bobbin_no, values } = req.body;
+
+        if (!bobbin_no) {
+            return res.status(400).json({ success: false, message: "bobbin_no is required" });
+        }
+        if (!values || typeof values !== 'object' || Object.keys(values).length === 0) {
+            return res.status(400).json({ success: false, message: "No values provided" });
+        }
+
+        const result = await updateMissingValuesS(bobbin_no, values);
+        res.status(200).json(result);
+    } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
 };

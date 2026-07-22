@@ -16,10 +16,10 @@ const parametersToCheck = [
    'pmd_1550', 'disp_1575', 'disp_1460', 'disp_1490', 
    'spike_1310_size', 'spike_1550_size', 'cable_cut_off', 'disp_1625', 
    'disp_1570', 'slope_1550', 'slope_1290', 'slope_1490',
-   'm_1T_10mm_1550', 'm_1T_10mm_1625', 'm_1T_15mm_1550', 'm_1T_15mm_1625',
-   'm_1T_20mm_1550', 'm_1T_20mm_1625', 'm_10T_30mm_1550', 'm_10T_30mm_1625',
-   'm_1T_32mm_1550', 'm_1T_32mm_1625', 'm_100T_50mm_1550', 'm_100T_50mm_1310', 
-   'm_100T_50mm_1625', 'm_100T_60mm_1550', 'm_100T_60mm_1625',
+   'm_1t_10mm_1550', 'm_1t_10mm_1625', 'm_1t_15mm_1550', 'm_1t_15mm_1625',
+   'm_1t_20mm_1550', 'm_1t_20mm_1625', 'm_10t_30mm_1550', 'm_10t_30mm_1625',
+   'm_1t_32mm_1550', 'm_1t_32mm_1625', 'm_100t_50mm_1550', 'm_100t_50mm_1310', 
+   'm_100t_50mm_1625', 'm_100t_60mm_1550', 'm_100t_60mm_1625',
 ]
 
 
@@ -144,6 +144,8 @@ export async function validateBobbinQC(bobbinNo) {
         missingParameters.push(paramName);
       }
     }
+
+    console.log("Missing PAra", missingParameters)
 
     if (missingParameters.length > 0) {
       return {

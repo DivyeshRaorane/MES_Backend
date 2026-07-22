@@ -63,6 +63,7 @@ import hotWaterEntryRoutes from "./routes/postgress/hot_water_entry.routes.js"
 import dynamicFatigueRoutes from "./routes/postgress/dynamic_fatigue.routes.js"
 import splicingRoutes from "./routes/postgress/splicing.routes.js"
 import ptReportsRoutes from "./routes/postgress/pt_reports.routes.js"
+import qualityReportsRoutes from "./routes/postgress/quality_reports.routes.js"
 import specRoutes from "./routes/postgress/spec.routes.js"
 import customerAllocationRoutes from "./routes/postgress/customer_allocation.routes.js"
 
@@ -129,6 +130,7 @@ app.use("/api", hotWaterEntryRoutes)
 app.use("/api", dynamicFatigueRoutes)
 app.use("/api", splicingRoutes)
 app.use("/api", ptReportsRoutes)
+app.use("/api", qualityReportsRoutes)
 app.use("/api", specRoutes)
 app.use("/api", customerAllocationRoutes)
 

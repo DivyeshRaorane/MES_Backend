@@ -121,29 +121,6 @@ export const exportPtReportC = async (req, res) => {
                     'Machine No', 'Rew Reason', 'Rew Type', 'Bobbin Type', 'Operator',
                     'Bobbin Colour', 'Remark'];
                 break;
-            case 'coloring':
-            case 'colouring':
-                title = 'Coloring Entry Report';
-                data = await getColoringReportS(filters);
-                columns = ['Bobbin No', 'Original Color', 'Current Color', 'Color Batch Code',
-                    'Fiber Length', 'Is Scrap', 'Machine No', 'FID', 'Bobbin Type',
-                    'Operator', 'Bobbin Colour', 'Remark', 'Entry Date'];
-                break;
-            case 'rewinding':
-                title = 'Rewinding Entry Report';
-                data = await getRewindingReportS(filters);
-                columns = ['Parent Bobbin', 'Bobbin No', 'Fiber Length', 'Is Scrap', 'FID',
-                    'Machine No', 'Rew Reason', 'Rew Type', 'Bobbin Type', 'Operator',
-                    'Bobbin Color', 'Remark'];
-                break;
-            case 'coloring':
-            case 'colouring':
-                title = 'Coloring Entry Report';
-                data = await getColoringReportS(filters);
-                columns = ['Bobbin No', 'Original Color', 'Current Color', 'Color Batch Code',
-                    'Fiber Length', 'Is Scrap', 'Machine No', 'FID', 'Bobbin Type',
-                    'Operator', 'Bobbin Colour', 'Remark', 'Entry Date'];
-                break;
             default:
                 return res.status(400).json({ success: false, message: 'Invalid report type' });
         }
