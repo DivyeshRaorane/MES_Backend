@@ -2,7 +2,7 @@ import pool from "../../db/postgres.js";
 
 export const createBobbinColorS = async(payload)=>{
     const {bobbin_color_name} = payload;
-console.log("Bobbin color", payload)
+
     const query = `
     INSERT INTO bobbin_color (bobbin_color_name)
     VALUES ($1)

@@ -64,12 +64,13 @@ export const ptEntryS = async (payload) => {
                 doc,
                 doc_id,
                 is_break,
-                logged_in_user
+                logged_in_user,
+                pt_flaw_remark
             )
             VALUES (
                 $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,
                 $11,$12,$13,$14,$15,$16,$17,$18,$19,$20,
-                $21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31
+                $21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32
             )
             RETURNING *;
         `;
@@ -109,6 +110,7 @@ export const ptEntryS = async (payload) => {
             payload.doc_id || null,
             payload.pt_break || false,
             payload.logged_in_user,
+            payload.pt_flaw_remark || null,
         ];
 
         const ptResult = await client.query(ptEntryQuery, values);
@@ -270,21 +272,44 @@ export const ptEntryS = async (payload) => {
             );
         }
 
-        if (
-    payload.active_rejection_type === "rejection" &&
-    payload.pt_flaws?.length > 0
-) {
-    const flawId = payload.pt_flaws[0].pt_flaw_id;
+        //-------------------------
+        // Flaw Booking & Missed Logic
+        //-------------------------
 
-    await client.query(
-        `
-        UPDATE pt_flaw_details
-        SET is_done = true
-        WHERE pt_flaw_id = $1
-        `,
-        [flawId]
-    );
-}
+        // Step 1: Mark missed flaws (runs for ALL entry types)
+        if (Array.isArray(payload.missed_flaws) && payload.missed_flaws.length > 0) {
+            for (const mf of payload.missed_flaws) {
+                await client.query(
+                    `UPDATE pt_flaw_details SET status = 'MISSED', is_done = FALSE
+                     WHERE pt_flaw_id = $1 AND is_done = FALSE AND status != 'MISSED'`,
+                    [mf.pt_flaw_id]
+                );
+            }
+        }
+
+        // Step 2: Book flaw — ONLY when active_rejection_type === 'rejection'
+        if (payload.active_rejection_type === 'rejection' && payload.booked_flaw && payload.booked_flaw.pt_flaw_id) {
+            await client.query(
+                `UPDATE pt_flaw_details SET status = 'BOOKED', is_done = TRUE
+                 WHERE pt_flaw_id = $1 AND is_done = FALSE`,
+                [payload.booked_flaw.pt_flaw_id]
+            );
+        }
+
+        // Step 3: Auto-mark any additional missed flaws after this entry
+        const ptDoneResult = await client.query(
+            `SELECT COALESCE(SUM(pt_length::numeric), 0) as total_done FROM pt_entry WHERE spool_id = $1`,
+            [payload.spool_id]
+        );
+        const totalPtDone = parseFloat(ptDoneResult.rows[0].total_done) || 0;
+
+        await client.query(
+            `UPDATE pt_flaw_details SET status = 'MISSED'
+             WHERE spool_id = $1 AND is_done = FALSE AND status = 'PENDING'
+             AND ($2::numeric > (pos1::numeric + 2.1))`,
+            [payload.spool_id, totalPtDone]
+        );
+
         //-------------------------
         // Enhancement: start/end length, is_first, is_last, rejections
         //-------------------------
@@ -487,10 +512,11 @@ export const getSpoolDetailsForPtEntryS = async(spool_id)=>{
 
 export const getPTFlawsS = async(spool_id)=>{
     const query = `
-    SELECT * FROM pt_flaw_details
+    SELECT pt_flaw_id, spool_id, reason, pos1, pos2, defect_length, actual_cutting,
+           is_booked, is_done, status, flaw_remark
+    FROM pt_flaw_details
     WHERE spool_id = $1
-    AND is_done = false
-    ORDER BY pt_flaw_id ASC;
+    ORDER BY pos1 ASC;
     `;
 
     const result = await pool.query(query,[spool_id]);
