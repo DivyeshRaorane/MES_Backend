@@ -2,7 +2,7 @@ import pool from "../../db/postgres.js";
 
 export const getByBobbinNoS = async (bobbin_no) => {
     const result = await pool.query(
-        `SELECT spool_code_tu, set_length, real_length
+        `SELECT spool_code_tu, set_length, real_length, machine_stop_reason_t
          FROM pt_machine_logs
          WHERE spool_code_tu = $1
          ORDER BY processed_at DESC

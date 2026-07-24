@@ -107,11 +107,23 @@ export const ptEntryS = async (payload) => {
             payload.ztmd_id || null,
             rejectionFlags.doc,
             payload.doc_id || null,
-            payload.is_break || false,
+            payload.pt_break || false,
             payload.logged_in_user,
         ];
 
         const ptResult = await client.query(ptEntryQuery, values);
+
+
+        if (payload.pt_break === true) {
+    const updateBreakCountQuery = `
+        UPDATE draw_entry
+        SET pt_break_count = COALESCE(pt_break_count, 0) + 1
+        WHERE spool_id = $1
+        RETURNING pt_break_count;
+    `;
+
+    await client.query(updateBreakCountQuery, [payload.spool_id]);
+}
 
         //-------------------------
         // Update Material Stock
