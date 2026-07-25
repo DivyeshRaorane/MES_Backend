@@ -67,6 +67,7 @@ import qualityReportsRoutes from "./routes/postgress/quality_reports.routes.js"
 import adminMaterialProcessRoutes from "./routes/postgress/admin_material_process.routes.js"
 import specRoutes from "./routes/postgress/spec.routes.js"
 import customerAllocationRoutes from "./routes/postgress/customer_allocation.routes.js"
+import gradeMandatoryRoutes from "./routes/postgress/grade_mandatory.routes.js"
 
 
 const app = express();
@@ -135,6 +136,7 @@ app.use("/api", qualityReportsRoutes)
 app.use("/api", adminMaterialProcessRoutes)
 app.use("/api", specRoutes)
 app.use("/api", customerAllocationRoutes)
+app.use("/api", gradeMandatoryRoutes)
 
 app.use("/api", towerDataRoutes)
 

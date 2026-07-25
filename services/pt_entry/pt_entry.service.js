@@ -65,12 +65,13 @@ export const ptEntryS = async (payload) => {
                 doc_id,
                 is_break,
                 logged_in_user,
-                pt_flaw_remark
+                pt_flaw_remark,
+                a_cut_flaw
             )
             VALUES (
                 $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,
                 $11,$12,$13,$14,$15,$16,$17,$18,$19,$20,
-                $21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32
+                $21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33
             )
             RETURNING *;
         `;
@@ -111,6 +112,7 @@ export const ptEntryS = async (payload) => {
             payload.pt_break || false,
             payload.logged_in_user,
             payload.pt_flaw_remark || null,
+            payload.a_cut_flaw || null,
         ];
 
         const ptResult = await client.query(ptEntryQuery, values);

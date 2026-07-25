@@ -3,7 +3,7 @@ import pool from "../../db/postgres.js";
 // 2. Full list of parameters to dynamically loop through
 
 
-const parametersToCheck = [
+const parametersToCheck2 = [
   'avg_lsa_atn_1310', 'avg_lsa_atn_1550', 'avg_lsa_atn_1625', 'avg_lsa_atn_1383',
   'spec_1285_1330' , 'mfd_1310_top', 'mfd_1310_bottom', 'mfd_1550_top', 'mfd_1550_bottom',
   'cut_off_top', 'cut_off_bottom', 'core_clad_concentricity_top', 'core_clad_concentricity_bottom',
@@ -97,6 +97,13 @@ export async function validateBobbinQC(bobbinNo) {
 
     const measurement = measurementRes.rows[0];
     const product_type = measurement.product_type;
+    const parametersToCheckQuery = `Select mandatory_params from grade_mandatory where product_type = $1;`;
+    const parametersToCheckRes = await client.query(parametersToCheckQuery, [product_type])
+
+    const parametersToCheck = parametersToCheckRes.rows[0]?.mandatory_params
+    ?.split(',')
+    .map(param =>param.trim()) || [];
+
 
     // --- NEW LOGIC: Look for missing top/bottom data and copy from whichever side is present ---
     const synchronizedPairsToUpdate = []; // now stores { field, value } to write back to DB
@@ -145,7 +152,7 @@ export async function validateBobbinQC(bobbinNo) {
       }
     }
 
-    console.log("Missing PAra", missingParameters)
+    
 
     if (missingParameters.length > 0) {
       return {
@@ -227,7 +234,7 @@ export async function validateBobbinQC(bobbinNo) {
         `;
         
         await client.query(updateQuery, queryParams);
-        console.log(`[DB Sync] Successfully copied missing top values into bottom rows for ${bobbinNo}.`);
+        
       }
       // --------------------------------------------------------------------------
 
