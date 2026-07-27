@@ -1,5 +1,6 @@
 import { fetchBobbinQcS, checkProcessCompletionS, submitQcEntryS, updateMissingValuesS } from "../../../services/qc_entry/qc_entry.service.js";
 import { validateBobbinQC } from "../../../services/qc_entry/qc_grade.service.js";
+import { mbendCopyS } from "../../../services/qc_entry/mbend_copy.service.js";
 
 export const fetchBobbinQcC = async (req, res) => {
     try {
@@ -73,5 +74,26 @@ export const updateMissingValuesC = async (req, res) => {
         res.status(200).json(result);
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+export const mbendCopyC = async (req, res) => {
+    try {
+        const { bobbin_no } = req.body;
+
+        if (!bobbin_no) {
+            return res.status(400).json({ success: false, message: "bobbin_no required" });
+        }
+
+        const result = await mbendCopyS(bobbin_no);
+
+        if (!result.success) {
+            return res.status(200).json(result);
+        }
+
+        return res.status(200).json(result);
+    } catch (error) {
+        console.error('[MBEnd] Error:', error);
+        return res.status(500).json({ success: false, message: "MBEnd copy failed", error: error.message });
     }
 };

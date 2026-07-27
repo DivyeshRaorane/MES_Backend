@@ -66,12 +66,16 @@ export const ptEntryS = async (payload) => {
                 is_break,
                 logged_in_user,
                 pt_flaw_remark,
-                a_cut_flaw
+                a_cut_flaw,
+                no,
+                full_check,
+                is_sample,
+                full_mbend
             )
             VALUES (
                 $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,
                 $11,$12,$13,$14,$15,$16,$17,$18,$19,$20,
-                $21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33
+                $21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37
             )
             RETURNING *;
         `;
@@ -113,6 +117,10 @@ export const ptEntryS = async (payload) => {
             payload.logged_in_user,
             payload.pt_flaw_remark || null,
             payload.a_cut_flaw || null,
+            payload.no || null,
+            payload.full_check ?? false,
+            payload.is_sample ?? false,
+            payload.full_mbend ?? false,
         ];
 
         const ptResult = await client.query(ptEntryQuery, values);
@@ -154,8 +162,8 @@ export const ptEntryS = async (payload) => {
             if (stockResult.rowCount === 0) {
                 throw new Error("Material stock not found.");
             }
-        } else {
-            // No FID: only update balance_qty
+        } else if (!payload.active_rejection_type) {
+            // No FID and no rejection type: only update balance_qty
             const stockResult = await client.query(
                 `
                 UPDATE mat_stock
@@ -370,7 +378,7 @@ export const ptEntryS = async (payload) => {
 
             if (lastFid) {
                 await client.query(
-                    `UPDATE pt_entry SET before_rejection = $1 WHERE spool_id = $2 AND fid = $3 AND before_rejection IS NULL`,
+                    `UPDATE pt_entry SET before_rejection = $1, full_check = TRUE WHERE spool_id = $2 AND fid = $3 AND before_rejection IS NULL`,
                     [rejectionType, payload.spool_id, lastFid]
                 );
             }
@@ -392,9 +400,9 @@ export const ptEntryS = async (payload) => {
             const pendingRej = matStockPending.rows[0]?.pending_after_rejection;
 
             if (pendingRej) {
-                // Mark THIS entry with after_rejection
+                // Mark THIS entry with after_rejection and force full_check
                 await client.query(
-                    `UPDATE pt_entry SET after_rejection = $1 WHERE pt_entry_id = $2`,
+                    `UPDATE pt_entry SET after_rejection = $1, full_check = TRUE WHERE pt_entry_id = $2`,
                     [pendingRej, currentId]
                 );
                 // Clear the pending flag
@@ -528,7 +536,18 @@ export const getPTFlawsS = async(spool_id)=>{
 
 export const getPTLogsS = async(spool_id)=>{
     const query = `
-    SELECT * FROM pt_entry
+    SELECT *,
+        CASE
+            WHEN bal_draw_rejection = TRUE THEN 'bal_draw_rejection'
+            WHEN multiple_end = TRUE THEN 'multiple_end'
+            WHEN scratch = TRUE THEN 'scratch'
+            WHEN pt_scrap = TRUE THEN 'pt_scrap'
+            WHEN ztmd = TRUE THEN 'ztmd'
+            WHEN doc = TRUE THEN 'doc'
+            WHEN rejection = TRUE THEN 'rejection'
+            ELSE NULL
+        END AS active_rejection_type
+    FROM pt_entry
     WHERE spool_id = $1
     ORDER BY created_at ASC;
     `;

@@ -455,9 +455,16 @@ export const drawEntryS = async(payload)=>{
         }
 
         // ── Free handle_join allocation on preform end or remove ──
-        if (payload.preform_end === true || payload.preform_remove === true) {
+        if (payload.preform_remove === true) {
             await client.query(
                 `UPDATE handle_join SET is_allocate = FALSE WHERE preform_id = $1`,
+                [payload.preform_id]
+            );
+        }
+
+        if (payload.preform_remove === true) {
+            await client.query(
+                `UPDATE preform_allocation SET tower_no = 0 WHERE preform_id = $1`,
                 [payload.preform_id]
             );
         }

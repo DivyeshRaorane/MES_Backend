@@ -105,11 +105,16 @@ export async function validateBobbinQC(bobbinNo) {
     .map(param =>param.trim()) || [];
 
 
+    const fullCheckQuery = `Select full_check from pt_entry where bobbin_no = $1;`;
+    const fullCheckRes = await client.query(fullCheckQuery, [bobbinNo]);
+    const fullCheck = fullCheckRes.rows.length>0 ? fullCheckRes.rows[0].full_check === true : false
+
     // --- NEW LOGIC: Look for missing top/bottom data and copy from whichever side is present ---
     const synchronizedPairsToUpdate = []; // now stores { field, value } to write back to DB
 
     const isEmpty = (v) => (v === null || v === undefined || v === '');
 
+    if(!fullCheck){
     for (const pair of topBottomPairs) {
       const topVal = measurement[pair.top];
       const bottomVal = measurement[pair.bottom];
@@ -125,15 +130,37 @@ export async function validateBobbinQC(bobbinNo) {
         synchronizedPairsToUpdate.push({ field: pair.top, value: bottomVal });
       }
     }
+  }
+
+  //For D to A1 Conversion
+
+  const SECONDARY_PRODUCT_TYPE_FOR_LOW_MAC = 'G657A1250';
+
+  const macValueParsed = parseFloat(measurement['mac_value']);
+    const useDualProductTypeSpecs = (product_type === 'G' && !isNaN(macValueParsed) && macValueParsed < 7.05);
+
     // --------------------------------------------------------------------------
 
     // B. Fetch all active specifications for this product_type, sorted by priority (1 is best/strictest)
-    const specsQuery = `
-      SELECT * FROM qc_grade 
-      WHERE product_type = $1 AND Status = true 
-      ORDER BY priority ASC;
-    `;
-    const specsRes = await client.query(specsQuery, [product_type]);
+    let specsRes;
+    if (useDualProductTypeSpecs) {
+      // Result order: matcode='D' tiers first (priority 1,2,3...), then secondary matcode's tiers (priority 1,2,3...)
+      const productTypeInOrder = [product_type, SECONDARY_PRODUCT_TYPE_FOR_LOW_MAC];
+      const dualSpecsQuery = `
+        SELECT * FROM qc_grade 
+        WHERE product_type = ANY($1) AND Status = true 
+        ORDER BY array_position($1, product_type), priority ASC;
+      `;
+      specsRes = await client.query(dualSpecsQuery, [productTypeInOrder]);
+    } else {
+      const specsQuery = `
+        SELECT * FROM qc_grade 
+        WHERE product_type = $1 AND Status = true 
+        ORDER BY priority ASC;
+      `;
+      specsRes = await client.query(specsQuery, [product_type]);
+    }
+
 
     if (specsRes.rows.length === 0) {
       return { status: 'ERROR', message: `No active specification tiers found for product_type ${product_type}.` };
@@ -261,7 +288,7 @@ export async function validateBobbinQC(bobbinNo) {
     console.error('Validation Script Runtime Exception:', error);
     return { status: 'CRITICAL_ERROR', message: error.message };
   } finally {
-    await client.end();
+    await client.release();
   }
 }
 
