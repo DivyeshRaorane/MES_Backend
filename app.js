@@ -68,6 +68,8 @@ import adminMaterialProcessRoutes from "./routes/postgress/admin_material_proces
 import specRoutes from "./routes/postgress/spec.routes.js"
 import customerAllocationRoutes from "./routes/postgress/customer_allocation.routes.js"
 import gradeMandatoryRoutes from "./routes/postgress/grade_mandatory.routes.js"
+import reportBuilderRoutes from "./routes/postgress/report_builder.routes.js"
+import dynamicReportsRoutes from "./routes/postgress/dynamic_reports.routes.js"
 
 
 const app = express();
@@ -137,6 +139,8 @@ app.use("/api", adminMaterialProcessRoutes)
 app.use("/api", specRoutes)
 app.use("/api", customerAllocationRoutes)
 app.use("/api", gradeMandatoryRoutes)
+app.use("/api/report-builder", reportBuilderRoutes)
+app.use("/api/dynamic-reports", dynamicReportsRoutes)
 
 app.use("/api", towerDataRoutes)
 
