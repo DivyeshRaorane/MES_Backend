@@ -114,30 +114,38 @@ console.log("Transaction details and client:" )
             compMaterial?.uom || null,
             batch,
         ]);
-
+console.log("Consumtiondetasl:", consumptions)
         // Update process_order_materials consumed/balance tracking
         await client.query(`
-            UPDATE process_order_materials
-            SET consumed_qty = consumed_qty + $1,
+            UPDATE process_order
+            SET 
                 balance_qty = balance_qty - $1,
                 updated_at = CURRENT_TIMESTAMP
-            WHERE process_o_no = $2 AND component_material_code = $3
+            WHERE process_o_no = $2 AND material_code = $3
         `, [consumption.consume_qty, processOrder.process_o_no, consumption.component_material_code]);
     }
-
-    // ─── Step 10: Update Process Order Balance ───
+    // ─── Step 10: Update Process Order Balance for Finished Material only ───
     await client.query(`
         UPDATE process_order
         SET balance_qty = balance_qty - $1, updated_at = CURRENT_TIMESTAMP
-        WHERE process_o_no = $2
-    `, [producedKm, processOrder.process_o_no]);
+        WHERE process_o_no = $2 AND material_code = $3
+    `, [producedKm, processOrder.process_o_no, finishedMaterial]);
 
-    // ─── Step 11: Close Process Order if balance reaches zero ───
+    // ─── Step 11: Close individual rows if their balance reaches zero ───
     await client.query(`
         UPDATE process_order
         SET balance_qty = 0, is_active = false, updated_at = CURRENT_TIMESTAMP
-        WHERE process_o_no = $1 AND balance_qty <= 0
-    `, [processOrder.process_o_no]);
+        WHERE process_o_no = $1 AND material_code = $2 AND balance_qty <= 0
+    `, [processOrder.process_o_no, finishedMaterial]);
+
+    // Also close component rows whose balance reached zero (from Step 9 deductions)
+    for (const consumption of consumptions) {
+        await client.query(`
+            UPDATE process_order
+            SET balance_qty = 0, is_active = false, updated_at = CURRENT_TIMESTAMP
+            WHERE process_o_no = $1 AND material_code = $2 AND balance_qty <= 0
+        `, [processOrder.process_o_no, consumption.component_material_code]);
+    }
 
     console.log(`[SAP] Successfully generated ${consumptions.length + 1} SAP transactions for ${transactionNo}`);
 

@@ -9,17 +9,27 @@ const buildColumnsMeta = (reportConfig) => {
     const columns = [];
     const columnOrder = reportConfig.column_order || [];
     const displayNames = reportConfig.column_display_names || {};
+    const colDefs = reportConfig.columns || [];
 
-    // Regular columns from column_order
+    // Regular columns from column_order (with aggregate label support)
     for (const key of columnOrder) {
-        const header = displayNames[key] || key.split('.').pop() || key;
+        const [table, column] = key.split('.');
+        const colDef = colDefs.find(c => c.table === table && c.column === column);
+        let header = displayNames[key] || key.split('.').pop() || key;
+
+        // Prefix with aggregate function if present
+        if (colDef?.aggregate) {
+            const aggLabel = colDef.aggregate === 'COUNT_DISTINCT' ? 'COUNT DISTINCT' : colDef.aggregate;
+            header = `${aggLabel}(${header})`;
+        }
+
         columns.push({
             field: key,
             header: header,
         });
     }
 
-    // Aggregate columns
+    // Old-style aggregate columns
     for (const agg of reportConfig.aggregates || []) {
         columns.push({
             field: agg.alias,

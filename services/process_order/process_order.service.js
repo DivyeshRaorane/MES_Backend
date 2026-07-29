@@ -34,7 +34,7 @@ export const getProcessOrderByNoS = async (processONo) => {
 
 export const getProcessOrderMaterialsS = async (processONo) => {
     const result = await pool.query(
-        'SELECT * FROM process_order_materials WHERE process_o_no = $1 ORDER BY id',
+        'SELECT * FROM process_order WHERE process_o_no = $1 ORDER BY id',
         [processONo]
     );
     return result.rows;

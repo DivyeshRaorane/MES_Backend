@@ -94,28 +94,23 @@ export class QueryBuilder {
         let sql = '';
 
         if (isCount) {
-            sql += 'SELECT COUNT(*) as total';
-            sql += ' ' + this.buildFromClause();
-            sql += ' ' + this.buildJoinClauses();
-            sql += ' ' + this.buildWhereClause(filters, search);
-
             const groupBy = this.buildGroupByClause();
             if (groupBy) {
-                // For GROUP BY count, wrap in subquery
-                const innerSql = this.buildSelectClause() + ' ' + this.buildFromClause() + ' ' + this.buildJoinClauses() + ' ' + this.buildWhereClause(filters, search) + ' ' + groupBy + ' ' + this.buildHavingClause();
-                // Reset and rebuild as count wrapper
-                this.params = [];
-                this.paramIndex = 0;
-                const rebuildSelect = this.buildSelectClause();
-                const rebuildFrom = this.buildFromClause();
-                const rebuildJoins = this.buildJoinClauses();
-                const rebuildWhere = this.buildWhereClause(filters, search);
-                const rebuildGroup = this.buildGroupByClause();
-                const rebuildHaving = this.buildHavingClause();
-                sql = `SELECT COUNT(*) as total FROM (${rebuildSelect} ${rebuildFrom} ${rebuildJoins} ${rebuildWhere} ${rebuildGroup} ${rebuildHaving}) as count_query`;
+                // For aggregate/GROUP BY reports, wrap in subquery to count distinct groups
+                const selectClause = this.buildSelectClause();
+                const fromClause = this.buildFromClause();
+                const joinClauses = this.buildJoinClauses();
+                const whereClause = this.buildWhereClause(filters, search);
+                const havingClause = this.buildHavingClause();
+                sql = `SELECT COUNT(*) as total FROM (${selectClause} ${fromClause} ${joinClauses} ${whereClause} ${groupBy} ${havingClause}) as count_query`;
+            } else {
+                sql += 'SELECT COUNT(*) as total';
+                sql += ' ' + this.buildFromClause();
+                sql += ' ' + this.buildJoinClauses();
+                sql += ' ' + this.buildWhereClause(filters, search);
             }
 
-            return { sql: sql.trim(), params: this.params };
+            return { sql: sql.replace(/\s+/g, ' ').trim(), params: this.params };
         }
 
         // SELECT clause
@@ -147,15 +142,27 @@ export class QueryBuilder {
 
     buildSelectClause() {
         const parts = [];
+        const columns = this.config.columns || [];
 
-        // Regular columns from column_order
+        // Regular columns from column_order (with per-column aggregate support)
         for (const key of this.config.column_order || []) {
             const [table, column] = key.split('.');
             if (!table || !column) continue;
-            parts.push(`"${table}"."${column}" AS "${key}"`);
+
+            const colDef = columns.find(c => c.table === table && c.column === column);
+            const ref = `"${table}"."${column}"`;
+
+            if (colDef?.aggregate === 'COUNT_DISTINCT') {
+                parts.push(`COUNT(DISTINCT ${ref}) AS "${key}"`);
+            } else if (colDef?.aggregate) {
+                const fn = this.validateAggregateFunction(colDef.aggregate);
+                parts.push(`${fn}(${ref}) AS "${key}"`);
+            } else {
+                parts.push(`${ref} AS "${key}"`);
+            }
         }
 
-        // Aggregate columns
+        // Old-style aggregate columns (from aggregates array - backward compat)
         for (const agg of this.config.aggregates || []) {
             const fn = this.validateAggregateFunction(agg.function);
             if (agg.column === '*') {
@@ -271,11 +278,59 @@ export class QueryBuilder {
         return conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
     }
 
-    buildGroupByClause() {
-        const groupBy = this.config.group_by || [];
-        if (groupBy.length === 0) return '';
+    /**
+     * Detect if this report uses aggregates (per-column, old-style aggregates array, or expressions with agg functions)
+     */
+    isAggregateReport() {
+        const columns = this.config.columns || [];
+        const expressions = this.config.expressions || [];
+        const aggregates = this.config.aggregates || [];
 
-        const parts = groupBy.map(key => {
+        const hasColumnAggregates = columns.some(c => c.aggregate);
+        const AGG_KEYWORDS = ['SUM(', 'COUNT(', 'AVG(', 'MIN(', 'MAX(', 'STRING_AGG(', 'ARRAY_AGG('];
+        const hasExpressionAggregates = expressions.some(e =>
+            AGG_KEYWORDS.some(k => e.expression.toUpperCase().includes(k))
+        );
+
+        return hasColumnAggregates || hasExpressionAggregates || aggregates.length > 0;
+    }
+
+    buildGroupByClause() {
+        const columns = this.config.columns || [];
+        const oldGroupBy = this.config.group_by || [];
+
+        if (this.isAggregateReport()) {
+            const allGroupBy = [];
+
+            // Columns explicitly marked groupBy OR columns without aggregate (auto GROUP BY)
+            for (const key of this.config.column_order || []) {
+                const [table, column] = key.split('.');
+                if (!table || !column) continue;
+
+                const colDef = columns.find(c => c.table === table && c.column === column);
+                // Include in GROUP BY if: explicitly marked groupBy=true, or no aggregate function set
+                const isGroupBy = colDef?.groupBy === true || !colDef?.aggregate;
+                if (isGroupBy) {
+                    const ref = `"${table}"."${column}"`;
+                    if (!allGroupBy.includes(ref)) allGroupBy.push(ref);
+                }
+            }
+
+            // Also include old-style group_by array entries (backward compat)
+            for (const key of oldGroupBy) {
+                const [table, column] = key.split('.');
+                if (!table || !column) continue;
+                const ref = `"${table}"."${column}"`;
+                if (!allGroupBy.includes(ref)) allGroupBy.push(ref);
+            }
+
+            return allGroupBy.length > 0 ? `GROUP BY ${allGroupBy.join(', ')}` : '';
+        }
+
+        // Non-aggregate report: only use old-style explicit group_by if present
+        if (oldGroupBy.length === 0) return '';
+
+        const parts = oldGroupBy.map(key => {
             const [table, column] = key.split('.');
             return `"${table}"."${column}"`;
         });
@@ -334,7 +389,7 @@ export class QueryBuilder {
     }
 
     validateAggregateFunction(fn) {
-        const allowed = ['SUM', 'AVG', 'COUNT', 'MIN', 'MAX', 'COUNT DISTINCT'];
+        const allowed = ['SUM', 'AVG', 'COUNT', 'MIN', 'MAX', 'COUNT DISTINCT', 'COUNT_DISTINCT'];
         const upper = fn?.toUpperCase();
         return allowed.includes(upper) ? upper : 'COUNT';
     }
