@@ -41,9 +41,14 @@ export const mbendCopyS = async (bobbin_no) => {
         const qcData = qcCurrent.rows[0];
         const mfd = parseFloat(qcData.mfd_1310_top) || parseFloat(qcData.mfd_1310_bottom) || null;
         const cutoff = parseFloat(qcData.cut_off_top) || parseFloat(qcData.cut_off_bottom) || null;
-
+;
         if (mfd && cutoff) {
-            mac_value = (mfd * cutoff * 1000).toFixed(3);
+            mac_value = (mfd * cutoff / 1000).toFixed(3);
+            console.log({
+    mfd,
+    cutoff,
+    mac_value
+})
             await pool.query(
                 `UPDATE qc_entry_temp SET mac_value = $1 WHERE bobbin_no = $2`,
                 [mac_value, bobbin_no]

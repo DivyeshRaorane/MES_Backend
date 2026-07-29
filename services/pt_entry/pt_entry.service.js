@@ -139,6 +139,8 @@ export const ptEntryS = async (payload) => {
 
         //-------------------------
         // Update Material Stock
+        // Always subtract pt_length from balance for ALL entry types
+        // (good entries, flaw rejections, and all other rejection types)
         //-------------------------
 
         if (payload.fid) {
@@ -162,8 +164,8 @@ export const ptEntryS = async (payload) => {
             if (stockResult.rowCount === 0) {
                 throw new Error("Material stock not found.");
             }
-        } else if (!payload.active_rejection_type) {
-            // No FID and no rejection type: only update balance_qty
+        } else {
+            // No FID (rejection entries or other): only update balance_qty
             const stockResult = await client.query(
                 `
                 UPDATE mat_stock

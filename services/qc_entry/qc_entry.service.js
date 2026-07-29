@@ -199,7 +199,7 @@ const ALLOWED_QC_COLUMNS = [
     'secondary_coating_concentricity_top','secondary_coating_concentricity_bottom',
     'coating_ovality_top','coating_ovality_bottom',
     'fiber_curl_top','fiber_curl_bottom','curl_defection_top','curl_defection_bottom',
-    'zero_disp_wave','slope_zero_disp','disp_1550','disp_1285_1330','disp_1270_1340','disp_1575',
+    'zero_disp_wave','slope_zero_disp','disp_1550','disp_1285_1330','disp_1270_1340','disp_1575','disp_1460','disp_1490','slope_1490',
     'cd_1460','disp_1625','disp_1570','disp_1260','disp_slope','pmd_1310','pmd_1550',
     'm_100t_50mm_1550','m_100t_50mm_1310','m_100t_50mm_1625',
     'm_100t_60mm_1550','m_100t_60mm_1310','m_100t_60mm_1625',

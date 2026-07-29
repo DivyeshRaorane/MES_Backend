@@ -63,6 +63,7 @@ export const submitQcEntryC = async (req, res) => {
 export const updateMissingValuesC = async (req, res) => {
     try {
         const { bobbin_no, values } = req.body;
+        console.log("What is the req,", req.body)
 
         if (!bobbin_no) {
             return res.status(400).json({ success: false, message: "bobbin_no is required" });
