@@ -1,8 +1,23 @@
 import pool from "../../db/postgres.js";
 
 // ─── Material Master ───
-export const getAllMaterialsS = async () => {
-    const result = await pool.query(`SELECT * FROM material_master ORDER BY created_at DESC`);
+export const getAllMaterialsS = async (queryParams = {}) => {
+    let query = 'SELECT * FROM material_master WHERE 1=1';
+    const params = [];
+
+    if (queryParams.category) {
+        params.push(queryParams.category);
+        query += ` AND material_category = $${params.length}`;
+    }
+
+    if (queryParams.is_active !== undefined) {
+        params.push(queryParams.is_active === 'true' || queryParams.is_active === true);
+        query += ` AND is_active = $${params.length}`;
+    }
+
+    query += ' ORDER BY material_code ASC';
+
+    const result = await pool.query(query, params);
     return result.rows;
 };
 

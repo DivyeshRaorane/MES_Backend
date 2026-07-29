@@ -2,7 +2,7 @@ import { getAllMaterialsS, createMaterialS, updateMaterialS, getAllProcessTypesS
 
 // Material Master
 export const getAllMaterialsC = async (req, res) => {
-    try { res.json({ success: true, data: await getAllMaterialsS() }); }
+    try { res.json({ success: true, data: await getAllMaterialsS(req.query) }); }
     catch (e) { res.status(500).json({ success: false, message: e.message }); }
 };
 
