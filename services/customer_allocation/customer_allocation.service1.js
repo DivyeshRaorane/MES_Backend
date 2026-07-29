@@ -71,7 +71,6 @@ export const runAllocationS = async (spec_ids) => {
     );
     const specMandatoryMap = {};
     for (const row of mandatoryResult.rows) {
-        // mandatory_params is stored as JSONB array — pg driver returns it as JS array directly
         specMandatoryMap[row.spec_id] = Array.isArray(row.mandatory_params)
             ? row.mandatory_params
             : [];

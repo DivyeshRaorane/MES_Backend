@@ -188,11 +188,26 @@ export const saveAfterEntryS = async (payload) => {
         throw new Error("H2 batch not found.");
     }
 
-    // Update bobbin_entries.is_h2_after = true for all bobbins in this batch
+    // Get d2_batch_id(s) associated with this h2_batch_id
+    const d2Result = await pool.query(
+        `SELECT DISTINCT d2_batch_id FROM h2_ageing WHERE h2_batch_id = $1`,
+        [h2_batch_id]
+    );
+    const d2BatchIds = d2Result.rows.map(r => r.d2_batch_id).filter(Boolean);
+
+    // Mark is_h2_after = true for all bobbins in this h2_batch
     await pool.query(
         `UPDATE bobbin_entries SET is_h2_after = true WHERE bobbin_no IN (SELECT bobbin_no FROM h2_ageing WHERE h2_batch_id = $1)`,
         [h2_batch_id]
     );
+
+    // Also mark is_h2_after = true for all bobbins that share the same d2_batch_id(s)
+    if (d2BatchIds.length > 0) {
+        await pool.query(
+            `UPDATE bobbin_entries SET is_h2_after = true WHERE d2_batch_id = ANY($1)`,
+            [d2BatchIds]
+        );
+    }
 
     return { success: true, message: "After entry saved successfully." };
 };
