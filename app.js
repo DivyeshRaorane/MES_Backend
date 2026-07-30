@@ -72,6 +72,7 @@ import reportBuilderRoutes from "./routes/postgress/report_builder.routes.js"
 import dynamicReportsRoutes from "./routes/postgress/dynamic_reports.routes.js"
 import bomMasterRoutes from "./routes/postgress/bom_master.routes.js"
 import processOrderRoutes from "./routes/postgress/process_order.routes.js"
+import tcGenerationRoutes from "./routes/postgress/tc_generation.routes.js"
 
 
 const app = express();
@@ -145,6 +146,7 @@ app.use("/api/report-builder", reportBuilderRoutes)
 app.use("/api/dynamic-reports", dynamicReportsRoutes)
 app.use("/api/admin/bom", bomMasterRoutes)
 app.use("/api/admin/process-orders", processOrderRoutes)
+app.use("/api/tc", tcGenerationRoutes)
 
 app.use("/api", towerDataRoutes)
 

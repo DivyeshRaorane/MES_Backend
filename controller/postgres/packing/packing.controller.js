@@ -1,4 +1,4 @@
-import { getOrderForPackingS, validateBobbinForPackingS, submitPackingS } from "../../../services/packing/packing.service.js";
+import { getOrderForPackingS, validateBobbinForPackingS, submitPackingS, getPackingListHistoryS, getPackingListViewS } from "../../../services/packing/packing.service.js";
 
 export const getOrderC = async (req, res) => {
     try {
@@ -38,6 +38,28 @@ export const submitPackingC = async (req, res) => {
         res.status(201).json(result);
     } catch (error) {
         console.error("Packing Submit Error:", error.message);
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+export const getPackingListHistoryC = async (req, res) => {
+    try {
+        const data = await getPackingListHistoryS();
+        res.status(200).json({ success: true, data });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+export const getPackingListViewC = async (req, res) => {
+    try {
+        const { order_no } = req.params;
+        const data = await getPackingListViewS(order_no);
+        res.status(200).json({ success: true, data });
+    } catch (error) {
+        if (error.message === "Packing order not found.") {
+            return res.status(404).json({ success: false, message: error.message });
+        }
         res.status(500).json({ success: false, message: error.message });
     }
 };

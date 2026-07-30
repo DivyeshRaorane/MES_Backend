@@ -17,7 +17,7 @@ export const validateRewindS = async (bobbin_no) => {
         return { success: false, message: "Bobbin is not available in FG." };
     }
 
-    if (bobbin.dispatch_status === 'REW' || bobbin.dispatch_status === 'COLOR') {
+    if (bobbin.dispatch_status === 'REW' || bobbin.dispatch_status === 'COLOR'|| bobbin.dispatch_status === 'PACKED') {
         return { success: false, message: `Bobbin already has dispatch status: ${bobbin.dispatch_status}.` };
     }
 
