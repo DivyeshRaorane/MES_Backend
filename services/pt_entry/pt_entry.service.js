@@ -446,35 +446,89 @@ export const ptEntryS = async (payload) => {
         }
 
         //-------------------------
-        // Determine is_break from PT machine log
+        // Auto PT Scrap on PT Break (0.180 KM)
+        // If this is a normal entry with pt_break = true,
+        // automatically create a PT Scrap entry in the same transaction
         //-------------------------
 
-        let isBreak = false;
-        if (fid !== '' && payload.bobbin_no) {
-            await client.query('SAVEPOINT pt_machine_log_check');
-            try {
-                const machineLog = await client.query(
-                    `SELECT set_length, real_length FROM pt_machine_logs WHERE spool_code_tu = $1 ORDER BY processed_at DESC LIMIT 1`,
-                    [payload.bobbin_no]
+        let autoScrapBooked = false;
+
+        if (payload.pt_break === true && !payload.auto_pt_break_scrap) {
+            const scrapLength = 0.180;
+
+            // Get next 'no' for the spool
+            const noResult = await client.query(
+                `SELECT COALESCE(MAX(no), 0) + 1 as next_no FROM pt_entry WHERE spool_id = $1`,
+                [payload.spool_id]
+            );
+            const nextNo = noResult.rows[0].next_no;
+
+            // Insert auto PT Scrap entry
+            await client.query(`
+                INSERT INTO pt_entry (
+                    spool_id, preform_id, drawn_length, tower_no, drawn_date,
+                    pt_entry, fid, bobbin_no, spool_status, pt_machine,
+                    operator_name, shift_incharge, bobbin_color, bobbin_type,
+                    pt_length, status, payoff_vibration, dancer_vibration,
+                    rejection, rejection_reason, bal_draw_rejection, bal_draw_rejection_reason,
+                    multiple_end, scratch, pt_scrap, ztmd, ztmd_id, doc, doc_id,
+                    is_break, logged_in_user, pt_flaw_remark, a_cut_flaw,
+                    no, full_check, is_sample, full_mbend
+                ) VALUES (
+                    $1, $2, $3, $4, $5,
+                    $6, NULL, NULL, $7, $8,
+                    $9, $10, NULL, NULL,
+                    $11, $12, $13, $14,
+                    TRUE, NULL, FALSE, NULL,
+                    FALSE, FALSE, TRUE, FALSE, NULL, FALSE, NULL,
+                    FALSE, $15, NULL, NULL,
+                    $16, FALSE, FALSE, FALSE
+                )
+            `, [
+                payload.spool_id,
+                payload.preform_id,
+                payload.drawn_length === "" ? null : Number(payload.drawn_length),
+                payload.tower_no === "" ? null : Number(payload.tower_no),
+                payload.drawn_date,
+                new Date(Date.now() + 1000), // 1 second after main entry to ensure correct ordering
+                payload.spool_status || null,
+                payload.pt_machine_no === "" ? null : Number(payload.pt_machine_no),
+                payload.operator_name || null,
+                payload.shift_incharge || null,
+                scrapLength,
+                payload.status,
+                payload.payoff_vibration,
+                payload.dancer_vibration,
+                payload.logged_in_user,
+                nextNo
+            ]);
+
+            // Subtract 0.180 KM from stock
+            await client.query(
+                `UPDATE mat_stock SET balance_qty = balance_qty - $1 WHERE batch_id = $2`,
+                [scrapLength, payload.spool_id]
+            );
+
+            // Mark before_rejection on the last good FID entry
+            const lastFidScrap = await client.query(
+                `SELECT last_fid FROM mat_stock WHERE batch_id = $1`,
+                [payload.spool_id]
+            );
+            const scrapLastFid = lastFidScrap.rows[0]?.last_fid;
+            if (scrapLastFid) {
+                await client.query(
+                    `UPDATE pt_entry SET before_rejection = 'PT_SCRAP', full_check = TRUE WHERE spool_id = $1 AND fid = $2 AND before_rejection IS NULL`,
+                    [payload.spool_id, scrapLastFid]
                 );
-
-                if (machineLog.rows.length > 0) {
-                    const setLength = Number(machineLog.rows[0].set_length) || 0;
-                    const ptLengthMeters = ptLength * 1000;
-
-                    if (setLength > 0 && ptLengthMeters < setLength) {
-                        isBreak = true;
-                    }
-                }
-                await client.query('RELEASE SAVEPOINT pt_machine_log_check');
-            } catch (e) {
-                await client.query('ROLLBACK TO SAVEPOINT pt_machine_log_check');
             }
 
+            // Store pending_after_rejection for next good entry
             await client.query(
-                `UPDATE pt_entry SET is_break = $1 WHERE pt_entry_id = $2`,
-                [isBreak, currentId]
+                `UPDATE mat_stock SET pending_after_rejection = 'PT_SCRAP' WHERE batch_id = $1`,
+                [payload.spool_id]
             );
+
+            autoScrapBooked = true;
         }
 
         //-------------------------
@@ -483,7 +537,12 @@ export const ptEntryS = async (payload) => {
 
         await client.query("COMMIT");
 
-        return ptResult.rows[0];
+        const result = ptResult.rows[0];
+        if (autoScrapBooked) {
+            result.auto_scrap_booked = true;
+        }
+
+        return result;
 
     } catch (error) {
         await client.query("ROLLBACK");
@@ -551,7 +610,7 @@ export const getPTLogsS = async(spool_id)=>{
         END AS active_rejection_type
     FROM pt_entry
     WHERE spool_id = $1
-    ORDER BY created_at ASC;
+    ORDER BY pt_entry_id ASC;
     `;
 
     const result = await pool.query(query,[spool_id]);
