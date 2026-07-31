@@ -229,3 +229,27 @@ export const updateMissingValuesS = async (bobbin_no, values) => {
 
     return { success: true, message: "Missing QC values updated successfully." };
 };
+
+
+// PT Check: Get full_check, is_sample, full_mbend from pt_entry by bobbin_no
+export const ptCheckByBobbinS = async (bobbin_no) => {
+    const result = await pool.query(
+        `SELECT full_check, is_sample, full_mbend FROM pt_entry WHERE bobbin_no = $1 LIMIT 1`,
+        [bobbin_no]
+    );
+
+    console.log("result", result)
+
+    if (result.rows.length === 0) {
+        return { success: false, found: false, message: "Bobbin not found in PT Entry" };
+    }
+
+    const row = result.rows[0];
+    return {
+        success: true,
+        found: true,
+        full_check: row.full_check === true,
+        is_sample: row.is_sample === true,
+        full_mbend: row.full_mbend === true,
+    };
+};

@@ -1,4 +1,4 @@
-import { fetchBobbinQcS, checkProcessCompletionS, submitQcEntryS, updateMissingValuesS } from "../../../services/qc_entry/qc_entry.service.js";
+import { fetchBobbinQcS, checkProcessCompletionS, submitQcEntryS, updateMissingValuesS, ptCheckByBobbinS } from "../../../services/qc_entry/qc_entry.service.js";
 import { validateBobbinQC } from "../../../services/qc_entry/qc_grade.service.js";
 import { mbendCopyS } from "../../../services/qc_entry/mbend_copy.service.js";
 import { mbendReassignS } from "../../../services/qc_entry/mbend_reassign.service.js";
@@ -116,5 +116,20 @@ export const mbendReassignC = async (req, res) => {
     } catch (error) {
         console.error('[MBendReassign] Controller Error:', error);
         return res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+export const ptCheckByBobbinC = async (req, res) => {
+    try {
+        const { bobbin_no } = req.params;
+        const result = await ptCheckByBobbinS(bobbin_no);
+
+        if (!result.found) {
+            return res.status(200).json(result);
+        }
+
+        return res.status(200).json(result);
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
     }
 };
