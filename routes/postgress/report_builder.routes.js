@@ -3,7 +3,7 @@ import { authMiddleware } from '../../middleware/aut_middleware.js';
 import {
     getTablesC, getTableColumnsC, getTableRelationshipsC,
     getAllReportsC, getReportByIdC, createReportC, updateReportC, deleteReportC, duplicateReportC,
-    previewReportC, generateSqlC, executeReportC,
+    previewReportC, generateSqlC, executeReportC, previewTableC,
     getReportPermissionsC, updateReportPermissionsC, getRolesC, getUsersC
 } from '../../controller/postgres/report_builder/report_builder.controller.js';
 
@@ -21,6 +21,7 @@ router.get('/users', authMiddleware, getUsersC);
 // Preview & SQL Generation (MUST be before /reports/:id to avoid :id matching "preview"/"sql")
 router.post('/reports/preview', authMiddleware, previewReportC);
 router.post('/reports/sql', authMiddleware, generateSqlC);
+router.post('/reports/preview-table', authMiddleware, previewTableC);
 
 // Report CRUD
 router.get('/reports', authMiddleware, getAllReportsC);

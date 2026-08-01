@@ -119,6 +119,76 @@ export const executeUserReportS = async (id, options, user, ipAddress) => {
     }
 
     const reportConfig = reportResult.rows[0];
+
+    // ── Multi-Sheet Execution ───────────────────────────────────────
+    if (reportConfig.is_multi_sheet) {
+        const { buildTableSQL, buildColumnDefs } = await import('../../utils/sqlBuilder.js');
+
+        const sheetsResult = await pool.query(
+            'SELECT * FROM report_sheets WHERE report_id=$1 AND is_deleted=FALSE ORDER BY display_order',
+            [id]
+        );
+        const tablesResult = await pool.query(
+            'SELECT * FROM report_tables WHERE report_id=$1 AND is_deleted=FALSE ORDER BY display_order',
+            [id]
+        );
+
+        const tablesBySheet = {};
+        tablesResult.rows.forEach(t => {
+            if (!tablesBySheet[t.sheet_id]) tablesBySheet[t.sheet_id] = [];
+            tablesBySheet[t.sheet_id].push(t);
+        });
+
+        const resultSheets = [];
+        for (const sheet of sheetsResult.rows) {
+            const sheetTables = tablesBySheet[sheet.id] || [];
+            const executedTables = [];
+            for (const tableConfig of sheetTables) {
+                try {
+                    const sql = buildTableSQL(tableConfig, { filters });
+                    const tableResult = await pool.query({ text: sql.text, values: sql.values, statement_timeout: 30000 });
+                    executedTables.push({
+                        title: tableConfig.table_name,
+                        table_name: tableConfig.table_name,
+                        columns: buildColumnDefs(tableConfig),
+                        data: tableResult.rows,
+                        rowCount: tableResult.rows.length,
+                        spacing: tableConfig.spacing || 2,
+                    });
+                } catch (tableError) {
+                    console.error(`[MultiExec] Table "${tableConfig.table_name}" error:`, tableError.message);
+                    executedTables.push({
+                        title: tableConfig.table_name,
+                        table_name: tableConfig.table_name,
+                        columns: [],
+                        data: [],
+                        rowCount: 0,
+                        spacing: tableConfig.spacing || 2,
+                        error: tableError.message,
+                    });
+                }
+            }
+            resultSheets.push({ sheetName: sheet.sheet_name, sheet_name: sheet.sheet_name, tables: executedTables });
+        }
+
+        const executionTime = Date.now() - startTime;
+
+        // Log execution
+        pool.query(
+            `INSERT INTO report_execution_log (report_id, executed_by, execution_time_ms, row_count, filters_applied, status, ip_address)
+             VALUES ($1,$2,$3,$4,$5,'success',$6)`,
+            [id, userId, executionTime, tablesResult.rows.length, JSON.stringify(filters || {}), ipAddress || null]
+        ).catch(() => {});
+
+        return {
+            reportName: reportConfig.report_name,
+            is_multi_sheet: true,
+            sheets: resultSheets,
+            executionTime,
+        };
+    }
+
+    // ── Single-Table Execution (existing logic) ─────────────────────
     const builder = new QueryBuilder(reportConfig);
 
     await builder.validateIdentifiers();
@@ -199,6 +269,63 @@ export const executeReportForExportS = async (id, options, user) => {
     }
 
     const reportConfig = reportResult.rows[0];
+
+    // ── Multi-Sheet Export ───────────────────────────────────────────
+    if (reportConfig.is_multi_sheet) {
+        const { buildTableSQL, buildColumnDefs } = await import('../../utils/sqlBuilder.js');
+
+        const sheetsResult = await pool.query(
+            'SELECT * FROM report_sheets WHERE report_id=$1 AND is_deleted=FALSE ORDER BY display_order',
+            [id]
+        );
+        const tablesResult = await pool.query(
+            'SELECT * FROM report_tables WHERE report_id=$1 AND is_deleted=FALSE ORDER BY display_order',
+            [id]
+        );
+
+        const tablesBySheet = {};
+        tablesResult.rows.forEach(t => {
+            if (!tablesBySheet[t.sheet_id]) tablesBySheet[t.sheet_id] = [];
+            tablesBySheet[t.sheet_id].push(t);
+        });
+
+        const sheets = [];
+        for (const sheet of sheetsResult.rows) {
+            const sheetTables = tablesBySheet[sheet.id] || [];
+            const executedTables = [];
+            for (const tableConfig of sheetTables) {
+                try {
+                    const sql = buildTableSQL(tableConfig, { filters });
+                    const tableResult = await pool.query({ text: sql.text, values: sql.values, statement_timeout: 60000 });
+                    executedTables.push({
+                        table_name: tableConfig.table_name,
+                        columns: buildColumnDefs(tableConfig),
+                        data: tableResult.rows,
+                        spacing: tableConfig.spacing || 2,
+                        formatting: tableConfig.formatting || {},
+                    });
+                } catch (tableError) {
+                    executedTables.push({
+                        table_name: tableConfig.table_name,
+                        columns: [],
+                        data: [],
+                        spacing: tableConfig.spacing || 2,
+                        formatting: tableConfig.formatting || {},
+                        error: tableError.message,
+                    });
+                }
+            }
+            sheets.push({ sheet_name: sheet.sheet_name, tables: executedTables });
+        }
+
+        return {
+            is_multi_sheet: true,
+            reportName: reportConfig.report_name,
+            sheets,
+        };
+    }
+
+    // ── Single-Table Export (existing logic) ─────────────────────────
     const builder = new QueryBuilder(reportConfig);
 
     await builder.validateIdentifiers();

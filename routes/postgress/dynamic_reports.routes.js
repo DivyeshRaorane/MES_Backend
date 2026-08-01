@@ -3,7 +3,8 @@ import { authMiddleware } from '../../middleware/aut_middleware.js';
 import {
     getUserReportsC, executeUserReportC,
     exportExcelC, exportCsvC, exportPdfC,
-    getSavedFiltersC, createSavedFilterC, deleteSavedFilterC
+    getSavedFiltersC, createSavedFilterC, deleteSavedFilterC,
+    exportMultiExcelC
 } from '../../controller/postgres/report_builder/dynamic_reports.controller.js';
 
 const router = express.Router();
@@ -16,6 +17,7 @@ router.post('/:id/execute', authMiddleware, executeUserReportC);
 router.post('/:id/export/excel', authMiddleware, exportExcelC);
 router.post('/:id/export/csv', authMiddleware, exportCsvC);
 router.post('/:id/export/pdf', authMiddleware, exportPdfC);
+router.post('/:id/export/multi-excel', authMiddleware, exportMultiExcelC);
 
 // Saved Filters
 router.get('/:id/saved-filters', authMiddleware, getSavedFiltersC);

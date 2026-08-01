@@ -1,7 +1,7 @@
 import {
     getTablesS, getTableColumnsS, getTableRelationshipsS,
     getAllReportsS, getReportByIdS, createReportS, updateReportS, deleteReportS, duplicateReportS,
-    previewReportS, generateSqlS, executeReportS,
+    previewReportS, generateSqlS, executeReportS, previewTableS,
     getReportPermissionsS, updateReportPermissionsS, getRolesS, getUsersS
 } from "../../../services/report_builder/report_builder.service.js";
 
@@ -184,6 +184,19 @@ export const getUsersC = async (req, res) => {
     try {
         const data = await getUsersS();
         res.status(200).json({ success: true, data });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// ═══════════════════════════════════════════════════════════════
+// PREVIEW TABLE (multi-sheet table configuration)
+// ═══════════════════════════════════════════════════════════════
+
+export const previewTableC = async (req, res) => {
+    try {
+        const data = await previewTableS(req.body);
+        res.status(200).json({ success: true, ...data });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
