@@ -2,8 +2,8 @@ import { getByBobbinNoS } from "../../../services/pt_machine_log/pt_machine_log.
 
 export const getByBobbinNoC = async (req, res) => {
     try {
-        const { bobbin_no } = req.params;
-        const result = await getByBobbinNoS(bobbin_no);
+        const { bobbin_no, machine_no } = req.params;
+        const result = await getByBobbinNoS(bobbin_no, machine_no);
 
         if (!result) {
             return res.status(404).json({ success: false, message: "No machine log found for this bobbin." });

@@ -25,3 +25,17 @@ export const getBobbinColorS = async (is_disable = null) => {
   const result = await pool.query(query, params);
   return result.rows;
 };
+
+export const updateBobbinColorS = async (bobbin_color_id, payload) => {
+  const { bobbin_color_name, is_disable } = payload;
+
+  const query = `
+    UPDATE bobbin_color
+    SET bobbin_color_name = $1, is_disable = $2
+    WHERE bobbin_color_id = $3
+    RETURNING *;
+  `;
+
+  const result = await pool.query(query, [bobbin_color_name, is_disable, bobbin_color_id]);
+  return result.rows[0];
+};
