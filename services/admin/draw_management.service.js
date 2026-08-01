@@ -75,24 +75,69 @@ export const updateDrawTowerS = async (tower_id, data) => {
 
 // --- Fiber Cut Reasons ---
 export const getAllFiberCutReasonsS = async () => {
-    const result = await pool.query(`SELECT * FROM d_fiber_cut_reasons ORDER BY dfcr_id`);
+    const result = await pool.query(
+        `SELECT r.*, i.indication_name
+         FROM d_fiber_cut_reasons r
+         LEFT JOIN fiber_cut_indication i ON r.indication_fiber_cut_id = i.indication_fiber_cut_id
+         ORDER BY r.dfcr_id`
+    );
     return result.rows;
 };
 
 export const createFiberCutReasonS = async (data) => {
-    const { dfcr_name } = data;
+    const dfcr_name = data.dfcr_name?.trim();
+    const { indication_fiber_cut_id } = data;
+
+    if (!dfcr_name) {
+        throw new Error("dfcr_name is required");
+    }
+    if (!indication_fiber_cut_id) {
+        throw new Error("indication_fiber_cut_id is required");
+    }
+
+    // Check indication exists
+    const indicationCheck = await pool.query(
+        `SELECT * FROM fiber_cut_indication WHERE indication_fiber_cut_id = $1`,
+        [indication_fiber_cut_id]
+    );
+    if (indicationCheck.rows.length === 0) {
+        throw new Error("Invalid indication_fiber_cut_id");
+    }
+
+    // Unique check: no duplicate dfcr_name under same indication_fiber_cut_id (case-insensitive)
+    const existing = await pool.query(
+        `SELECT * FROM d_fiber_cut_reasons WHERE LOWER(dfcr_name) = LOWER($1) AND indication_fiber_cut_id = $2`,
+        [dfcr_name, indication_fiber_cut_id]
+    );
+    if (existing.rows.length > 0) {
+        return { duplicate: true, message: "Reason name already exists for this indication" };
+    }
+
     const result = await pool.query(
-        `INSERT INTO d_fiber_cut_reasons (dfcr_name) VALUES ($1) RETURNING *`,
-        [dfcr_name]
+        `INSERT INTO d_fiber_cut_reasons (dfcr_name, indication_fiber_cut_id) VALUES ($1, $2) RETURNING *`,
+        [dfcr_name, indication_fiber_cut_id]
     );
     return result.rows[0];
 };
 
 export const updateFiberCutReasonS = async (dfcr_id, data) => {
-    const { dfcr_name, disable } = data;
+    const dfcr_name = data.dfcr_name?.trim();
+    const { disable, indication_fiber_cut_id } = data;
+
+    if (dfcr_name && indication_fiber_cut_id) {
+        // Unique check excluding current ID
+        const existing = await pool.query(
+            `SELECT * FROM d_fiber_cut_reasons WHERE LOWER(dfcr_name) = LOWER($1) AND indication_fiber_cut_id = $2 AND dfcr_id != $3`,
+            [dfcr_name, indication_fiber_cut_id, dfcr_id]
+        );
+        if (existing.rows.length > 0) {
+            return { duplicate: true, message: "Reason name already exists for this indication" };
+        }
+    }
+
     const result = await pool.query(
-        `UPDATE d_fiber_cut_reasons SET dfcr_name = $1, disable = $2 WHERE dfcr_id = $3 RETURNING *`,
-        [dfcr_name, disable, dfcr_id]
+        `UPDATE d_fiber_cut_reasons SET dfcr_name = COALESCE($1, dfcr_name), disable = COALESCE($2, disable), indication_fiber_cut_id = COALESCE($3, indication_fiber_cut_id) WHERE dfcr_id = $4 RETURNING *`,
+        [dfcr_name || null, disable !== undefined ? disable : null, indication_fiber_cut_id || null, dfcr_id]
     );
     return result.rows[0];
 };

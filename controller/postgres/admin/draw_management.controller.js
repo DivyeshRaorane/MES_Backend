@@ -67,6 +67,9 @@ export const getAllFiberCutReasonsC = async (req, res) => {
 export const createFiberCutReasonC = async (req, res) => {
     try {
         const result = await createFiberCutReasonS(req.body);
+        if (result?.duplicate) {
+            return res.status(400).json({ success: false, message: result.message });
+        }
         res.status(201).json({ success: true, data: result });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
@@ -77,7 +80,10 @@ export const updateFiberCutReasonC = async (req, res) => {
     try {
         const { dfcr_id } = req.params;
         const result = await updateFiberCutReasonS(dfcr_id, req.body);
-        res.status(200).json({ success: true, data: result });
+        if (result?.duplicate) {
+            return res.status(400).json({ success: false, message: result.message });
+        }
+        res.status(200).json({ success: true, message: "Updated successfully", data: result });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }

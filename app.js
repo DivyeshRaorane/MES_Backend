@@ -73,6 +73,8 @@ import dynamicReportsRoutes from "./routes/postgress/dynamic_reports.routes.js"
 import bomMasterRoutes from "./routes/postgress/bom_master.routes.js"
 import processOrderRoutes from "./routes/postgress/process_order.routes.js"
 import tcGenerationRoutes from "./routes/postgress/tc_generation.routes.js"
+import fiberCutIndicationRoutes from "./routes/postgress/fiber_cut_indication.routes.js"
+import fiberCutReasonsRoutes from "./routes/postgress/fiber_cut_reasons.routes.js"
 
 
 const app = express();
@@ -147,6 +149,8 @@ app.use("/api/dynamic-reports", dynamicReportsRoutes)
 app.use("/api/admin/bom", bomMasterRoutes)
 app.use("/api/admin/process-orders", processOrderRoutes)
 app.use("/api/tc", tcGenerationRoutes)
+app.use("/api", fiberCutIndicationRoutes)
+app.use("/api", fiberCutReasonsRoutes)
 
 app.use("/api", towerDataRoutes)
 
