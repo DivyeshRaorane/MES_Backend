@@ -70,6 +70,7 @@ import customerAllocationRoutes from "./routes/postgress/customer_allocation.rou
 import gradeMandatoryRoutes from "./routes/postgress/grade_mandatory.routes.js"
 import reportBuilderRoutes from "./routes/postgress/report_builder.routes.js"
 import dynamicReportsRoutes from "./routes/postgress/dynamic_reports.routes.js"
+import reportSectionsRoutes from "./routes/postgress/report_sections.routes.js"
 import bomMasterRoutes from "./routes/postgress/bom_master.routes.js"
 import processOrderRoutes from "./routes/postgress/process_order.routes.js"
 import tcGenerationRoutes from "./routes/postgress/tc_generation.routes.js"
@@ -145,6 +146,7 @@ app.use("/api", specRoutes)
 app.use("/api", customerAllocationRoutes)
 app.use("/api", gradeMandatoryRoutes)
 app.use("/api/report-builder", reportBuilderRoutes)
+app.use("/api/report-builder", reportSectionsRoutes)
 app.use("/api/dynamic-reports", dynamicReportsRoutes)
 app.use("/api/admin/bom", bomMasterRoutes)
 app.use("/api/admin/process-orders", processOrderRoutes)

@@ -1,6 +1,13 @@
 import pool from "../../db/postgres.js";
 import { QueryBuilder } from "./queryBuilder.js";
 import { toJsonb, toJsonbObj } from "../../utils/sqlBuilder.js";
+import {
+    getSectionMappingsBatchS,
+    getReportSectionsS,
+    saveSectionMappingsS,
+    updateSectionMappingsInTxS,
+    duplicateSectionMappingsS
+} from "./report_sections.service.js";
 
 // ═══════════════════════════════════════════════════════════════
 // DATABASE DISCOVERY
@@ -101,7 +108,18 @@ export const getAllReportsS = async () => {
         WHERE rm.is_deleted = FALSE
         ORDER BY rm.created_at DESC
     `);
-    return result.rows;
+
+    // Fetch section mappings for all reports in one query
+    const reportIds = result.rows.map(r => r.id);
+    const sectionMap = await getSectionMappingsBatchS(reportIds);
+
+    // Attach sections to each report
+    const reports = result.rows.map(r => ({
+        ...r,
+        sections: sectionMap[r.id] || []
+    }));
+
+    return reports;
 };
 
 export const getReportByIdS = async (id) => {
@@ -125,6 +143,9 @@ export const getReportByIdS = async (id) => {
     );
 
     report.permissions = permResult.rows;
+
+    // Fetch section mappings for this report
+    report.sections = await getReportSectionsS(id);
 
     // If multi-sheet, also load sheets and tables
     if (report.is_multi_sheet) {
@@ -156,7 +177,7 @@ export const createReportS = async (payload, userId) => {
         report_name, description, module, main_table, is_multi_sheet,
         columns, column_display_names, column_order,
         joins, expressions, filters, sorting,
-        group_by, aggregates, having, sheets
+        group_by, aggregates, having, sheets, section_ids
     } = payload;
 
     // For multi-sheet reports, use a transaction
@@ -187,6 +208,9 @@ export const createReportS = async (payload, userId) => {
                 userId
             ]);
             const report = reportResult.rows[0];
+
+            // Save section mappings
+            await saveSectionMappingsS(client, report.id, section_ids);
 
             // Create sheets and tables
             const createdSheets = [];
@@ -226,6 +250,10 @@ export const createReportS = async (payload, userId) => {
 
             await client.query('COMMIT');
             report.sheets = createdSheets;
+
+            // Fetch sections for response
+            report.sections = await getReportSectionsS(report.id);
+
             return report;
         } catch (error) {
             await client.query('ROLLBACK');
@@ -235,30 +263,50 @@ export const createReportS = async (payload, userId) => {
         }
     }
 
-    // Single-table report (existing logic)
-    const result = await pool.query(`
-        INSERT INTO report_master (
-            report_name, description, module, main_table,
-            columns, column_display_names, column_order,
-            joins, expressions, filters, sorting,
-            group_by, aggregates, "having",
-            created_by, created_at, version
-        ) VALUES (
-            $1, $2, $3, $4,
-            $5, $6, $7,
-            $8, $9, $10, $11,
-            $12, $13, $14,
-            $15, NOW(), 1
-        ) RETURNING *
-    `, [
-        report_name, description || null, module || null, main_table,
-        JSON.stringify(columns || []), JSON.stringify(column_display_names || {}), JSON.stringify(column_order || []),
-        JSON.stringify(joins || []), JSON.stringify(expressions || []), JSON.stringify(filters || []), JSON.stringify(sorting || []),
-        JSON.stringify(group_by || []), JSON.stringify(aggregates || []), JSON.stringify(having || []),
-        userId
-    ]);
+    // Single-table report (existing logic) — wrapped in transaction for section mapping
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
 
-    return result.rows[0];
+        const result = await client.query(`
+            INSERT INTO report_master (
+                report_name, description, module, main_table,
+                columns, column_display_names, column_order,
+                joins, expressions, filters, sorting,
+                group_by, aggregates, "having",
+                created_by, created_at, version
+            ) VALUES (
+                $1, $2, $3, $4,
+                $5, $6, $7,
+                $8, $9, $10, $11,
+                $12, $13, $14,
+                $15, NOW(), 1
+            ) RETURNING *
+        `, [
+            report_name, description || null, module || null, main_table,
+            JSON.stringify(columns || []), JSON.stringify(column_display_names || {}), JSON.stringify(column_order || []),
+            JSON.stringify(joins || []), JSON.stringify(expressions || []), JSON.stringify(filters || []), JSON.stringify(sorting || []),
+            JSON.stringify(group_by || []), JSON.stringify(aggregates || []), JSON.stringify(having || []),
+            userId
+        ]);
+
+        const newReport = result.rows[0];
+
+        // Save section mappings
+        await saveSectionMappingsS(client, newReport.id, section_ids);
+
+        await client.query('COMMIT');
+
+        // Fetch sections for response
+        newReport.sections = await getReportSectionsS(newReport.id);
+
+        return newReport;
+    } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+    } finally {
+        client.release();
+    }
 };
 
 export const updateReportS = async (id, payload, userId) => {
@@ -290,7 +338,7 @@ export const updateReportS = async (id, payload, userId) => {
         report_name, description, module, status, main_table, is_multi_sheet,
         columns, column_display_names, column_order,
         joins, expressions, filters, sorting,
-        group_by, aggregates, having, sheets
+        group_by, aggregates, having, sheets, section_ids
     } = payload;
 
     // For multi-sheet reports, use a transaction
@@ -323,6 +371,11 @@ export const updateReportS = async (id, payload, userId) => {
                 throw new Error('Report not found');
             }
             const report = reportResult.rows[0];
+
+            // Update section mappings if provided
+            if (Array.isArray(section_ids)) {
+                await updateSectionMappingsInTxS(client, id, section_ids);
+            }
 
             // Soft-delete existing sheets and tables, then recreate
             if (sheets) {
@@ -367,6 +420,10 @@ export const updateReportS = async (id, payload, userId) => {
             }
 
             await client.query('COMMIT');
+
+            // Fetch sections for response
+            report.sections = await getReportSectionsS(id);
+
             return report;
         } catch (error) {
             await client.query('ROLLBACK');
@@ -376,38 +433,65 @@ export const updateReportS = async (id, payload, userId) => {
         }
     }
 
-    // Single-table update (existing logic)
-    const result = await pool.query(`
-        UPDATE report_master SET
-            report_name = COALESCE($1, report_name),
-            description = COALESCE($2, description),
-            module = COALESCE($3, module),
-            status = COALESCE($4, status),
-            main_table = COALESCE($5, main_table),
-            columns = COALESCE($6, columns),
-            column_display_names = COALESCE($7, column_display_names),
-            column_order = COALESCE($8, column_order),
-            joins = COALESCE($9, joins),
-            expressions = COALESCE($10, expressions),
-            filters = COALESCE($11, filters),
-            sorting = COALESCE($12, sorting),
-            group_by = COALESCE($13, group_by),
-            aggregates = COALESCE($14, aggregates),
-            "having" = COALESCE($15, "having"),
-            updated_by = $16,
-            updated_at = NOW(),
-            version = version + 1
-        WHERE id = $17 AND is_deleted = FALSE
-        RETURNING *
-    `, [
-        report_name || null, description !== undefined ? description : null, module || null, status || null, main_table || null,
-        columns ? JSON.stringify(columns) : null, column_display_names ? JSON.stringify(column_display_names) : null, column_order ? JSON.stringify(column_order) : null,
-        joins ? JSON.stringify(joins) : null, expressions ? JSON.stringify(expressions) : null, filters ? JSON.stringify(filters) : null, sorting ? JSON.stringify(sorting) : null,
-        group_by ? JSON.stringify(group_by) : null, aggregates ? JSON.stringify(aggregates) : null, having ? JSON.stringify(having) : null,
-        userId, id
-    ]);
+    // Single-table update (existing logic) — with section mapping support
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
 
-    return result.rows[0];
+        const result = await client.query(`
+            UPDATE report_master SET
+                report_name = COALESCE($1, report_name),
+                description = COALESCE($2, description),
+                module = COALESCE($3, module),
+                status = COALESCE($4, status),
+                main_table = COALESCE($5, main_table),
+                columns = COALESCE($6, columns),
+                column_display_names = COALESCE($7, column_display_names),
+                column_order = COALESCE($8, column_order),
+                joins = COALESCE($9, joins),
+                expressions = COALESCE($10, expressions),
+                filters = COALESCE($11, filters),
+                sorting = COALESCE($12, sorting),
+                group_by = COALESCE($13, group_by),
+                aggregates = COALESCE($14, aggregates),
+                "having" = COALESCE($15, "having"),
+                updated_by = $16,
+                updated_at = NOW(),
+                version = version + 1
+            WHERE id = $17 AND is_deleted = FALSE
+            RETURNING *
+        `, [
+            report_name || null, description !== undefined ? description : null, module || null, status || null, main_table || null,
+            columns ? JSON.stringify(columns) : null, column_display_names ? JSON.stringify(column_display_names) : null, column_order ? JSON.stringify(column_order) : null,
+            joins ? JSON.stringify(joins) : null, expressions ? JSON.stringify(expressions) : null, filters ? JSON.stringify(filters) : null, sorting ? JSON.stringify(sorting) : null,
+            group_by ? JSON.stringify(group_by) : null, aggregates ? JSON.stringify(aggregates) : null, having ? JSON.stringify(having) : null,
+            userId, id
+        ]);
+
+        if (result.rows.length === 0) {
+            await client.query('ROLLBACK');
+            throw new Error('Report not found');
+        }
+
+        // Update section mappings if provided
+        if (Array.isArray(section_ids)) {
+            await updateSectionMappingsInTxS(client, id, section_ids);
+        }
+
+        await client.query('COMMIT');
+
+        const updatedReport = result.rows[0];
+
+        // Fetch sections for response
+        updatedReport.sections = await getReportSectionsS(id);
+
+        return updatedReport;
+    } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+    } finally {
+        client.release();
+    }
 };
 
 export const deleteReportS = async (id, userId) => {
@@ -428,46 +512,50 @@ export const deleteReportS = async (id, userId) => {
 export const duplicateReportS = async (id, userId) => {
     const original = await getReportByIdS(id);
 
-    const result = await pool.query(`
-        INSERT INTO report_master (
-            report_name, description, module, main_table, is_multi_sheet,
-            columns, column_display_names, column_order,
-            joins, expressions, filters, sorting,
-            group_by, aggregates, "having",
-            created_by, created_at, version
-        ) VALUES (
-            $1, $2, $3, $4, $5,
-            $6, $7, $8,
-            $9, $10, $11, $12,
-            $13, $14, $15,
-            $16, NOW(), 1
-        ) RETURNING *
-    `, [
-        original.report_name + ' (Copy)',
-        original.description,
-        original.module,
-        original.main_table,
-        original.is_multi_sheet || false,
-        JSON.stringify(original.columns || []),
-        JSON.stringify(original.column_display_names || {}),
-        JSON.stringify(original.column_order || []),
-        JSON.stringify(original.joins || []),
-        JSON.stringify(original.expressions || []),
-        JSON.stringify(original.filters || []),
-        JSON.stringify(original.sorting || []),
-        JSON.stringify(original.group_by || []),
-        JSON.stringify(original.aggregates || []),
-        JSON.stringify(original.having || []),
-        userId
-    ]);
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
 
-    const newReport = result.rows[0];
+        const result = await client.query(`
+            INSERT INTO report_master (
+                report_name, description, module, main_table, is_multi_sheet,
+                columns, column_display_names, column_order,
+                joins, expressions, filters, sorting,
+                group_by, aggregates, "having",
+                created_by, created_at, version
+            ) VALUES (
+                $1, $2, $3, $4, $5,
+                $6, $7, $8,
+                $9, $10, $11, $12,
+                $13, $14, $15,
+                $16, NOW(), 1
+            ) RETURNING *
+        `, [
+            original.report_name + ' (Copy)',
+            original.description,
+            original.module,
+            original.main_table,
+            original.is_multi_sheet || false,
+            JSON.stringify(original.columns || []),
+            JSON.stringify(original.column_display_names || {}),
+            JSON.stringify(original.column_order || []),
+            JSON.stringify(original.joins || []),
+            JSON.stringify(original.expressions || []),
+            JSON.stringify(original.filters || []),
+            JSON.stringify(original.sorting || []),
+            JSON.stringify(original.group_by || []),
+            JSON.stringify(original.aggregates || []),
+            JSON.stringify(original.having || []),
+            userId
+        ]);
 
-    // If multi-sheet, also duplicate sheets and tables
-    if (original.is_multi_sheet && original.sheets) {
-        const client = await pool.connect();
-        try {
-            await client.query('BEGIN');
+        const newReport = result.rows[0];
+
+        // Duplicate section mappings from original report
+        await duplicateSectionMappingsS(client, id, newReport.id);
+
+        // If multi-sheet, also duplicate sheets and tables
+        if (original.is_multi_sheet && original.sheets) {
             const createdSheets = [];
             for (const sheet of original.sheets) {
                 const sheetResult = await client.query(`
@@ -500,17 +588,21 @@ export const duplicateReportS = async (id, userId) => {
                 }
                 createdSheets.push({ ...createdSheet, tables: createdTables });
             }
-            await client.query('COMMIT');
             newReport.sheets = createdSheets;
-        } catch (error) {
-            await client.query('ROLLBACK');
-            throw error;
-        } finally {
-            client.release();
         }
-    }
 
-    return newReport;
+        await client.query('COMMIT');
+
+        // Fetch sections for response
+        newReport.sections = await getReportSectionsS(newReport.id);
+
+        return newReport;
+    } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+    } finally {
+        client.release();
+    }
 };
 
 // ═══════════════════════════════════════════════════════════════

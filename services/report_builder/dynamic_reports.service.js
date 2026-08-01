@@ -52,12 +52,29 @@ const buildColumnsMeta = (reportConfig) => {
 // USER-FACING DYNAMIC REPORTS
 // ═══════════════════════════════════════════════════════════════
 
-export const getUserReportsS = async (user) => {
+export const getUserReportsS = async (user, section) => {
     const userId = user.id || user.userId;
     const userRole = user.role;
 
     // Admin gets all active reports
     if (userRole === 'admin') {
+        if (section) {
+            // Filter by section
+            const result = await pool.query(`
+                SELECT rm.*
+                FROM report_master rm
+                INNER JOIN report_section_mapping rsm_map ON rsm_map.report_id = rm.id
+                INNER JOIN report_section_master rsm ON rsm.section_id = rsm_map.section_id
+                WHERE rm.is_deleted = FALSE 
+                  AND rm.status = 'active'
+                  AND rsm.section_key = $1
+                  AND rsm.disable = FALSE
+                ORDER BY rm.report_name ASC
+            `, [section]);
+            return result.rows;
+        }
+
+        // No filter - return all active reports (existing behavior)
         const result = await pool.query(`
             SELECT *
             FROM report_master
@@ -68,6 +85,29 @@ export const getUserReportsS = async (user) => {
     }
 
     // Non-admin: filter by permissions
+    if (section) {
+        // Filter by section + permissions
+        const result = await pool.query(`
+            SELECT DISTINCT rm.*
+            FROM report_master rm
+            INNER JOIN report_permissions rp ON rm.id = rp.report_id
+            INNER JOIN report_section_mapping rsm_map ON rsm_map.report_id = rm.id
+            INNER JOIN report_section_master rsm ON rsm.section_id = rsm_map.section_id
+            WHERE rm.is_deleted = FALSE
+            AND rm.status = 'active'
+            AND rsm.section_key = $1
+            AND rsm.disable = FALSE
+            AND rp.can_view = TRUE
+            AND (
+                (rp.permission_type = 'role' AND rp.entity_id = $2)
+                OR (rp.permission_type = 'user' AND rp.entity_id = $3::text)
+            )
+            ORDER BY rm.report_name ASC
+        `, [section, userRole, String(userId)]);
+        return result.rows;
+    }
+
+    // No filter - return all permitted reports (existing behavior)
     const result = await pool.query(`
         SELECT DISTINCT rm.*
         FROM report_master rm
