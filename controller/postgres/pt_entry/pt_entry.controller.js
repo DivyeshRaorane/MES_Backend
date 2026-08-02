@@ -3,7 +3,7 @@ import { ptEntryS, getSpoolDetailsForPtEntryS, getPTFlawsS, getPTLogsS, getFidBy
 export const ptEntryC = async(req,res)=>{
     try{
 
-        console.log("REQUEST",req.body)
+       
         const emp_id = req.user.emp_id;
         const result = await ptEntryS({...req.body, logged_in_user:emp_id});
 

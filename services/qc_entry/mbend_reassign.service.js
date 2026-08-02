@@ -43,8 +43,7 @@ export const mbendReassignS = async (bobbin_no) => {
             [bobbin_no]
         );
 
-        console.log(`[MBendReassign] Removed is_sample from ${bobbin_no}`);
-
+        
         // Get all PT entries for this spool in order, starting AFTER the failed sample
         const allEntries = await client.query(
             `SELECT pt_entry_id, bobbin_no, fid, pt_length, is_sample, full_mbend, no
@@ -134,7 +133,7 @@ export const mbendReassignS = async (bobbin_no) => {
                     recordsUpdated++;
                     currentIdx++;
                     foundNextSample = true;
-                    console.log(`[MBendReassign] Next cycle sample: ${e.bobbin_no}`);
+                    
                     break;
                 } else {
                     // Short bobbin or no FID after 200 km → full_mbend = true

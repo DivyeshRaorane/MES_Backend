@@ -617,9 +617,6 @@ export const previewReportS = async (reportConfig) => {
 
     const { sql, params } = builder.buildQuery({ isPreview: true });
 
-    console.log('[Preview] SQL:', sql);
-    console.log('[Preview] Params:', params);
-
     const result = await pool.query({
         text: sql,
         values: params,
@@ -644,8 +641,7 @@ export const previewReportS = async (reportConfig) => {
         columns.push({ field: expr.alias, header: expr.displayName || expr.alias });
     }
 
-    console.log('[Preview] Rows:', result.rows.length, 'Columns:', columns.length);
-
+   
     return {
         columns,
         data: result.rows,
@@ -687,10 +683,7 @@ export const executeReportS = async (id, options, userId, ipAddress) => {
     const countBuilder = new QueryBuilder(reportConfig);
     const countQuery = countBuilder.buildQuery({ filters, search, isCount: true });
 
-    console.log('[AdminReportExec] Report:', reportConfig.report_name);
-    console.log('[AdminReportExec] SQL:', sql);
-    console.log('[AdminReportExec] Params:', params);
-
+   
     // Execute both
     const [dataResult, countResult] = await Promise.all([
         pool.query({ text: sql, values: params, statement_timeout: 30000 }),
@@ -700,8 +693,7 @@ export const executeReportS = async (id, options, userId, ipAddress) => {
     const executionTime = Date.now() - startTime;
     const totalRows = parseInt(countResult.rows[0]?.total || 0);
 
-    console.log('[AdminReportExec] Rows returned:', dataResult.rows.length, 'Total:', totalRows);
-
+   
     // Log execution
     await pool.query(
         `INSERT INTO report_execution_log (report_id, executed_by, execution_time_ms, row_count, filters_applied, status, ip_address)
@@ -742,8 +734,7 @@ export const previewTableS = async (config) => {
     const { buildTableSQL, buildColumnDefs } = await import('../../utils/sqlBuilder.js');
     const startTime = Date.now();
     const sql = buildTableSQL(config, { limit: 100 });
-    console.log('[PreviewTable] SQL:', sql.text);
-
+    
     const result = await pool.query({
         text: sql.text,
         values: sql.values,

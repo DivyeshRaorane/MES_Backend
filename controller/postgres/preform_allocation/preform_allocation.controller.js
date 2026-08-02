@@ -41,8 +41,7 @@ console.error(error);
 export const preformDeallocationC = async (req, res) => {
     try {
         const { allocation_id } = req.params;
-        console.log("allocation id ", allocation_id)
-
+      
         const result = await preformDeallocationS(allocation_id);
 
         return res.status(200).json({

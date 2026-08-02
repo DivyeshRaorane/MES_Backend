@@ -88,10 +88,10 @@ function hasMbendValues(measurement) {
 function validateMbend(measurement, gradeSpec) {
 
   const mbendFields = [
-    'm_100t_50mm_1550',
-    'm_100t_50mm_1310',
-    'm_100t_30mm_1550',
-    'm_100t_30mm_1310'
+    'm_1t_20mm_1550',
+    'm_1t_20mm_1625',
+    'm_10t_30mm_1625',
+    'm_1t_32mm_1550'
     // Add all MBend parameters here
   ];
 
@@ -158,18 +158,18 @@ export async function validateBobbinQC(bobbinNo) {
 
     const measurement = measurementRes.rows[0];
     const product_type = measurement.product_type;
-    console.log("measuremnet", measurement)
-
+  
     const SECONDARY_PRODUCT_TYPE_FOR_LOW_MAC = 'G657A1250';
     const useDualProductTypeSpecs = qualifiesForSecondaryProduct(measurement)
 
-    console.log("Dual:", useDualProductTypeSpecs)
+    console.log("What is the useDualprodutype:", useDualProductTypeSpecs)
 
+    
     const effectiveProductType = useDualProductTypeSpecs
       ? SECONDARY_PRODUCT_TYPE_FOR_LOW_MAC
       : product_type;
 
-    console.log("Effect:", effectiveProductType)
+  
     const parametersToCheckQuery = `Select mandatory_params from grade_mandatory where product_type = $1;`;
     const parametersToCheckRes = await client.query(parametersToCheckQuery, [effectiveProductType])
 

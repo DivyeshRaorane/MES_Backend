@@ -4,12 +4,13 @@ import { mbendCopyS } from "../../../services/qc_entry/mbend_copy.service.js";
 import { mbendReassignS } from "../../../services/qc_entry/mbend_reassign.service.js";
 
 export const fetchBobbinQcC = async (req, res) => {
+    
     try {
         const { bobbin_no } = req.params;
         const result = await fetchBobbinQcS(bobbin_no);
-
-        if (!result.success) {
-            return res.status(404).json({ success: false, message: result.message });
+console.log("QC:", result)
+        if (result.success == false) {
+            return res.status(200).json({ success: false, message: result.message });
         }
 
         return res.status(200).json(result);
@@ -63,8 +64,7 @@ export const submitQcEntryC = async (req, res) => {
 export const updateMissingValuesC = async (req, res) => {
     try {
         const { bobbin_no, values } = req.body;
-        console.log("What is the req,", req.body)
-
+       
         if (!bobbin_no) {
             return res.status(400).json({ success: false, message: "bobbin_no is required" });
         }

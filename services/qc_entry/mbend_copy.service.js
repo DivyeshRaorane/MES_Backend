@@ -90,7 +90,6 @@ export const mbendCopyS = async (bobbin_no) => {
     );
 
     if (sampleQC.rows.length === 0) {
-        console.log(`[MBEnd] Sample ${sampleBobbin.bobbin_no} has no qc_entry_temp record`);
         return { success: true, message: "Sample has no QC temp record", mbend_copied, mac_calculated, mac_value };
     }
 
@@ -98,7 +97,6 @@ export const mbendCopyS = async (bobbin_no) => {
 
     // Check temp_grade is valid (not NULL, not 'REW', not 'FAIL')
     if (!sampleData.temp_grade || sampleData.temp_grade === 'REW' || sampleData.temp_grade === 'FAIL') {
-        console.log(`[MBEnd] Sample temp_grade invalid: ${sampleData.temp_grade}`);
         return { success: true, message: "Sample temp_grade is NULL/REW/FAIL", mbend_copied, mac_calculated, mac_value };
     }
 
@@ -112,7 +110,6 @@ export const mbendCopyS = async (bobbin_no) => {
     );
 
     mbend_copied = true;
-    console.log(`[MBEnd] Copied ${MBEND_COLUMNS.length} MBEnd columns from ${sampleBobbin.bobbin_no} to ${bobbin_no}`);
-
+    
     return { success: true, message: "MBEnd copy + MAC calc done", mbend_copied, mac_calculated, sample_fid, mac_value };
 };

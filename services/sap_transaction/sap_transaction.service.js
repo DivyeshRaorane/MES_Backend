@@ -35,8 +35,7 @@ export async function generateSAPTransactions(drawEntryData, client) {
 
     // ─── Step 1: Determine Finished Material ───
     const finishedMaterial = `DT${(product_type || '').trim()}${(process_type || '').trim()}`;
-    console.log(`[SAP] Finished Material: ${finishedMaterial}, Produced KM: ${produced_km}`);
-console.log("Transaction details and client:" )
+    
     // ─── Step 2: Find Active Process Order ───
     const processOrder = await findActiveProcessOrder(finishedMaterial, client);
 
@@ -57,8 +56,7 @@ console.log("Transaction details and client:" )
 
     // ─── Step 6: Generate Transaction Number ───
     const transactionNo = generateTransactionNumber();
-    console.log(`[SAP] Transaction Number: ${transactionNo}`);
-
+   
     // ─── Step 7: Fetch material details for all materials ───
     const allMaterialCodes = [finishedMaterial, ...bomComponents.map(c => c.component_material_code)];
     const materialDetails = await fetchMaterialDetails(allMaterialCodes, client);
@@ -114,7 +112,7 @@ console.log("Transaction details and client:" )
             compMaterial?.uom || null,
             batch,
         ]);
-console.log("Consumtiondetasl:", consumptions)
+
         // Update process_order_materials consumed/balance tracking
         await client.query(`
             UPDATE process_order
@@ -147,8 +145,7 @@ console.log("Consumtiondetasl:", consumptions)
         `, [processOrder.process_o_no, consumption.component_material_code]);
     }
 
-    console.log(`[SAP] Successfully generated ${consumptions.length + 1} SAP transactions for ${transactionNo}`);
-
+    
     return {
         transaction_no: transactionNo,
         process_order_no: processOrder.process_o_no,

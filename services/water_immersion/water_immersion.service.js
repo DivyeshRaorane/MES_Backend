@@ -29,7 +29,7 @@ export const getWiEntryByIdS = async (id) => {
 
 export const createWiEntryS = async (payload) => {
     const client = await pool.connect();
-console.log("Payload:", payload)
+
     try {
         await client.query("BEGIN");
 

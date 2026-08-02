@@ -240,10 +240,7 @@ export const executeUserReportS = async (id, options, user, ipAddress) => {
     const countBuilder = new QueryBuilder(reportConfig);
     const countQuery = countBuilder.buildQuery({ filters, search, isCount: true });
 
-    console.log('[ReportExec] Report:', reportConfig.report_name);
-    console.log('[ReportExec] SQL:', sql);
-    console.log('[ReportExec] Params:', params);
-
+    
     // Execute both
     const [dataResult, countResult] = await Promise.all([
         pool.query({ text: sql, values: params, statement_timeout: 30000 }),
@@ -253,8 +250,7 @@ export const executeUserReportS = async (id, options, user, ipAddress) => {
     const executionTime = Date.now() - startTime;
     const totalRows = parseInt(countResult.rows[0]?.total || 0);
 
-    console.log('[ReportExec] Rows returned:', dataResult.rows.length, 'Total:', totalRows);
-
+   
     // Log execution
     await pool.query(
         `INSERT INTO report_execution_log (report_id, executed_by, execution_time_ms, row_count, filters_applied, status, ip_address)
@@ -373,17 +369,14 @@ export const executeReportForExportS = async (id, options, user) => {
     // Build query without pagination (but with row limit of 100,000)
     const { sql, params } = builder.buildQuery({ filters, sorting, search, page: 1, pageSize: 100000 });
 
-    console.log('[Export] Report:', reportConfig.report_name);
-    console.log('[Export] SQL:', sql);
-
+   
     const result = await pool.query({
         text: sql,
         values: params,
         statement_timeout: 60000, // 60 seconds for export
     });
 
-    console.log('[Export] Rows:', result.rows.length);
-
+    
     // Build column order including aggregates and expressions
     const fullColumnOrder = [...(reportConfig.column_order || [])];
     for (const agg of reportConfig.aggregates || []) {

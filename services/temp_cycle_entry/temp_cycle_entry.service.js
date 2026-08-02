@@ -29,8 +29,7 @@ export const getCycleByBarcodeS = async (bobbin_no) => {
 
 export const saveCycleEntryS = async (payload) => {
     const client = await pool.connect();
-    console.log("Payload:,", payload)
-
+   
     try {
         await client.query("BEGIN");
 

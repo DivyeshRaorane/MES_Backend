@@ -6,9 +6,7 @@ export const fetchTowerAllEventsS = async(tower_id, start_date, start_time, end_
     const start = new Date(`${start_date} ${start_time}`);
     const end = new Date(`${end_date} ${end_time}`);
 
-    console.log("Start Time",start,end)
-
-    console.log(start)
+    
     const result = await pool.request()
         .input("start", start)
         .input("end", end)
