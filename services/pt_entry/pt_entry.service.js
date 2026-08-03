@@ -447,8 +447,11 @@ export const ptEntryS = async (payload) => {
 
         //-------------------------
         // Auto PT Scrap on PT Break (0.180 KM)
-        // If this is a normal entry with pt_break = true,
-        // automatically create a PT Scrap entry in the same transaction
+        // Runs for ALL entry types when pt_break = true (including multiple_end).
+        // The main entry (multiple_end, good, etc.) is already fully saved above.
+        // We only insert the 0.180 km scrap row — we do NOT touch before_rejection
+        // or pending_after_rejection here because the rejection block above already
+        // handled those correctly for whatever active_rejection_type was set.
         //-------------------------
 
         let autoScrapBooked = false;
@@ -481,7 +484,7 @@ export const ptEntryS = async (payload) => {
                     $11, $12, $13, $14,
                     TRUE, NULL, FALSE, NULL,
                     FALSE, FALSE, TRUE, FALSE, NULL, FALSE, NULL,
-                    FALSE, $15, NULL, NULL,
+                    TRUE, $15, NULL, NULL,
                     $16, FALSE, FALSE, FALSE
                 )
             `, [
@@ -509,24 +512,52 @@ export const ptEntryS = async (payload) => {
                 [scrapLength, payload.spool_id]
             );
 
-            // Mark before_rejection on the last good FID entry
-            const lastFidScrap = await client.query(
-                `SELECT last_fid FROM mat_stock WHERE batch_id = $1`,
-                [payload.spool_id]
+            // Set start_length / end_length on the auto-scrap row
+            const scrapEntryResult = await client.query(
+                `SELECT pt_entry_id FROM pt_entry
+                 WHERE spool_id = $1 AND pt_scrap = TRUE AND no = $2`,
+                [payload.spool_id, nextNo]
             );
-            const scrapLastFid = lastFidScrap.rows[0]?.last_fid;
-            if (scrapLastFid) {
+            const scrapEntryId = scrapEntryResult.rows[0]?.pt_entry_id;
+
+            if (scrapEntryId) {
+                const scrapSumResult = await client.query(
+                    `SELECT COALESCE(SUM(pt_length), 0)::numeric as total_done
+                     FROM pt_entry WHERE spool_id = $1 AND pt_entry_id != $2`,
+                    [payload.spool_id, scrapEntryId]
+                );
+                const scrapStart = Number(scrapSumResult.rows[0].total_done);
+                const scrapEnd = scrapStart + scrapLength;
                 await client.query(
-                    `UPDATE pt_entry SET before_rejection = 'PT_SCRAP', full_check = TRUE WHERE spool_id = $1 AND fid = $2 AND before_rejection IS NULL`,
-                    [payload.spool_id, scrapLastFid]
+                    `UPDATE pt_entry SET start_length = $1, end_length = $2 WHERE pt_entry_id = $3`,
+                    [scrapStart, scrapEnd, scrapEntryId]
                 );
             }
 
-            // Store pending_after_rejection for next good entry
-            await client.query(
-                `UPDATE mat_stock SET pending_after_rejection = 'PT_SCRAP' WHERE batch_id = $1`,
-                [payload.spool_id]
-            );
+            // Only update before_rejection / pending_after_rejection when the
+            // main entry was a GOOD entry (has FID).
+            // If the main entry was itself a rejection (e.g. multiple_end),
+            // the rejection block above already handled these correctly — skip here.
+            if (!payload.active_rejection_type) {
+                // Mark before_rejection on the last good FID entry
+                const lastFidScrap = await client.query(
+                    `SELECT last_fid FROM mat_stock WHERE batch_id = $1`,
+                    [payload.spool_id]
+                );
+                const scrapLastFid = lastFidScrap.rows[0]?.last_fid;
+                if (scrapLastFid) {
+                    await client.query(
+                        `UPDATE pt_entry SET before_rejection = 'PT_SCRAP', full_check = TRUE WHERE spool_id = $1 AND fid = $2 AND before_rejection IS NULL`,
+                        [payload.spool_id, scrapLastFid]
+                    );
+                }
+
+                // Store pending_after_rejection for next good entry
+                await client.query(
+                    `UPDATE mat_stock SET pending_after_rejection = 'PT_SCRAP' WHERE batch_id = $1`,
+                    [payload.spool_id]
+                );
+            }
 
             autoScrapBooked = true;
         }

@@ -232,41 +232,145 @@ export const updateMissingValuesS = async (bobbin_no, values) => {
 
 
 // PT Check: Get full_check, is_sample, full_mbend from pt_entry by bobbin_no
+
 export const ptCheckByBobbinS = async (bobbin_no) => {
-    const result = await pool.query(
-        `SELECT 
-        p.full_check, 
-        p.is_sample, 
-        p.full_mbend,
-        p.a_cut_flaw,
-        b.product_type,
-        b.fid AS bobbin_fid
-         FROM pt_entry p
-         LEFT JOIN bobbin_entries b
-         ON p.bobbin_no = b.bobbin_no
-          WHERE p.bobbin_no = $1
-           LIMIT 1`,
+    // 1. Check PT Entry
+    const ptResult = await pool.query(
+        `
+        SELECT
+            p.full_check,
+            p.is_sample,
+            p.full_mbend,
+            p.a_cut_flaw,
+            b.product_type,
+            b.fid AS bobbin_fid
+        FROM pt_entry p
+        LEFT JOIN bobbin_entries b
+            ON p.bobbin_no = b.bobbin_no
+        WHERE p.bobbin_no = $1
+        LIMIT 1
+        `,
         [bobbin_no]
     );
 
-    
+    if (ptResult.rows.length > 0) {
+        const row = ptResult.rows[0];
 
-    if (result.rows.length === 0) {
-        return { success: false, found: false, message: "Bobbin not found in PT Entry" };
+        return {
+            success: true,
+            found: true,
+            full_check: row.full_check === true,
+            is_sample: row.is_sample === true,
+            full_mbend: row.full_mbend === true,
+            product_type: row.product_type,
+            bobbin_fid: row.bobbin_fid,
+            flaw_rewind_instr: row.a_cut_flaw
+        };
     }
 
-    const row = result.rows[0];
+    // 2. Check Rewinding Entry
+    const rewindingResult = await pool.query(
+        `
+        SELECT
+            b.product_type,
+            b.fid AS bobbin_fid
+        FROM rewinding_entry r
+        LEFT JOIN bobbin_entries b
+            ON r.bobbin_no = b.bobbin_no
+        WHERE r.bobbin_no = $1
+        LIMIT 1
+        `,
+        [bobbin_no]
+    );
+
+    if (rewindingResult.rows.length > 0) {
+        const row = rewindingResult.rows[0];
+
+        return {
+            success: true,
+            found: true,
+            full_check: true,
+            is_sample: true,
+            full_mbend: true,
+            product_type: row.product_type,
+            bobbin_fid: row.bobbin_fid,
+            flaw_rewind_instr: null
+        };
+    }
+
+    // 3. Check Coloring Entry
+    const coloringResult = await pool.query(
+        `
+        SELECT
+            b.product_type,
+            b.fid AS bobbin_fid
+        FROM coloring_entry c
+        LEFT JOIN bobbin_entries b
+            ON c.bobbin_no = b.bobbin_no
+        WHERE c.bobbin_no = $1
+        LIMIT 1
+        `,
+        [bobbin_no]
+    );
+
+    if (coloringResult.rows.length > 0) {
+        const row = coloringResult.rows[0];
+
+        return {
+            success: true,
+            found: true,
+            full_check: true,
+            is_sample: true,
+            full_mbend: true,
+            product_type: row.product_type,
+            bobbin_fid: row.bobbin_fid,
+            flaw_rewind_instr: null
+        };
+    }
+
+    // 4. Not found anywhere
     return {
-        success: true,
-        found: true,
-        full_check: row.full_check === true,
-        is_sample: row.is_sample === true,
-        full_mbend: row.full_mbend === true,
-        product_type: row.product_type,
-        bobbin_fid: row.bobbin_fid,
-        flaw_rewind_instr: row.a_cut_flaw 
+        success: false,
+        found: false,
+        message: "Bobbin not found."
     };
 };
+
+// export const ptCheckByBobbinS = async (bobbin_no) => {
+//     const result = await pool.query(
+//         `SELECT 
+//         p.full_check, 
+//         p.is_sample, 
+//         p.full_mbend,
+//         p.a_cut_flaw,
+//         b.product_type,
+//         b.fid AS bobbin_fid
+//          FROM pt_entry p
+//          LEFT JOIN bobbin_entries b
+//          ON p.bobbin_no = b.bobbin_no
+//           WHERE p.bobbin_no = $1
+//            LIMIT 1`,
+//         [bobbin_no]
+//     );
+
+    
+
+//     if (result.rows.length === 0) {
+//         return { success: false, found: false, message: "Bobbin not found in PT Entry" };
+//     }
+
+//     const row = result.rows[0];
+//     return {
+//         success: true,
+//         found: true,
+//         full_check: row.full_check === true,
+//         is_sample: row.is_sample === true,
+//         full_mbend: row.full_mbend === true,
+//         product_type: row.product_type,
+//         bobbin_fid: row.bobbin_fid,
+//         flaw_rewind_instr: row.a_cut_flaw 
+//     };
+// };
 
 // API: Flaw Rewind — log a missed draw flaw rewind instruction and mark bobbin as REW
 // Mirrors submitRewindS (fg_rewind.service) for the draw/QC stage:
