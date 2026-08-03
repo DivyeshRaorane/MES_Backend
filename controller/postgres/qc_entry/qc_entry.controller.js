@@ -1,4 +1,4 @@
-import { fetchBobbinQcS, checkProcessCompletionS, submitQcEntryS, updateMissingValuesS, ptCheckByBobbinS } from "../../../services/qc_entry/qc_entry.service.js";
+import { fetchBobbinQcS, checkProcessCompletionS, submitQcEntryS, updateMissingValuesS, ptCheckByBobbinS, flawRewindS } from "../../../services/qc_entry/qc_entry.service.js";
 import { validateBobbinQC } from "../../../services/qc_entry/qc_grade.service.js";
 import { mbendCopyS } from "../../../services/qc_entry/mbend_copy.service.js";
 import { mbendReassignS } from "../../../services/qc_entry/mbend_reassign.service.js";
@@ -131,5 +131,22 @@ export const ptCheckByBobbinC = async (req, res) => {
         return res.status(200).json(result);
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+export const flawRewindC = async (req, res) => {
+    try {
+        const logged_in_user = req.user.emp_id;
+        const { bobbin_no, p1, p2, instruction } = req.body;
+
+        if (!bobbin_no || !instruction) {
+            return res.status(400).json({ success: false, message: "bobbin_no and instruction are required." });
+        }
+
+        const result = await flawRewindS({ bobbin_no, p1, p2, instruction, logged_in_user });
+        return res.status(201).json(result);
+    } catch (error) {
+        console.error("[FlawRewind] Error:", error.message);
+        return res.status(500).json({ success: false, message: error.message });
     }
 };
