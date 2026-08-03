@@ -31,10 +31,12 @@ export async function generateSAPTransactions(drawEntryData, client) {
         secondary_coating_batch
     } = drawEntryData;
 
-    
+    console.log(
+    "Process:", process_type
+    )
 
     // ─── Step 1: Determine Finished Material ───
-    const finishedMaterial = `DT${(product_type || '').trim()}${(process_type || '').trim()}`;
+    const finishedMaterial = `DT${(product_type || '').trim()}${(process_type || '')}`;
     
     // ─── Step 2: Find Active Process Order ───
     const processOrder = await findActiveProcessOrder(finishedMaterial, client);

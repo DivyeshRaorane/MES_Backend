@@ -76,11 +76,10 @@ export const preformAllocationEntryS = async (data) => {
                     operator = $5,
                     preform_type = $6,
                     product_type = $7,
-                    process_type = $8,
-                    average_diameter = $9,
-                    draw_instruction = $10,
-                    process_remarks = $11,
-                    logged_in_user = $12
+                    average_diameter = $8,
+                    draw_instruction = $9,
+                    process_remarks = $10,
+                    logged_in_user = $11
                 WHERE preform_id = $1
                 RETURNING *;
                 `,
@@ -92,7 +91,6 @@ export const preformAllocationEntryS = async (data) => {
                     data.operator,
                     data.preform_type,
                     data.product_type,
-                    data.process_type,
                     data.average_diameter,
                     data.draw_instruction,
                     data.process_remarks,
@@ -111,14 +109,13 @@ export const preformAllocationEntryS = async (data) => {
                     operator,
                     preform_type,
                     product_type,
-                    process_type,
                     average_diameter,
                     draw_instruction,
                     process_remarks,
                     logged_in_user
                 )
                 VALUES (
-                    $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12
+                    $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11
                 )
                 RETURNING *;
                 `,
@@ -130,7 +127,6 @@ export const preformAllocationEntryS = async (data) => {
                     data.operator,
                     data.preform_type,
                     data.product_type,
-                    data.process_type,
                     data.average_diameter,
                     data.draw_instruction,
                     data.process_remarks,
