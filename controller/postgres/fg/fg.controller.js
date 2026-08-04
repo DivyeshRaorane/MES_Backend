@@ -1,5 +1,6 @@
 import { validateColorS, submitColorS } from "../../../services/fg/fg_color.service.js";
 import { validateRewindS, submitRewindS } from "../../../services/fg/fg_rewind.service.js";
+import { getFiberInformationS } from "../../../services/fg/fg_fiber_information.service.js";
 
 export const validateColorC = async (req, res) => {
     try {
@@ -51,5 +52,26 @@ export const submitRewindC = async (req, res) => {
     } catch (error) {
         console.error("FG Rewind Error:", error.message);
         res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+export const fiberInformationC = async (req, res) => {
+    try {
+        const { search_value, search_type } = req.query;
+
+        if (!search_value) {
+            return res.status(400).json({ success: false, message: "search_value is required" });
+        }
+
+        const result = await getFiberInformationS(search_value, search_type);
+
+        if (!result.success) {
+            return res.status(result.status || 500).json({ success: false, message: result.message });
+        }
+
+        res.status(200).json({ success: true, data: result.data });
+    } catch (error) {
+        console.error("Fiber Information Error:", error.message);
+        res.status(500).json({ success: false, message: "Internal server error" });
     }
 };
