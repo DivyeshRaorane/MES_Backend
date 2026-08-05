@@ -2,6 +2,30 @@ import pool from "../../db/postgres.js";
 
 // API 1: Fetch bobbin QC data
 export const fetchBobbinQcS = async (bobbin_no) => {
+    // Step 0: If final_grade in qc_entry_temp is REW or FAIL, auto-insert into qc_entry if not already done
+    const tempCheck = await pool.query(`SELECT * FROM qc_entry_temp WHERE bobbin_no = $1`, [bobbin_no]);
+    if (tempCheck.rows[0]) {
+        const finalGrade = tempCheck.rows[0].final_grade;
+        if (finalGrade === 'REW' || finalGrade === 'FAIL') {
+            const existsInFinal = await pool.query(`SELECT bobbin_no FROM qc_entry WHERE bobbin_no = $1`, [bobbin_no]);
+            if (existsInFinal.rows.length === 0) {
+                // Copy qc_entry_temp data into qc_entry
+                const tempRow = tempCheck.rows[0];
+                const excludeFields = ['created_at', 'updated_at', 'logged_in_user'];
+                const columns = Object.keys(tempRow).filter(k => !excludeFields.includes(k));
+                const values = columns.map(k => tempRow[k] === '' ? null : tempRow[k]);
+                const placeholders = values.map((_, i) => `$${i + 1}`).join(',');
+                const updateSet = columns.filter(k => k !== 'bobbin_no').map(k => `${k} = EXCLUDED.${k}`).join(',');
+
+                await pool.query(
+                    `INSERT INTO qc_entry (${columns.join(',')}) VALUES (${placeholders})
+                     ON CONFLICT (bobbin_no) DO UPDATE SET ${updateSet}`,
+                    values
+                );
+            }
+        }
+    }
+
     // Step 1: Check qc_entry FIRST
     const qcEntry = await pool.query(`SELECT * FROM qc_entry WHERE bobbin_no = $1`, [bobbin_no]);
     if (qcEntry.rows[0]) {

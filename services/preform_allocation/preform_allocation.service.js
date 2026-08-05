@@ -266,7 +266,13 @@ export const preformsByTowersS = async (tower_id) => {
       pa.allocation_date,
       ms.balance_qty,
       ms.last_fid,
-      ms.p_count
+      ms.p_count,
+      (SELECT de.end_length
+       FROM draw_entry de
+       WHERE de.preform_id = pa.preform_id
+       ORDER BY de.created_at DESC
+       LIMIT 1
+      ) AS last_end_length
     FROM preform_allocation pa
     INNER JOIN preform_accept pfa
       ON pa.preform_id = pfa.preform_id

@@ -8,7 +8,7 @@ export const fetchBobbinQcC = async (req, res) => {
     try {
         const { bobbin_no } = req.params;
         const result = await fetchBobbinQcS(bobbin_no);
-console.log("QC:", result)
+
         if (result.success == false) {
             return res.status(200).json({ success: false, message: result.message });
         }

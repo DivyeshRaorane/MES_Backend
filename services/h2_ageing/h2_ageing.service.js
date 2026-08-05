@@ -115,7 +115,7 @@ export const getPendingBeforeS = async () => {
     const result = await pool.query(
         `SELECT h2_batch_id, d2_batch_id, h2_date, h2_operator, COUNT(*) as total_bobbins
          FROM h2_ageing
-         WHERE before_date IS NULL
+         WHERE attn_1240_before IS NULL
          GROUP BY h2_batch_id, d2_batch_id, h2_date, h2_operator`
     );
     return result.rows;
@@ -125,7 +125,7 @@ export const getPendingAfterS = async () => {
     const result = await pool.query(
         `SELECT h2_batch_id, d2_batch_id, h2_date, h2_operator, COUNT(*) as total_bobbins
          FROM h2_ageing
-         WHERE before_date IS NOT NULL AND after_date IS NULL
+         WHERE attn_1240_before IS NOT NULL AND attn_1240_after IS NULL
          GROUP BY h2_batch_id, d2_batch_id, h2_date, h2_operator`
     );
     return result.rows;
@@ -135,7 +135,7 @@ export const getPending14DayS = async () => {
     const result = await pool.query(
         `SELECT h2_batch_id, d2_batch_id, h2_date, h2_operator, COUNT(*) as total_bobbins
          FROM h2_ageing
-         WHERE after_date IS NOT NULL AND date_14_day IS NULL
+         WHERE attn_1240_after IS NOT NULL AND attn_1240_14_days IS NULL
          GROUP BY h2_batch_id, d2_batch_id, h2_date, h2_operator`
     );
     return result.rows;
@@ -143,99 +143,209 @@ export const getPending14DayS = async () => {
 
 export const getBobbinsForBatchS = async (h2_batch_id) => {
     const result = await pool.query(
-        `SELECT * FROM h2_ageing WHERE h2_batch_id = $1 ORDER BY bobbin_no`,
+        `SELECT h2_ageing_id AS h2_id, h2_batch_id, bobbin_no, d2_batch_id, h2_date, h2_operator,
+                attn_1240_before, attn_1310_before, attn_1383_before, attn_1550_before, attn_1625_before,
+                before_operator, before_date, before_time,
+                attn_1240_after, attn_1310_after, attn_1383_after, attn_1550_after, attn_1625_after,
+                after_operator, after_date, after_time,
+                attn_1240_14_days, attn_1310_14_days, attn_1383_14_days, attn_1550_14_days, attn_1625_14_days,
+                date_14_day_operator, date_14_day, time_14_day
+         FROM h2_ageing WHERE h2_batch_id = $1 ORDER BY bobbin_no`,
         [h2_batch_id]
     );
     return result.rows;
 };
 
 export const saveBeforeEntryS = async (payload) => {
-    const { h2_batch_id, operator, date, time, readings, logged_in_user } = payload;
+    const { h2_batch_id, operator, date, time, bobbins, logged_in_user } = payload;
 
-    const result = await pool.query(
-        `UPDATE h2_ageing
-         SET before_date = $1, before_time = $2, before_operator = $3,
-             attn_1240_before = $4, attn_1310_before = $5, attn_1383_before = $6,
-             attn_1550_before = $7, attn_1625_before = $8, updated_at = CURRENT_TIMESTAMP
-         WHERE h2_batch_id = $9`,
-        [date, time, operator,
-         readings.attn_1240_before, readings.attn_1310_before, readings.attn_1383_before,
-         readings.attn_1550_before, readings.attn_1625_before, h2_batch_id]
+    // Validate h2_batch_id exists
+    const batchCheck = await pool.query(
+        `SELECT h2_ageing_id FROM h2_ageing WHERE h2_batch_id = $1 LIMIT 1`,
+        [h2_batch_id]
     );
-
-    if (result.rowCount === 0) {
+    if (batchCheck.rows.length === 0) {
         throw new Error("H2 batch not found.");
     }
 
-    return { success: true, message: "Before entry saved successfully." };
-};
-
-export const saveAfterEntryS = async (payload) => {
-    const { h2_batch_id, operator, date, time, readings, logged_in_user } = payload;
-
-    const result = await pool.query(
-        `UPDATE h2_ageing
-         SET after_date = $1, after_time = $2, after_operator = $3,
-             attn_1240_after = $4, attn_1310_after = $5, attn_1383_after = $6,
-             attn_1550_after = $7, attn_1625_after = $8, updated_at = CURRENT_TIMESTAMP
-         WHERE h2_batch_id = $9`,
-        [date, time, operator,
-         readings.attn_1240_after, readings.attn_1310_after, readings.attn_1383_after,
-         readings.attn_1550_after, readings.attn_1625_after, h2_batch_id]
-    );
-
-    if (result.rowCount === 0) {
-        throw new Error("H2 batch not found.");
+    // Validate bobbins array
+    if (!bobbins || !Array.isArray(bobbins) || bobbins.length === 0) {
+        throw new Error("Bobbins array is required and must not be empty.");
     }
-
-    // Get d2_batch_id(s) associated with this h2_batch_id
-    const d2Result = await pool.query(
-        `SELECT DISTINCT d2_batch_id FROM h2_ageing WHERE h2_batch_id = $1`,
-        [h2_batch_id]
-    );
-    const d2BatchIds = d2Result.rows.map(r => r.d2_batch_id).filter(Boolean);
-
-    // Mark is_h2_after = true for all bobbins in this h2_batch
-    await pool.query(
-        `UPDATE bobbin_entries SET is_h2_after = true WHERE bobbin_no IN (SELECT bobbin_no FROM h2_ageing WHERE h2_batch_id = $1)`,
-        [h2_batch_id]
-    );
-
-    // Also mark is_h2_after = true for all bobbins that share the same d2_batch_id(s)
-    if (d2BatchIds.length > 0) {
-        await pool.query(
-            `UPDATE bobbin_entries SET is_h2_after = true WHERE d2_batch_id = ANY($1)`,
-            [d2BatchIds]
-        );
-    }
-
-    return { success: true, message: "After entry saved successfully." };
-};
-
-export const save14DayEntryS = async (payload) => {
-    const { h2_batch_id, operator, date, time, readings, logged_in_user } = payload;
 
     const client = await pool.connect();
-
     try {
         await client.query("BEGIN");
 
-        await client.query(
-            `UPDATE h2_ageing
-             SET date_14_day = $1, time_14_day = $2, date_14_day_operator = $3,
-                 attn_1240_14_days = $4, attn_1310_14_days = $5, attn_1383_14_days = $6,
-                 attn_1550_14_days = $7, attn_1625_14_days = $8, updated_at = CURRENT_TIMESTAMP
-             WHERE h2_batch_id = $9`,
-            [date, time, operator,
-             readings.attn_1240_14_days, readings.attn_1310_14_days, readings.attn_1383_14_days,
-             readings.attn_1550_14_days, readings.attn_1625_14_days, h2_batch_id]
-        );
+        for (const bobbin of bobbins) {
+            const { bobbin_no, h2_id, readings } = bobbin;
 
-        // Get d2_batch_id and bobbin_nos for this h2 batch — no further d2_issue update needed
-        // is_h2 was already set to TRUE during H2 Issue
+            if (!bobbin_no || !h2_id || !readings) {
+                throw new Error(`Invalid bobbin data: bobbin_no, h2_id, and readings are required.`);
+            }
+
+            const { attn_1240_before, attn_1310_before, attn_1383_before, attn_1550_before, attn_1625_before } = readings;
+
+            if (attn_1240_before == null || attn_1310_before == null || attn_1383_before == null ||
+                attn_1550_before == null || attn_1625_before == null) {
+                throw new Error(`All 5 reading fields are required for bobbin ${bobbin_no}.`);
+            }
+
+            const result = await client.query(
+                `UPDATE h2_ageing
+                 SET attn_1240_before = $1, attn_1310_before = $2, attn_1383_before = $3,
+                     attn_1550_before = $4, attn_1625_before = $5,
+                     before_operator = $6, before_date = $7, before_time = $8,
+                     updated_at = CURRENT_TIMESTAMP
+                 WHERE h2_batch_id = $9 AND h2_ageing_id = $10 AND bobbin_no = $11`,
+                [attn_1240_before, attn_1310_before, attn_1383_before,
+                 attn_1550_before, attn_1625_before,
+                 operator, date, time,
+                 h2_batch_id, h2_id, bobbin_no]
+            );
+
+            if (result.rowCount === 0) {
+                throw new Error(`No matching row found for bobbin ${bobbin_no} with h2_id ${h2_id} in batch ${h2_batch_id}.`);
+            }
+        }
 
         await client.query("COMMIT");
-        return { success: true, message: "14-Day entry saved successfully." };
+        return { success: true, message: `Before entry readings saved for ${bobbins.length} bobbins.` };
+
+    } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+    } finally {
+        client.release();
+    }
+};
+
+export const saveAfterEntryS = async (payload) => {
+    const { h2_batch_id, operator, date, time, bobbins, logged_in_user } = payload;
+
+    // Validate h2_batch_id exists
+    const batchCheck = await pool.query(
+        `SELECT h2_ageing_id FROM h2_ageing WHERE h2_batch_id = $1 LIMIT 1`,
+        [h2_batch_id]
+    );
+    if (batchCheck.rows.length === 0) {
+        throw new Error("H2 batch not found.");
+    }
+
+    // Validate bobbins array
+    if (!bobbins || !Array.isArray(bobbins) || bobbins.length === 0) {
+        throw new Error("Bobbins array is required and must not be empty.");
+    }
+
+    const client = await pool.connect();
+    try {
+        await client.query("BEGIN");
+
+        for (const bobbin of bobbins) {
+            const { bobbin_no, h2_id, readings } = bobbin;
+
+            if (!bobbin_no || !h2_id || !readings) {
+                throw new Error(`Invalid bobbin data: bobbin_no, h2_id, and readings are required.`);
+            }
+
+            const { attn_1240_after, attn_1310_after, attn_1383_after, attn_1550_after, attn_1625_after } = readings;
+
+            if (attn_1240_after == null || attn_1310_after == null || attn_1383_after == null ||
+                attn_1550_after == null || attn_1625_after == null) {
+                throw new Error(`All 5 reading fields are required for bobbin ${bobbin_no}.`);
+            }
+
+            const result = await client.query(
+                `UPDATE h2_ageing
+                 SET attn_1240_after = $1, attn_1310_after = $2, attn_1383_after = $3,
+                     attn_1550_after = $4, attn_1625_after = $5,
+                     after_operator = $6, after_date = $7, after_time = $8,
+                     updated_at = CURRENT_TIMESTAMP
+                 WHERE h2_batch_id = $9 AND h2_ageing_id = $10 AND bobbin_no = $11`,
+                [attn_1240_after, attn_1310_after, attn_1383_after,
+                 attn_1550_after, attn_1625_after,
+                 operator, date, time,
+                 h2_batch_id, h2_id, bobbin_no]
+            );
+
+            if (result.rowCount === 0) {
+                throw new Error(`No matching row found for bobbin ${bobbin_no} with h2_id ${h2_id} in batch ${h2_batch_id}.`);
+            }
+        }
+
+        // Mark bobbin_entries as h2_after complete
+        const bobbinNos = bobbins.map(b => b.bobbin_no);
+        await client.query(
+            `UPDATE bobbin_entries SET is_h2_after = true WHERE bobbin_no = ANY($1)`,
+            [bobbinNos]
+        );
+
+        await client.query("COMMIT");
+        return { success: true, message: `After entry readings saved for ${bobbins.length} bobbins.` };
+
+    } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+    } finally {
+        client.release();
+    }
+};
+
+export const save14DayEntryS = async (payload) => {
+    const { h2_batch_id, operator, date, time, bobbins, logged_in_user } = payload;
+
+    // Validate h2_batch_id exists
+    const batchCheck = await pool.query(
+        `SELECT h2_ageing_id FROM h2_ageing WHERE h2_batch_id = $1 LIMIT 1`,
+        [h2_batch_id]
+    );
+    if (batchCheck.rows.length === 0) {
+        throw new Error("H2 batch not found.");
+    }
+
+    // Validate bobbins array
+    if (!bobbins || !Array.isArray(bobbins) || bobbins.length === 0) {
+        throw new Error("Bobbins array is required and must not be empty.");
+    }
+
+    const client = await pool.connect();
+    try {
+        await client.query("BEGIN");
+
+        for (const bobbin of bobbins) {
+            const { bobbin_no, h2_id, readings } = bobbin;
+
+            if (!bobbin_no || !h2_id || !readings) {
+                throw new Error(`Invalid bobbin data: bobbin_no, h2_id, and readings are required.`);
+            }
+
+            const { attn_1240_14_days, attn_1310_14_days, attn_1383_14_days, attn_1550_14_days, attn_1625_14_days } = readings;
+
+            if (attn_1240_14_days == null || attn_1310_14_days == null || attn_1383_14_days == null ||
+                attn_1550_14_days == null || attn_1625_14_days == null) {
+                throw new Error(`All 5 reading fields are required for bobbin ${bobbin_no}.`);
+            }
+
+            const result = await client.query(
+                `UPDATE h2_ageing
+                 SET attn_1240_14_days = $1, attn_1310_14_days = $2, attn_1383_14_days = $3,
+                     attn_1550_14_days = $4, attn_1625_14_days = $5,
+                     date_14_day_operator = $6, date_14_day = $7, time_14_day = $8,
+                     updated_at = CURRENT_TIMESTAMP
+                 WHERE h2_batch_id = $9 AND h2_ageing_id = $10 AND bobbin_no = $11`,
+                [attn_1240_14_days, attn_1310_14_days, attn_1383_14_days,
+                 attn_1550_14_days, attn_1625_14_days,
+                 operator, date, time,
+                 h2_batch_id, h2_id, bobbin_no]
+            );
+
+            if (result.rowCount === 0) {
+                throw new Error(`No matching row found for bobbin ${bobbin_no} with h2_id ${h2_id} in batch ${h2_batch_id}.`);
+            }
+        }
+
+        await client.query("COMMIT");
+        return { success: true, message: `14-Day entry readings saved for ${bobbins.length} bobbins.` };
 
     } catch (error) {
         await client.query("ROLLBACK");

@@ -83,7 +83,61 @@ export const completeReceivingS = async (payload) => {
             [d2_batch_id]
         );
 
-        // Step 3: Set chamber back to active
+        // Step 3: Update final_grade from temp_grade for all bobbins in this batch
+        const bobbinsResult = await client.query(
+            `SELECT bobbin_no FROM bobbin_entries WHERE d2_batch_id = $1`,
+            [d2_batch_id]
+        );
+
+        for (const row of bobbinsResult.rows) {
+            const { bobbin_no } = row;
+
+            // Get temp_grade from qc_entry_temp
+            const qcTempResult = await client.query(
+                `SELECT * FROM qc_entry_temp WHERE bobbin_no = $1 LIMIT 1`,
+                [bobbin_no]
+            );
+
+            if (qcTempResult.rows.length === 0) continue;
+
+            const tempRow = qcTempResult.rows[0];
+            const finalGrade = tempRow.temp_grade;
+
+            if (!finalGrade) continue;
+
+            // Update final_grade in qc_entry_temp
+            await client.query(
+                `UPDATE qc_entry_temp SET final_grade = $2 WHERE bobbin_no = $1`,
+                [bobbin_no, finalGrade]
+            );
+
+            // Update final_grade in bobbin_entries
+            await client.query(
+                `UPDATE bobbin_entries SET final_grade = $2 WHERE bobbin_no = $1`,
+                [bobbin_no, finalGrade]
+            );
+
+            // Copy full record from qc_entry_temp into qc_entry
+            // Re-fetch after final_grade update
+            const updatedTempRow = (await client.query(
+                `SELECT * FROM qc_entry_temp WHERE bobbin_no = $1 LIMIT 1`,
+                [bobbin_no]
+            )).rows[0];
+
+            const excludeFields = ['created_at', 'updated_at', 'logged_in_user'];
+            const columns = Object.keys(updatedTempRow).filter(k => !excludeFields.includes(k));
+            const values = columns.map(k => updatedTempRow[k] === '' ? null : updatedTempRow[k]);
+            const placeholders = values.map((_, i) => `$${i + 1}`).join(',');
+            const updateSet = columns.filter(k => k !== 'bobbin_no').map(k => `${k} = EXCLUDED.${k}`).join(',');
+
+            await client.query(
+                `INSERT INTO qc_entry (${columns.join(',')}) VALUES (${placeholders})
+                 ON CONFLICT (bobbin_no) DO UPDATE SET ${updateSet}`,
+                values
+            );
+        }
+
+        // Step 4: Set chamber back to active
         await client.query(
             `UPDATE d2_chamber SET is_active = true WHERE d2_chamber_no = $1`,
             [d2_chamber]
@@ -91,7 +145,7 @@ export const completeReceivingS = async (payload) => {
 
         await client.query("COMMIT");
 
-        return { success: true, message: "D2 Receiving completed successfully. All bobbins marked as D2 completed." };
+        return { success: true, message: "D2 Receiving completed successfully. All bobbins marked as D2 completed and final grades updated." };
 
     } catch (error) {
         await client.query("ROLLBACK");

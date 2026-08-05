@@ -157,6 +157,35 @@ export const drawEntryS = async(payload)=>{
 
          const stock = stockResult.rows[0];
 
+         // ── Auto-calculate start_length and end_length from spool_fid ──
+         let start_length = 0;
+         let end_length = 0;
+
+         const suffix = payload.spool_fid.slice(-1); // Last char: 'A', 'B', 'C', etc.
+
+         if (suffix.toUpperCase() === 'A') {
+             // First spool for this preform — start from 0
+             start_length = 0;
+         } else {
+             // Derive previous spool FID (e.g. current 'C' → previous 'B')
+             const prevSuffix = String.fromCharCode(suffix.charCodeAt(0) - 1);
+             const prevFid = payload.spool_fid.slice(0, -1) + prevSuffix;
+
+             const prevResult = await client.query(
+                 `SELECT end_length FROM draw_entry WHERE spool_fid = $1 ORDER BY created_at DESC LIMIT 1`,
+                 [prevFid]
+             );
+
+             if (prevResult.rows.length > 0 && prevResult.rows[0].end_length != null) {
+                 start_length = Number(prevResult.rows[0].end_length);
+             } else {
+                 // Fallback: if previous spool not found, start from 0
+                 start_length = 0;
+             }
+         }
+
+         end_length = start_length + Number(payload.drawn_length || 0);
+
          const balanceWeight = Number(stock.balance_qty);
          const usedWeight = Number(payload.drawn_weight);
 
@@ -184,6 +213,8 @@ export const drawEntryS = async(payload)=>{
                 preform_id,
                 spool_id,
                 spool_fid,
+                start_length,
+                end_length,
                 start_date,
                 end_date,
                 start_time,
@@ -230,21 +261,21 @@ export const drawEntryS = async(payload)=>{
             )
                 VALUES
             (
-                $1,$2,$3,$4,
-                $5,$6,$7,$8,
-                $9,$10,$11,
-                $12,$13,$14,
-                $15,$16,$17,$18,
-                $19,$20,$21,
-                $22,$23,$24,$25,
-                $26,$27,
+                $1,$2,$3,$4,$5,$6,
+                $7,$8,$9,$10,
+                $11,$12,$13,
+                $14,$15,$16,
+                $17,$18,$19,$20,
+                $21,$22,$23,
+                $24,$25,$26,$27,
                 $28,$29,
-                $30,
-                $31,$32,$33,
-                $34,$35,
+                $30,$31,
+                $32,
+                $33,$34,$35,
                 $36,$37,
-                $38,$39,$40,
-                $41,$42,$43,$44,$45,$46,$47
+                $38,$39,
+                $40,$41,$42,
+                $43,$44,$45,$46,$47,$48,$49
             )
                 RETURNING spool_id
                 `,
@@ -253,6 +284,9 @@ export const drawEntryS = async(payload)=>{
                 payload.preform_id,
                 payload.spool_id,
                 payload.spool_fid,
+
+                start_length,
+                end_length,
 
                 payload.start_date,
                 payload.end_date,

@@ -2,7 +2,7 @@ import pool from "../../db/postgres.js";
 
 export const validateBobbinForQcOutS = async (bobbin_no) => {
     const result = await pool.query(
-        `SELECT bobbin_no, fid, fiber_type, fiber_color, fiber_length, is_qc_out
+        `SELECT bobbin_no, fid, fiber_type, fiber_color, fiber_length, is_qc_out, product_type
          FROM bobbin_entries WHERE bobbin_no = $1`,
         [bobbin_no]
     );
@@ -45,6 +45,7 @@ export const validateBobbinForQcOutS = async (bobbin_no) => {
             fiber_type: bobbin.fiber_type,
             fiber_color: bobbin.fiber_color,
             fiber_length: bobbin.fiber_length,
+            product_type: bobbin.product_type,
             final_grade
         }
     };

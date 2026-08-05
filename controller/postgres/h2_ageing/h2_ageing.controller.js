@@ -92,30 +92,60 @@ export const getBobbinsForBatchC = async (req, res) => {
 
 export const saveBeforeEntryC = async (req, res) => {
     try {
+        const { h2_batch_id, operator, date, time, bobbins } = req.body;
+
+        if (!h2_batch_id || !operator || !date || !time) {
+            return res.status(400).json({ success: false, message: "h2_batch_id, operator, date, and time are required." });
+        }
+        if (!bobbins || !Array.isArray(bobbins) || bobbins.length === 0) {
+            return res.status(400).json({ success: false, message: "bobbins array is required and must not be empty." });
+        }
+
         const emp_id = req.user.emp_id;
         const result = await saveBeforeEntryS({ ...req.body, logged_in_user: emp_id });
         res.status(200).json(result);
     } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
+        const status = error.message.includes("not found") || error.message.includes("required") ? 400 : 500;
+        res.status(status).json({ success: false, message: error.message });
     }
 };
 
 export const saveAfterEntryC = async (req, res) => {
     try {
+        const { h2_batch_id, operator, date, time, bobbins } = req.body;
+
+        if (!h2_batch_id || !operator || !date || !time) {
+            return res.status(400).json({ success: false, message: "h2_batch_id, operator, date, and time are required." });
+        }
+        if (!bobbins || !Array.isArray(bobbins) || bobbins.length === 0) {
+            return res.status(400).json({ success: false, message: "bobbins array is required and must not be empty." });
+        }
+
         const emp_id = req.user.emp_id;
         const result = await saveAfterEntryS({ ...req.body, logged_in_user: emp_id });
         res.status(200).json(result);
     } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
+        const status = error.message.includes("not found") || error.message.includes("required") ? 400 : 500;
+        res.status(status).json({ success: false, message: error.message });
     }
 };
 
 export const save14DayEntryC = async (req, res) => {
     try {
+        const { h2_batch_id, operator, date, time, bobbins } = req.body;
+
+        if (!h2_batch_id || !operator || !date || !time) {
+            return res.status(400).json({ success: false, message: "h2_batch_id, operator, date, and time are required." });
+        }
+        if (!bobbins || !Array.isArray(bobbins) || bobbins.length === 0) {
+            return res.status(400).json({ success: false, message: "bobbins array is required and must not be empty." });
+        }
+
         const emp_id = req.user.emp_id;
         const result = await save14DayEntryS({ ...req.body, logged_in_user: emp_id });
         res.status(200).json(result);
     } catch (error) {
-        res.status(500).json({ success: false, message: error.message });
+        const status = error.message.includes("not found") || error.message.includes("required") ? 400 : 500;
+        res.status(status).json({ success: false, message: error.message });
     }
 };
