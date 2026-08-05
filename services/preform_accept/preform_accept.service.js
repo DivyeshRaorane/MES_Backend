@@ -20,7 +20,8 @@ export const preformAccept = async({
     draw_instruction,
     acceptance_status,
     rejection_note,
-    logged_in_user
+    logged_in_user,
+    preform_vendor_id
 })=>{
 
     const client = await pool.connect();
@@ -48,10 +49,11 @@ export const preformAccept = async({
     draw_instruction,
     acceptance_status,
     rejection_note,
-    logged_in_user
+    logged_in_user,
+    preform_vendor_id
         )
     VALUES(
-    $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+    $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
     RETURNING *
         `;
         const values = [
@@ -74,6 +76,7 @@ export const preformAccept = async({
     acceptance_status,
     rejection_note,
     logged_in_user,
+    preform_vendor_id || null,
         ];
 
         const result = await client.query(insertQuery,values);

@@ -1,62 +1,122 @@
 import pool from "../../db/postgres.js";
 
-// 2. Full list of parameters to dynamically loop through
 
 
-const parametersToCheck2 = [
-  'avg_lsa_atn_1310', 'avg_lsa_atn_1550', 'avg_lsa_atn_1625', 'avg_lsa_atn_1383',
-  'spec_1285_1330' , 'mfd_1310_top', 'mfd_1310_bottom', 'mfd_1550_top', 'mfd_1550_bottom',
-  'cut_off_top', 'cut_off_bottom', 'core_clad_concentricity_top', 'core_clad_concentricity_bottom',
-  'clad_ovality_top', 'clad_ovality_bottom', 'core_ovality_top', 'core_ovality_bottom',
-   'clad_dia_top', 'clad_dia_bottom', 'primary_coating_dia_top', 'primary_coating_dia_bottom',
-   'secondary_coating_dia_top', 'secondary_coating_dia_bottom', 'primary_coating_concentricity_top', 'primary_coating_concentricity_bottom',
-   'secondary_coating_concentricity_top', 'secondary_coating_concentricity_bottom', 'coating_ovality_top', 'coating_ovality_bottom',
-   'fiber_curl_top', 'fiber_curl_bottom', 'zero_disp_wave', 'slope_zero_disp', 
-   'disp_1550', 'disp_1285_1330', 'disp_1270_1360', 'pmd_1310', 
-   'pmd_1550', 'disp_1575', 'disp_1460', 'disp_1490', 
-   'spike_1310_size', 'spike_1550_size', 'cable_cut_off', 'disp_1625', 
-   'disp_1570', 'slope_1550', 'slope_1290', 'slope_1490',
-   'm_1t_10mm_1550', 'm_1t_10mm_1625', 'm_1t_15mm_1550', 'm_1t_15mm_1625',
-   'm_1t_20mm_1550', 'm_1t_20mm_1625', 'm_10t_30mm_1550', 'm_10t_30mm_1625',
-   'm_1t_32mm_1550', 'm_1t_32mm_1625', 'm_100t_50mm_1550', 'm_100t_50mm_1310', 
-   'm_100t_50mm_1625', 'm_100t_60mm_1550', 'm_100t_60mm_1625',
-]
+// for D to A1 conversion
+function validateTopBottom(topValue, bottomValue, validator) {
+
+  const hasTop = topValue !== null && topValue !== undefined && topValue !== '';
+  const hasBottom = bottomValue !== null && bottomValue !== undefined && bottomValue !== '';
+
+  if (!hasTop && !hasBottom) {
+    return false;
+  }
+
+  if (hasTop && !validator(parseFloat(topValue))) {
+    return false;
+  }
+
+  if (hasBottom && !validator(parseFloat(bottomValue))) {
+    return false;
+  }
+
+  return true;
+}
+
+// for D to A1 conversion
+function qualifiesForSecondaryProduct(measurement) {
+
+  if (measurement.product_type !== 'G652D250') return false;
+
+  const mac = parseFloat(measurement.mac_value);
+
+  if (isNaN(mac) || mac >= 7.05) return false;
+
+  return (
+    validateTopBottom(
+      measurement.cut_off_top,
+      measurement.cut_off_bottom,
+      value => value >= 1270 && value <= 1330
+    ) &&
+
+    validateTopBottom(
+      measurement.mfd_1310_top,
+      measurement.mfd_1310_bottom,
+      value => value >= 8.80 && value <= 9.15
+    ) &&
+
+    validateTopBottom(
+      measurement.secondary_coating_dia_top,
+      measurement.secondary_coating_dia_bottom,
+      value => value >= 237 && value <= 247
+    ) &&
+
+    validateTopBottom(
+      measurement.fiber_curl_top,
+      measurement.fiber_curl_bottom,
+      value => value > 5
+    ) &&
+
+    validateTopBottom(
+      measurement.clad_ovality_top,
+      measurement.clad_ovality_bottom,
+      value => value < 0.7
+    )
+  );
+
+}
+
+// for D to A1 conversion
+function hasMbendValues(measurement) {
+
+  const mbendFields = [
+    'm_100t_50mm_1550',
+    'm_100t_50mm_1310',
+    'm_100t_30mm_1550',
+    'm_100t_30mm_1310'
+    // Add all MBend parameters here
+  ];
+
+  return mbendFields.every(field => {
+    const value = measurement[field];
+    return value !== null && value !== undefined && value !== '';
+  });
+
+}
+
+//For D to A1 Conversion
+function validateMbend(measurement, gradeSpec) {
+
+  const mbendFields = [
+    'm_1t_20mm_1550',
+    'm_1t_20mm_1625',
+    'm_10t_30mm_1625',
+    'm_1t_32mm_1550'
+    // Add all MBend parameters here
+  ];
+
+  for (const field of mbendFields) {
+
+    const measured = parseFloat(measurement[field]);
+
+    const min = parseFloat(gradeSpec[`min_${field}`]);
+    const max = parseFloat(gradeSpec[`max_${field}`]);
+
+    if (!isNaN(min) && measured < min) {
+      return false;
+    }
+
+    if (!isNaN(max) && measured > max) {
+      return false;
+    }
+  }
+
+  return true;
+}
 
 
-const parametersToCheck1 = [
-  'avg_lsa_atn_1310', 'avg_lsa_atn_1550', 'avg_lsa_atn_1625', 'avg_lsa_atn_1383',
-  'max_lsa_atn_1310', 'max_lsa_atn_1550', 'max_lsa_atn_1625', 'max_lsa_atn_1383',
-  'min_lsa_atn_1310', 'min_lsa_atn_1550', 'min_lsa_atn_1625', 'min_lsa_atn_1383',
-  'atn_1310_top', 'atn_1550_top', 'atn_1625_top', 'atn_1383_top',
-  'atn_1310_bottom', 'atn_1550_bottom', 'atn_1625_bottom', 'atn_1383_bottom',
-  'max_atn_1310_top', 'max_atn_1550_top', 'max_atn_1625_top', 'max_atn_1383_top',
-  'max_atn_1310_bottom', 'max_atn_1550_bottom', 'max_atn_1625_bottom', 'max_atn_1383_bottom',
-  'max_tb_1310', 'max_tb_1550', 'max_tb_1625', 'max_tb_1383',
-  'atn_1310_tb', 'atn_1550_tb', 'atn_1625_tb', 'atn_1383_tb',
-  'atn_uniformity_1310', 'atn_uniformity_1550', 'atn_uniformity_1625', 'atn_uniformity_1383',
-  'mfd_uniformity_1310', 'mfd_uniformity_1550', 'mfd_uniformity_1625', 'mfd_uniformity_1383',
-  'step_1310_size', 'step_1550_size', 'step_1625_size', 'step_1383_size',
-  'spike_1310_size', 'spike_1550_size', 'spike_1625_size', 'spike_1383_size',
-  'spec_1310', 'spec_1550', 'spec_1285_1330',
-  'mfd_1310_top', 'mfd_1310_bottom', 'mfd_1550_top', 'mfd_1550_bottom',
-  'effective_area_1310', 'effective_area_1550',
-  'cut_off_top', 'cut_off_bottom', 'cable_cut_off', 'mac_value',
-  'clad_dia_top', 'clad_dia_bottom', 'core_clad_concentricity_top', 'core_clad_concentricity_bottom',
-  'clad_ovality_top', 'clad_ovality_bottom', 'core_dia_top', 'core_dia_bottom',
-  'core_ovality_top', 'core_ovality_bottom', 'primary_coating_dia_top', 'primary_coating_dia_bottom',
-  'secondary_coating_dia_top', 'secondary_coating_dia_bottom', 'primary_coating_concentricity_top', 'primary_coating_concentricity_bottom',
-  'secondary_coating_concentricity_top', 'secondary_coating_concentricity_bottom', 'coating_ovality_top', 'coating_ovality_bottom',
-  'fiber_curl_top', 'fiber_curl_bottom', 'curl_defection_top', 'curl_defection_bottom',
-  'zero_disp_wave', 'slope_zero_disp', 'disp_1550', 'disp_1285_1330', 'disp_1270_1340', 'disp_1575',
-  'cd_1460', 'disp_1625', 'disp_1570', 'disp_1260', 'pmd_1310', 'pmd_1550', 'disp_slope',
-  'm_100T_50mm_1550', 'm_100T_50mm_1310', 'm_100T_50mm_1625',
-  'm_100T_60mm_1550', 'm_100T_60mm_1310', 'm_100T_60mm_1625',
-  'm_1T_32mm_1550', 'm_1T_32mm_1310', 'm_1T_32mm_1625',
-  'm_10T_30mm_1550', 'm_10T_30mm_1310', 'm_10T_30mm_1625',
-  'm_1T_20mm_1550', 'm_1T_20mm_1310', 'm_1T_20mm_1625',
-  'm_1T_15mm_1550', 'm_1T_15mm_1310', 'm_1T_15mm_1625',
-  'm_1T_10mm_1550', 'm_1T_10mm_1310', 'm_1T_10mm_1625'
-];
+//For D to A1 Conversion
+
 
 // Defined Top/Bottom Mapping Pairs for processing rules
 const topBottomPairs = [
@@ -95,49 +155,62 @@ export async function validateBobbinQC(bobbinNo) {
       return { status: 'ERROR', message: `Bobbin ${bobbinNo} not found.` };
     }
 
+
     const measurement = measurementRes.rows[0];
     const product_type = measurement.product_type;
+  
+    const SECONDARY_PRODUCT_TYPE_FOR_LOW_MAC = 'G657A1250';
+    const useDualProductTypeSpecs = qualifiesForSecondaryProduct(measurement)
+
+    console.log("What is the useDualprodutype:", useDualProductTypeSpecs)
+
+    
+    const effectiveProductType = useDualProductTypeSpecs
+      ? SECONDARY_PRODUCT_TYPE_FOR_LOW_MAC
+      : product_type;
+
+  
     const parametersToCheckQuery = `Select mandatory_params from grade_mandatory where product_type = $1;`;
-    const parametersToCheckRes = await client.query(parametersToCheckQuery, [product_type])
+    const parametersToCheckRes = await client.query(parametersToCheckQuery, [effectiveProductType])
 
     const parametersToCheck = parametersToCheckRes.rows[0]?.mandatory_params
-    ?.split(',')
-    .map(param =>param.trim()) || [];
+      ?.split(',')
+      .map(param => param.trim()) || [];
 
 
     const fullCheckQuery = `Select full_check from pt_entry where bobbin_no = $1;`;
     const fullCheckRes = await client.query(fullCheckQuery, [bobbinNo]);
-    const fullCheck = fullCheckRes.rows.length>0 ? fullCheckRes.rows[0].full_check === true : false
+    const fullCheck = fullCheckRes.rows.length > 0 ? fullCheckRes.rows[0].full_check === true : false
 
     // --- NEW LOGIC: Look for missing top/bottom data and copy from whichever side is present ---
     const synchronizedPairsToUpdate = []; // now stores { field, value } to write back to DB
 
     const isEmpty = (v) => (v === null || v === undefined || v === '');
 
-    if(!fullCheck){
-    for (const pair of topBottomPairs) {
-      const topVal = measurement[pair.top];
-      const bottomVal = measurement[pair.bottom];
+    if (!fullCheck) {
+      for (const pair of topBottomPairs) {
+        const topVal = measurement[pair.top];
+        const bottomVal = measurement[pair.bottom];
 
-      // If bottom value is missing/null, but top value exists, borrow top value for testing
-      if (isEmpty(bottomVal) && !isEmpty(topVal)) {
-        measurement[pair.bottom] = topVal;
-        synchronizedPairsToUpdate.push({ field: pair.bottom, value: topVal });
-      }
-      // If top value is missing/null, but bottom value exists, borrow bottom value for testing
-      else if (isEmpty(topVal) && !isEmpty(bottomVal)) {
-        measurement[pair.top] = bottomVal;
-        synchronizedPairsToUpdate.push({ field: pair.top, value: bottomVal });
+        // If bottom value is missing/null, but top value exists, borrow top value for testing
+        if (isEmpty(bottomVal) && !isEmpty(topVal)) {
+          measurement[pair.bottom] = topVal;
+          synchronizedPairsToUpdate.push({ field: pair.bottom, value: topVal });
+        }
+        // If top value is missing/null, but bottom value exists, borrow bottom value for testing
+        else if (isEmpty(topVal) && !isEmpty(bottomVal)) {
+          measurement[pair.top] = bottomVal;
+          synchronizedPairsToUpdate.push({ field: pair.top, value: bottomVal });
+        }
       }
     }
-  }
 
-  //For D to A1 Conversion
+    //For D to A1 Conversion
 
-  const SECONDARY_PRODUCT_TYPE_FOR_LOW_MAC = 'G657A1250';
 
-  const macValueParsed = parseFloat(measurement['mac_value']);
-    const useDualProductTypeSpecs = (product_type === 'G652D250' && !isNaN(macValueParsed) && macValueParsed < 7.05);
+
+    //const macValueParsed = parseFloat(measurement['mac_value']);
+    //  const useDualProductTypeSpecs = (product_type === 'G652D250' && !isNaN(macValueParsed) && macValueParsed < 7.05);
 
     // --------------------------------------------------------------------------
 
@@ -145,7 +218,7 @@ export async function validateBobbinQC(bobbinNo) {
     let specsRes;
     if (useDualProductTypeSpecs) {
       // Result order: matcode='D' tiers first (priority 1,2,3...), then secondary matcode's tiers (priority 1,2,3...)
-      const productTypeInOrder = [SECONDARY_PRODUCT_TYPE_FOR_LOW_MAC,product_type];
+      const productTypeInOrder = [SECONDARY_PRODUCT_TYPE_FOR_LOW_MAC, product_type];
       const dualSpecsQuery = `
         SELECT * FROM qc_grade 
         WHERE product_type = ANY($1) AND Status = true 
@@ -179,7 +252,7 @@ export async function validateBobbinQC(bobbinNo) {
       }
     }
 
-    
+
 
     if (missingParameters.length > 0) {
       return {
@@ -191,7 +264,35 @@ export async function validateBobbinQC(bobbinNo) {
         failure_details: null
       };
     }
-    // --------------------------------------------------------------------------
+
+    // --- NEW LOGIC: cable_cut_off is conditionally mandatory - only required when
+    // cut_off_top or cut_off_bottom is greater than 1310. At this point cut_off_top and
+    // cut_off_bottom are guaranteed present (they already passed the check above). ---
+    const cutOffTopVal = parseFloat(measurement['cut_off_top']);
+    const cutOffBottomVal = parseFloat(measurement['cut_off_bottom']);
+    const cableCutOffMandatory = cutOffTopVal > 1310 || cutOffBottomVal > 1310;
+
+    const cableCutOffRaw = measurement['cable_cut_off'];
+    const cableCutOffMissing = (cableCutOffRaw === null || cableCutOffRaw === undefined || cableCutOffRaw === '');
+
+    if (cableCutOffMandatory && cableCutOffMissing) {
+      return {
+        status: 'MISSING_DATA',
+        matched_grade: null,
+        matched_priority: null,
+        metrics: { total_checks_performed: 0 },
+        missing_parameters: ['cable_cut_off'], // mandatory because cut_off_top/cut_off_bottom > 1310, but value missing
+        failure_details: null
+      };
+    }
+
+    // If cable_cut_off is NOT mandatory (condition not met) and it happens to be missing,
+    // it should not be graded at all - skip it in the tier loop below.
+    const skipCableCutOffInGradeLoop = (!cableCutOffMandatory && cableCutOffMissing);
+    
+ // --------------------------------------------------------------------------
+
+
 
     let totalChecksPerformed = 0;
     let finalMatchedTier = null;
@@ -204,6 +305,12 @@ export async function validateBobbinQC(bobbinNo) {
       // D. INNER LOOP: Check every single parameter against this tier's rules
       for (const paramName of parametersToCheck) {
 
+
+        // NEW: cable_cut_off wasn't mandatory here and is missing - don't grade-check it.
+        if (paramName === 'cable_cut_off' && skipCableCutOffInGradeLoop) {
+          continue;
+        }
+
         totalChecksPerformed++;
 
         const measuredValue = parseFloat(measurement[paramName]);
@@ -215,7 +322,7 @@ export async function validateBobbinQC(bobbinNo) {
 
         if (!passesMin || !passesMax) {
           tierPassed = false;
-          
+
           // Determine advice message based on whether a top/bottom field failed bounds validation
           const notice = isTopBottomParameter(paramName) ? "Test from Bottom" : "Standard parameter mismatch";
 
@@ -232,16 +339,56 @@ export async function validateBobbinQC(bobbinNo) {
         }
       }
 
+      // if (tierPassed) {
+      //   finalMatchedTier = tier;
+      //   validationFailureLog = null;
+      //   break;
+      // }
+
+
+      // For D to A1 Conversion
       if (tierPassed) {
+
+        // Only apply MBend logic for secondary product
+        if (
+          useDualProductTypeSpecs &&
+          tier.product_type === SECONDARY_PRODUCT_TYPE_FOR_LOW_MAC
+        ) {
+
+          // MBend not entered
+          if (!hasMbendValues(measurement)) {
+
+            return {
+              status: "MBEND_REQUIRED",
+              matched_grade: null,
+              matched_priority: null,
+              metrics: {
+                total_checks_performed: totalChecksPerformed
+              },
+              message: "Bobbin qualifies for G657A1250. Please complete MBend testing."
+            };
+
+          }
+
+          // MBend entered but failed
+          if (!validateMbend(measurement, tier)) {
+
+            // Skip this tier and continue checking G652D250
+            continue;
+          }
+        }
+
+        // Normal success
         finalMatchedTier = tier;
         validationFailureLog = null;
         break;
       }
+
     }
 
     // E. Structure Final Result Payload & Save Updates
     if (finalMatchedTier) {
-      
+
       // --- NEW LOGIC: If passing and values were borrowed, update the table ---
       if (synchronizedPairsToUpdate.length > 0) {
         let updateFields = [];
@@ -259,9 +406,9 @@ export async function validateBobbinQC(bobbinNo) {
           SET ${updateFields.join(', ')} 
           WHERE bobbin_no = $1;
         `;
-        
+
         await client.query(updateQuery, queryParams);
-        
+
       }
       // --------------------------------------------------------------------------
 
@@ -295,7 +442,7 @@ export async function validateBobbinQC(bobbinNo) {
 // 4. Test Runner Routine execution
 //async function runTests() {
 //  console.log('--- Starting Wide QC Table Dynamic Top/Bottom Sync Tests --- \n');
-//  
+//
 //  const testBobbins = ['B-FAIL-01', 'B-FAIL-02', 'B-FAIL-03', 'B-FAIL-04', 'B-FAIL-05','B-PASS-APLUS','B-PASS-GRADEA','B-PASS-GRADEB','B-PASS-GRADEC'];
 //
 //  for (const bobbin of testBobbins) {

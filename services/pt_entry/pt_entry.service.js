@@ -211,6 +211,7 @@ export const ptEntryS = async (payload) => {
                 SELECT 
                     pa.preform_type,
                     pa.product_type,
+                    pa.preform_vendor_id,
                     de.spool_fid,
                     de.preform_id,
                     de.process_type
@@ -255,10 +256,11 @@ export const ptEntryS = async (payload) => {
                     preform_id,
                     fiber_color,
                     fiber_type,
-                    pt_strain
+                    pt_strain,
+                    preform_vendor_id
                 )
                 VALUES (
-                    $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18
+                    $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19
                 )
                 `,
                 [
@@ -279,7 +281,8 @@ export const ptEntryS = async (payload) => {
                     extra.preform_id || null,
                     "Natural",
                     extra.preform_type || null,
-                    ptStrain
+                    ptStrain,
+                    extra.preform_vendor_id || null
                 ]
             );
         }

@@ -21,6 +21,7 @@ export const preformAcceptanceController = async (req, res) => {
             draw_instruction,
             acceptance_status,
             rejection_note,
+            preform_vendor_id,
         }= req.body;
 
         const emp_id = req.user.emp_id;
@@ -43,7 +44,8 @@ export const preformAcceptanceController = async (req, res) => {
     draw_instruction,
     acceptance_status,
     rejection_note,
-    logged_in_user:emp_id,});
+    logged_in_user:emp_id,
+    preform_vendor_id,});
 
     return res.status(200).json({
         success:true,

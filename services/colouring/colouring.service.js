@@ -99,7 +99,7 @@ export const saveColouringS = async (payload) => {
         if (hasNewFid) {
             const parentResult = await client.query(
                 `SELECT spool_id, tower_no, preform_id, fiber_type, spool_fid, preform_type,
-                        product_type, pt_machine_no, drawn_length, drawn_date, pt_date
+                        product_type, pt_machine_no, drawn_length, drawn_date, pt_date, preform_vendor_id
                  FROM bobbin_entries WHERE bobbin_no = $1 LIMIT 1`,
                 [bobbin_no]
             );
@@ -110,8 +110,8 @@ export const saveColouringS = async (payload) => {
                     `INSERT INTO bobbin_entries (
                         bobbin_no, fid, fiber_length, fiber_color, operator, logged_in_user,
                         spool_id, tower_no, preform_id, fiber_type, spool_fid, preform_type,
-                        product_type, pt_machine_no, drawn_length, drawn_date, pt_date
-                    ) VALUES ($1,$2,$3::numeric,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
+                        product_type, pt_machine_no, drawn_length, drawn_date, pt_date, preform_vendor_id
+                    ) VALUES ($1,$2,$3::numeric,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
                     [
                         bobbin_no,
                         generated_fid,
@@ -129,7 +129,8 @@ export const saveColouringS = async (payload) => {
                         parent.pt_machine_no,
                         parent.drawn_length,
                         parent.drawn_date,
-                        parent.pt_date
+                        parent.pt_date,
+                        parent.preform_vendor_id
                     ]
                 );
             }
