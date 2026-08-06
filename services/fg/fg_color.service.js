@@ -47,13 +47,13 @@ export const submitColorS = async (payload) => {
     try {
         await client.query("BEGIN");
 
-        const { require_color, request_by, date, time, bobbins, logged_in_user } = payload;
+        const { col_jcard_no, request_by, date, time, bobbins, logged_in_user } = payload;
 
         for (const bobbin of bobbins) {
             await client.query(
-                `INSERT INTO fg_color (bobbin_no, bobbin_fid, current_color, require_color, total_length, balance_length, request_by, "date", "time", last_child_fid, count, logged_in_user)
-                 VALUES ($1, $2, $3, $4, $5, $5, $6, $7, $8, NULL, 0, $9)`,
-                [bobbin.bobbin_no, bobbin.bobbin_fid, bobbin.current_color, require_color, bobbin.total_length, request_by, date, time, logged_in_user]
+                `INSERT INTO fg_color (bobbin_no, bobbin_fid, current_color, require_color, total_length, balance_length, request_by, col_jcard_no, "date", "time", last_child_fid, count, logged_in_user)
+                 VALUES ($1, $2, $3, $4, $5, $5, $6, $7, $8, $9, NULL, 0, $10)`,
+                [bobbin.bobbin_no, bobbin.bobbin_fid, bobbin.current_color, bobbin.require_color, bobbin.total_length, request_by, col_jcard_no, date, time, logged_in_user]
             );
 
             await client.query(

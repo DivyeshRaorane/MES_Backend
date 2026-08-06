@@ -163,3 +163,34 @@ export const saveColouringS = async (payload) => {
         client.release();
     }
 };
+
+
+export const getJobCardsS = async () => {
+    const result = await pool.query(
+        `SELECT
+            col_jcard_no,
+            COUNT(*)::int AS total,
+            SUM(CASE WHEN is_done::text = 'true' OR is_done::text = '1' THEN 1 ELSE 0 END)::int AS completed,
+            SUM(CASE WHEN is_done::text != 'true' AND is_done::text != '1' OR is_done IS NULL THEN 1 ELSE 0 END)::int AS pending
+         FROM fg_color
+         WHERE col_jcard_no IS NOT NULL AND col_jcard_no::text != ''
+         GROUP BY col_jcard_no
+         ORDER BY MAX(created_at) DESC`
+    );
+
+    return { success: true, data: result.rows };
+};
+
+export const getJobCardBobbinsS = async (col_jcard_no) => {
+    const result = await pool.query(
+        `SELECT
+            fg_color_id, bobbin_no, bobbin_fid, current_color, require_color,
+            total_length, balance_length, is_done, request_by, "date", created_at, remark
+         FROM fg_color
+         WHERE col_jcard_no = $1
+         ORDER BY created_at ASC`,
+        [col_jcard_no]
+    );
+
+    return { success: true, data: result.rows };
+};
