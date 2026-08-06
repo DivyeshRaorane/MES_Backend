@@ -6,6 +6,7 @@ const router = express.Router();
 
 router.post("/createbobbincolor", createBobbinColorC);
 router.get("/getbobbincolor", getBobbinColorC);
+router.get("/bobbin-color", getBobbinColorC);
 router.put("/admin/bobbincolors/:bobbin_color_id", authMiddleware, updateBobbinColorC);
 
 export default router;

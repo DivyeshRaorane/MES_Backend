@@ -43,7 +43,7 @@ export const mbendCopyS = async (bobbin_no) => {
         const cutoff = parseFloat(qcData.cut_off_top) || parseFloat(qcData.cut_off_bottom) || null;
 ;
         if (mfd && cutoff) {
-            mac_value = (mfd * cutoff / 1000).toFixed(3);
+            mac_value = (mfd * 1000 / cutoff ).toFixed(3);
             console.log({
     mfd,
     cutoff,

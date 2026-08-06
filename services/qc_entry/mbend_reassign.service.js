@@ -60,13 +60,12 @@ export const mbendReassignS = async (bobbin_no) => {
             return { success: true, reassigned: false, message: "No eligible next sample found yet. Will be assigned on next PT entry." };
         }
 
-        // Step 2 — Find the next eligible sample (first bobbin with valid FID and pt_length >= 50.4)
+        // Step 2 — Find the next eligible sample (first bobbin with valid FID — no length minimum)
         let newSampleIdx = -1;
         for (let i = 0; i < entries.length; i++) {
             const e = entries[i];
             const hasValidFid = e.fid && e.fid.trim() !== '';
-            const length = parseFloat(e.pt_length) || 0;
-            if (hasValidFid && length >= 50.4) {
+            if (hasValidFid) {
                 newSampleIdx = i;
                 break;
             }
@@ -115,16 +114,15 @@ export const mbendReassignS = async (bobbin_no) => {
                 currentIdx++;
             }
 
-            // Phase 2: After 200 km, mark short bobbins as full_mbend = true
-            // until finding next sample (valid FID + pt_length >= 50.4)
+            // Phase 2: After 200 km, the next bobbin with valid FID becomes the new sample
+            // Non-sample bobbins always keep full_mbend = false
             let foundNextSample = false;
 
             while (currentIdx < entries.length) {
                 const e = entries[currentIdx];
                 const hasValidFid = e.fid && e.fid.trim() !== '';
-                const length = parseFloat(e.pt_length) || 0;
 
-                if (hasValidFid && length >= 50.4) {
+                if (hasValidFid) {
                     // This becomes the next sample
                     await client.query(
                         `UPDATE pt_entry SET is_sample = true, full_mbend = true WHERE pt_entry_id = $1`,
@@ -136,14 +134,6 @@ export const mbendReassignS = async (bobbin_no) => {
                     
                     break;
                 } else {
-                    // Short bobbin or no FID after 200 km → full_mbend = true
-                    if (hasValidFid && e.full_mbend !== true) {
-                        await client.query(
-                            `UPDATE pt_entry SET full_mbend = true WHERE pt_entry_id = $1`,
-                            [e.pt_entry_id]
-                        );
-                        recordsUpdated++;
-                    }
                     currentIdx++;
                 }
             }

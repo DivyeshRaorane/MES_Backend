@@ -383,7 +383,7 @@ export const ptEntryS = async (payload) => {
 
             if (lastFid) {
                 await client.query(
-                    `UPDATE pt_entry SET before_rejection = $1, full_check = TRUE WHERE spool_id = $2 AND fid = $3 AND before_rejection IS NULL`,
+                    `UPDATE pt_entry SET before_rejection = $1 WHERE spool_id = $2 AND fid = $3 AND before_rejection IS NULL`,
                     [rejectionType, payload.spool_id, lastFid]
                 );
             }
@@ -405,9 +405,9 @@ export const ptEntryS = async (payload) => {
             const pendingRej = matStockPending.rows[0]?.pending_after_rejection;
 
             if (pendingRej) {
-                // Mark THIS entry with after_rejection and force full_check
+                // Mark THIS entry with after_rejection
                 await client.query(
-                    `UPDATE pt_entry SET after_rejection = $1, full_check = TRUE WHERE pt_entry_id = $2`,
+                    `UPDATE pt_entry SET after_rejection = $1 WHERE pt_entry_id = $2`,
                     [pendingRej, currentId]
                 );
                 // Clear the pending flag
@@ -431,6 +431,7 @@ export const ptEntryS = async (payload) => {
         }
 
         // Determine is_last (only for entries WITH FID, when balance <= 0)
+        // Also force full_check = true on the last entry of the spool
         if (fid !== '') {
             const balanceCheck = await client.query(
                 `SELECT balance_qty FROM mat_stock WHERE batch_id = $1`,
@@ -442,7 +443,7 @@ export const ptEntryS = async (payload) => {
                     [payload.spool_id]
                 );
                 await client.query(
-                    `UPDATE pt_entry SET is_last = TRUE WHERE pt_entry_id = $1`,
+                    `UPDATE pt_entry SET is_last = TRUE, full_check = TRUE WHERE pt_entry_id = $1`,
                     [currentId]
                 );
             }
@@ -550,7 +551,7 @@ export const ptEntryS = async (payload) => {
                 const scrapLastFid = lastFidScrap.rows[0]?.last_fid;
                 if (scrapLastFid) {
                     await client.query(
-                        `UPDATE pt_entry SET before_rejection = 'PT_SCRAP', full_check = TRUE WHERE spool_id = $1 AND fid = $2 AND before_rejection IS NULL`,
+                        `UPDATE pt_entry SET before_rejection = 'PT_SCRAP' WHERE spool_id = $1 AND fid = $2 AND before_rejection IS NULL`,
                         [payload.spool_id, scrapLastFid]
                     );
                 }
