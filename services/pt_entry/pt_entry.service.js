@@ -430,14 +430,16 @@ export const ptEntryS = async (payload) => {
             }
         }
 
-        // Determine is_last (only for entries WITH FID, when balance <= 0)
-        // Also force full_check = true on the last entry of the spool
-        if (fid !== '') {
-            const balanceCheck = await client.query(
-                `SELECT balance_qty FROM mat_stock WHERE batch_id = $1`,
-                [payload.spool_id]
-            );
-            if (balanceCheck.rows.length > 0 && Number(balanceCheck.rows[0].balance_qty) <= 0) {
+        // Determine is_last (when balance <= 0)
+        // If current entry has FID → mark it as is_last
+        // If current entry has NO valid FID (rejection) → find the last entry with valid FID and mark that as is_last
+        const balanceCheck = await client.query(
+            `SELECT balance_qty FROM mat_stock WHERE batch_id = $1`,
+            [payload.spool_id]
+        );
+        if (balanceCheck.rows.length > 0 && Number(balanceCheck.rows[0].balance_qty) <= 0) {
+            if (fid !== '') {
+                // Current entry has valid FID — mark it as is_last
                 await client.query(
                     `UPDATE pt_entry SET is_last = FALSE WHERE spool_id = $1 AND is_last = TRUE`,
                     [payload.spool_id]
@@ -446,6 +448,25 @@ export const ptEntryS = async (payload) => {
                     `UPDATE pt_entry SET is_last = TRUE, full_check = TRUE WHERE pt_entry_id = $1`,
                     [currentId]
                 );
+            } else {
+                // Current entry has NO valid FID — find the last bobbin created with valid FID and mark that as is_last
+                const lastFidEntry = await client.query(
+                    `SELECT pt_entry_id FROM pt_entry 
+                     WHERE spool_id = $1 AND fid IS NOT NULL AND fid != '' 
+                     ORDER BY pt_entry_id DESC LIMIT 1`,
+                    [payload.spool_id]
+                );
+                if (lastFidEntry.rows.length > 0) {
+                    const lastFidEntryId = lastFidEntry.rows[0].pt_entry_id;
+                    await client.query(
+                        `UPDATE pt_entry SET is_last = FALSE WHERE spool_id = $1 AND is_last = TRUE`,
+                        [payload.spool_id]
+                    );
+                    await client.query(
+                        `UPDATE pt_entry SET is_last = TRUE, full_check = TRUE WHERE pt_entry_id = $1`,
+                        [lastFidEntryId]
+                    );
+                }
             }
         }
 
@@ -461,109 +482,187 @@ export const ptEntryS = async (payload) => {
         let autoScrapBooked = false;
 
         if (payload.pt_break === true && !payload.auto_pt_break_scrap) {
-            const scrapLength = 0.180;
-
-            // Get next 'no' for the spool
-            const noResult = await client.query(
-                `SELECT COALESCE(MAX(no), 0) + 1 as next_no FROM pt_entry WHERE spool_id = $1`,
+            // Check current balance after main entry to decide scrap amount
+            const currentBalResult = await client.query(
+                `SELECT balance_qty FROM mat_stock WHERE batch_id = $1`,
                 [payload.spool_id]
             );
-            const nextNo = noResult.rows[0].next_no;
+            const currentBalance = Number(currentBalResult.rows[0]?.balance_qty) || 0;
 
-            // Insert auto PT Scrap entry
-            await client.query(`
-                INSERT INTO pt_entry (
-                    spool_id, preform_id, drawn_length, tower_no, drawn_date,
-                    pt_entry, fid, bobbin_no, spool_status, pt_machine,
-                    operator_name, shift_incharge, bobbin_color, bobbin_type,
-                    pt_length, status, payoff_vibration, dancer_vibration,
-                    rejection, rejection_reason, bal_draw_rejection, bal_draw_rejection_reason,
-                    multiple_end, scratch, pt_scrap, ztmd, ztmd_id, doc, doc_id,
-                    is_break, logged_in_user, pt_flaw_remark, a_cut_flaw,
-                    no, full_check, is_sample, full_mbend
-                ) VALUES (
-                    $1, $2, $3, $4, $5,
-                    $6, NULL, NULL, $7, $8,
-                    $9, $10, NULL, NULL,
-                    $11, $12, $13, $14,
-                    TRUE, NULL, FALSE, NULL,
-                    FALSE, FALSE, TRUE, FALSE, NULL, FALSE, NULL,
-                    TRUE, $15, NULL, NULL,
-                    $16, FALSE, FALSE, FALSE
-                )
-            `, [
-                payload.spool_id,
-                payload.preform_id,
-                payload.drawn_length === "" ? null : Number(payload.drawn_length),
-                payload.tower_no === "" ? null : Number(payload.tower_no),
-                payload.drawn_date,
-                new Date(Date.now() + 1000), // 1 second after main entry to ensure correct ordering
-                payload.spool_status || null,
-                payload.pt_machine_no === "" ? null : Number(payload.pt_machine_no),
-                payload.operator_name || null,
-                payload.shift_incharge || null,
-                scrapLength,
-                payload.status,
-                payload.payoff_vibration,
-                payload.dancer_vibration,
-                payload.logged_in_user,
-                nextNo
-            ]);
+            // If balance is already 0, don't book any scrap — spool end popup will show on frontend
+            if (currentBalance > 0) {
+                // If balance < 0.180, book only the remaining balance as scrap
+                const scrapLength = currentBalance < 0.180 ? Number(currentBalance.toFixed(3)) : 0.180;
 
-            // Subtract 0.180 KM from stock
-            await client.query(
-                `UPDATE mat_stock SET balance_qty = balance_qty - $1 WHERE batch_id = $2`,
-                [scrapLength, payload.spool_id]
-            );
-
-            // Set start_length / end_length on the auto-scrap row
-            const scrapEntryResult = await client.query(
-                `SELECT pt_entry_id FROM pt_entry
-                 WHERE spool_id = $1 AND pt_scrap = TRUE AND no = $2`,
-                [payload.spool_id, nextNo]
-            );
-            const scrapEntryId = scrapEntryResult.rows[0]?.pt_entry_id;
-
-            if (scrapEntryId) {
-                const scrapSumResult = await client.query(
-                    `SELECT COALESCE(SUM(pt_length), 0)::numeric as total_done
-                     FROM pt_entry WHERE spool_id = $1 AND pt_entry_id != $2`,
-                    [payload.spool_id, scrapEntryId]
-                );
-                const scrapStart = Number(scrapSumResult.rows[0].total_done);
-                const scrapEnd = scrapStart + scrapLength;
-                await client.query(
-                    `UPDATE pt_entry SET start_length = $1, end_length = $2 WHERE pt_entry_id = $3`,
-                    [scrapStart, scrapEnd, scrapEntryId]
-                );
-            }
-
-            // Only update before_rejection / pending_after_rejection when the
-            // main entry was a GOOD entry (has FID).
-            // If the main entry was itself a rejection (e.g. multiple_end),
-            // the rejection block above already handled these correctly — skip here.
-            if (!payload.active_rejection_type) {
-                // Mark before_rejection on the last good FID entry
-                const lastFidScrap = await client.query(
-                    `SELECT last_fid FROM mat_stock WHERE batch_id = $1`,
+                // Get next 'no' for the spool
+                const noResult = await client.query(
+                    `SELECT COALESCE(MAX(no), 0) + 1 as next_no FROM pt_entry WHERE spool_id = $1`,
                     [payload.spool_id]
                 );
-                const scrapLastFid = lastFidScrap.rows[0]?.last_fid;
-                if (scrapLastFid) {
+                const nextNo = noResult.rows[0].next_no;
+
+                // Insert auto PT Scrap entry
+                await client.query(`
+                    INSERT INTO pt_entry (
+                        spool_id, preform_id, drawn_length, tower_no, drawn_date,
+                        pt_entry, fid, bobbin_no, spool_status, pt_machine,
+                        operator_name, shift_incharge, bobbin_color, bobbin_type,
+                        pt_length, status, payoff_vibration, dancer_vibration,
+                        rejection, rejection_reason, bal_draw_rejection, bal_draw_rejection_reason,
+                        multiple_end, scratch, pt_scrap, ztmd, ztmd_id, doc, doc_id,
+                        is_break, logged_in_user, pt_flaw_remark, a_cut_flaw,
+                        no, full_check, is_sample, full_mbend
+                    ) VALUES (
+                        $1, $2, $3, $4, $5,
+                        $6, NULL, NULL, $7, $8,
+                        $9, $10, NULL, NULL,
+                        $11, $12, $13, $14,
+                        TRUE, NULL, FALSE, NULL,
+                        FALSE, FALSE, TRUE, FALSE, NULL, FALSE, NULL,
+                        TRUE, $15, NULL, NULL,
+                        $16, FALSE, FALSE, FALSE
+                    )
+                `, [
+                    payload.spool_id,
+                    payload.preform_id,
+                    payload.drawn_length === "" ? null : Number(payload.drawn_length),
+                    payload.tower_no === "" ? null : Number(payload.tower_no),
+                    payload.drawn_date,
+                    new Date(Date.now() + 1000), // 1 second after main entry to ensure correct ordering
+                    payload.spool_status || null,
+                    payload.pt_machine_no === "" ? null : Number(payload.pt_machine_no),
+                    payload.operator_name || null,
+                    payload.shift_incharge || null,
+                    scrapLength,
+                    payload.status,
+                    payload.payoff_vibration,
+                    payload.dancer_vibration,
+                    payload.logged_in_user,
+                    nextNo
+                ]);
+
+                // Subtract scrap length from stock
+                await client.query(
+                    `UPDATE mat_stock SET balance_qty = balance_qty - $1 WHERE batch_id = $2`,
+                    [scrapLength, payload.spool_id]
+                );
+
+                // Set start_length / end_length on the auto-scrap row
+                const scrapEntryResult = await client.query(
+                    `SELECT pt_entry_id FROM pt_entry
+                     WHERE spool_id = $1 AND pt_scrap = TRUE AND no = $2`,
+                    [payload.spool_id, nextNo]
+                );
+                const scrapEntryId = scrapEntryResult.rows[0]?.pt_entry_id;
+
+                if (scrapEntryId) {
+                    const scrapSumResult = await client.query(
+                        `SELECT COALESCE(SUM(pt_length), 0)::numeric as total_done
+                         FROM pt_entry WHERE spool_id = $1 AND pt_entry_id != $2`,
+                        [payload.spool_id, scrapEntryId]
+                    );
+                    const scrapStart = Number(scrapSumResult.rows[0].total_done);
+                    const scrapEnd = scrapStart + scrapLength;
                     await client.query(
-                        `UPDATE pt_entry SET before_rejection = 'PT_SCRAP' WHERE spool_id = $1 AND fid = $2 AND before_rejection IS NULL`,
-                        [payload.spool_id, scrapLastFid]
+                        `UPDATE pt_entry SET start_length = $1, end_length = $2 WHERE pt_entry_id = $3`,
+                        [scrapStart, scrapEnd, scrapEntryId]
                     );
                 }
 
-                // Store pending_after_rejection for next good entry
-                await client.query(
-                    `UPDATE mat_stock SET pending_after_rejection = 'PT_SCRAP' WHERE batch_id = $1`,
+                // Only update before_rejection / pending_after_rejection when the
+                // main entry was a GOOD entry (has FID).
+                // If the main entry was itself a rejection (e.g. multiple_end),
+                // the rejection block above already handled these correctly — skip here.
+                if (!payload.active_rejection_type) {
+                    // Mark before_rejection on the last good FID entry
+                    const lastFidScrap = await client.query(
+                        `SELECT last_fid FROM mat_stock WHERE batch_id = $1`,
+                        [payload.spool_id]
+                    );
+                    const scrapLastFid = lastFidScrap.rows[0]?.last_fid;
+                    if (scrapLastFid) {
+                        await client.query(
+                            `UPDATE pt_entry SET before_rejection = 'PT_SCRAP' WHERE spool_id = $1 AND fid = $2 AND before_rejection IS NULL`,
+                            [payload.spool_id, scrapLastFid]
+                        );
+                    }
+
+                    // Store pending_after_rejection for next good entry
+                    await client.query(
+                        `UPDATE mat_stock SET pending_after_rejection = 'PT_SCRAP' WHERE batch_id = $1`,
+                        [payload.spool_id]
+                    );
+                }
+
+                // After auto scrap deduction, check if balance hit 0
+                // Auto scrap has no FID, so if balance is now 0, find last entry with valid FID and mark as is_last
+                const postScrapBalance = await client.query(
+                    `SELECT balance_qty FROM mat_stock WHERE batch_id = $1`,
                     [payload.spool_id]
                 );
-            }
+                if (postScrapBalance.rows.length > 0 && Number(postScrapBalance.rows[0].balance_qty) <= 0) {
+                    const lastFidEntryAfterScrap = await client.query(
+                        `SELECT pt_entry_id FROM pt_entry 
+                         WHERE spool_id = $1 AND fid IS NOT NULL AND fid != '' 
+                         ORDER BY pt_entry_id DESC LIMIT 1`,
+                        [payload.spool_id]
+                    );
+                    if (lastFidEntryAfterScrap.rows.length > 0) {
+                        const lastFidEntryId = lastFidEntryAfterScrap.rows[0].pt_entry_id;
+                        await client.query(
+                            `UPDATE pt_entry SET is_last = FALSE WHERE spool_id = $1 AND is_last = TRUE`,
+                            [payload.spool_id]
+                        );
+                        await client.query(
+                            `UPDATE pt_entry SET is_last = TRUE, full_check = TRUE WHERE pt_entry_id = $1`,
+                            [lastFidEntryId]
+                        );
+                    }
+                }
 
-            autoScrapBooked = true;
+                autoScrapBooked = true;
+            }
+            // If currentBalance <= 0: no scrap booked, autoScrapBooked stays false
+            // Frontend will show spool end popup based on balance_qty <= 0
+        }
+
+        // ─── SAP Transaction Generation ───
+        // Generate SAP transactions after successful PT entry save.
+        // Requires product_type and process_type from the associated draw_entry.
+        if (payload.pt_length && Number(payload.pt_length) > 0) {
+            try {
+                // Fetch draw_entry data needed for SAP (product_type, process_type, batches)
+                const drawDataResult = await client.query(
+                    `SELECT product_type, process_type, primary_batch, secondary_batch, preform_id
+                     FROM draw_entry WHERE spool_id = $1 LIMIT 1`,
+                    [payload.spool_id]
+                );
+
+                const drawData = drawDataResult.rows[0];
+
+                if (drawData && drawData.product_type && drawData.process_type) {
+                    const { generatePTSAPTransactions } = await import('../sap_transaction/sap_transaction.service.js');
+
+                    const sapData = {
+                        bobbin_no: payload.bobbin_no,
+                        spool_id: payload.spool_id,
+                        fid: payload.fid || null,
+                        pt_length: payload.pt_length,
+                        product_type: drawData.product_type,
+                        process_type: drawData.process_type,
+                        preform_batch: drawData.preform_id || null,
+                        primary_coating_batch: drawData.primary_batch || null,
+                        secondary_coating_batch: drawData.secondary_batch || null,
+                    };
+
+                    const sapResult = await generatePTSAPTransactions(sapData, client);
+                    console.log('[PTEntry] SAP Transactions generated:', sapResult.transaction_no, '| Type:', sapResult.movement_type);
+                }
+            } catch (sapError) {
+                // Log SAP error but do not block PT entry save
+                console.error('[PTEntry] SAP Transaction generation failed:', sapError.message);
+                throw sapError;
+            }
         }
 
         //-------------------------

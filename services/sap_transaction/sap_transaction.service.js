@@ -157,6 +157,222 @@ export async function generateSAPTransactions(drawEntryData, client) {
     };
 }
 
+/**
+ * Generate SAP Transactions after a successful PT Entry.
+ *
+ * Case 1 — Valid FID exists:
+ *   • 101 (Finished Material Receipt) for the PT accepted quantity
+ *   • 261 (Consumption) for each BOM component linked to Draw material
+ *
+ * Case 2 — No valid FID (rejected/scrap):
+ *   • 551 (Scrap/Withdrawal) consumption only — no 101 transaction
+ *
+ * @param {Object} ptEntryData - Data from the PT Entry
+ * @param {string} ptEntryData.spool_id - Spool ID (batch reference from draw entry)
+ * @param {string} ptEntryData.fid - FID assigned during PT (null/empty = rejection)
+ * @param {number} ptEntryData.pt_length - PT accepted quantity in KM
+ * @param {string} ptEntryData.product_type - e.g. "G652D" (from draw_entry)
+ * @param {string} ptEntryData.process_type - e.g. "250" (from draw_entry)
+ * @param {string} ptEntryData.preform_batch - Preform batch (from draw_entry)
+ * @param {string} ptEntryData.primary_coating_batch - Primary coating batch (from draw_entry)
+ * @param {string} ptEntryData.secondary_coating_batch - Secondary coating batch (from draw_entry)
+ * @param {Object} client - PostgreSQL transaction client (from pool.connect())
+ * @returns {Object} { transaction_no, process_order_no, finished_material, pt_length, components_count, movement_type }
+ */
+export async function generatePTSAPTransactions(ptEntryData, client) {
+    const {
+        bobbin_no,
+        spool_id,
+        pt_length,
+        product_type,
+        process_type,
+        preform_batch,
+        primary_coating_batch,
+        secondary_coating_batch
+    } = ptEntryData;
+
+    const hasValidFid = !!fid;
+
+    console.log('[PT-SAP] Generating SAP transactions — FID:', fid || 'NONE', '| Process:', process_type);
+
+    // ─── Step 1: Determine Finished Material (same logic as Draw Entry) ───
+    const finishedMaterial = `SMF${(product_type || '').trim()}${(process_type || '')}`;
+
+    // ─── Step 2: Find Active Process Order ───
+    const processOrder = await findActiveProcessOrder(finishedMaterial, client);
+
+    // ─── Step 3: Load BOM ───
+    const bomComponents = await loadBOM(finishedMaterial, client);
+
+    // ─── Step 4: PT Quantity ───
+    const ptQuantity = parseFloat(pt_length);
+    if (!ptQuantity || ptQuantity <= 0) {
+        throw new Error('PT length must be greater than zero for SAP transaction');
+    }
+
+    // ─── Step 5: Calculate Consumption for each component ───
+    const consumptions = bomComponents.map(comp => ({
+        component_material_code: comp.component_material_code,
+        consume_qty: parseFloat((ptQuantity * parseFloat(comp.consume_qty_per_km)).toFixed(3)),
+    }));
+
+    // ─── Step 6: Generate Transaction Number ───
+    const transactionNo = generateTransactionNumber();
+
+    // ─── Step 7: Fetch material details for all materials ───
+    const allMaterialCodes = [finishedMaterial, ...bomComponents.map(c => c.component_material_code)];
+    const materialDetails = await fetchMaterialDetails(allMaterialCodes, client);
+
+    if (hasValidFid) {
+        // ═══════════════════════════════════════════════════════
+        // CASE 1: Valid FID — 101 (Receipt) + 261 (Consumption)
+        // ═══════════════════════════════════════════════════════
+
+        // ─── Step 8a: Insert Finished Goods Transaction (Movement Type 101) ───
+        const fgMaterial = materialDetails[finishedMaterial];
+
+        await client.query(`
+            INSERT INTO sap_transaction
+            (transaction_no, process_order_no, material_code, material_description,
+             plant, storage_location, movement_type, quantity, uom, batch,
+             posting_date, sap_status)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, CURRENT_DATE, 'PENDING')
+        `, [
+            transactionNo,
+            processOrder.process_o_no,
+            finishedMaterial,
+            fgMaterial?.material_description || null,
+            '1200',
+            '1204',
+            '101',
+            ptQuantity,
+            fgMaterial?.uom || 'KM',
+            bobbin_no
+        ]);
+
+        // ─── Step 9a: Insert Consumption Transactions (Movement Type 261) ───
+        for (const consumption of consumptions) {
+            const compMaterial = materialDetails[consumption.component_material_code];
+
+            const batch = determineBatch(consumption.component_material_code, compMaterial, {
+                preform_batch,
+                primary_coating_batch,
+                secondary_coating_batch,
+            });
+
+            await client.query(`
+                INSERT INTO sap_transaction
+                (transaction_no, process_order_no, material_code, material_description,
+                 plant, storage_location, movement_type, quantity, uom, batch,
+                 posting_date, sap_status)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, CURRENT_DATE, 'PENDING')
+            `, [
+                transactionNo,
+                processOrder.process_o_no,
+                consumption.component_material_code,
+                compMaterial?.material_description || null,
+                '1200',
+                '1204',
+                '261',
+                consumption.consume_qty,
+                compMaterial?.uom || null,
+                spool_id,
+            ]);
+
+            // Update process_order balance for component
+            await client.query(`
+                UPDATE process_order
+                SET balance_qty = balance_qty - $1, updated_at = CURRENT_TIMESTAMP
+                WHERE process_o_no = $2 AND material_code = $3
+            `, [consumption.consume_qty, processOrder.process_o_no, consumption.component_material_code]);
+        }
+
+        // ─── Step 10a: Update Process Order Balance for Finished Material ───
+        await client.query(`
+            UPDATE process_order
+            SET balance_qty = balance_qty - $1, updated_at = CURRENT_TIMESTAMP
+            WHERE process_o_no = $2 AND material_code = $3
+        `, [ptQuantity, processOrder.process_o_no, finishedMaterial]);
+
+        // ─── Step 11a: Close rows if balance reaches zero ───
+        await client.query(`
+            UPDATE process_order
+            SET balance_qty = 0, is_active = false, updated_at = CURRENT_TIMESTAMP
+            WHERE process_o_no = $1 AND material_code = $2 AND balance_qty <= 0
+        `, [processOrder.process_o_no, finishedMaterial]);
+
+        for (const consumption of consumptions) {
+            await client.query(`
+                UPDATE process_order
+                SET balance_qty = 0, is_active = false, updated_at = CURRENT_TIMESTAMP
+                WHERE process_o_no = $1 AND material_code = $2 AND balance_qty <= 0
+            `, [processOrder.process_o_no, consumption.component_material_code]);
+        }
+
+    } else {
+        // ═══════════════════════════════════════════════════════
+        // CASE 2: No valid FID — 551 (Scrap/Withdrawal) only
+        // ═══════════════════════════════════════════════════════
+
+        // ─── Step 8b: Insert Consumption Transactions (Movement Type 551) ───
+        for (const consumption of consumptions) {
+            const compMaterial = materialDetails[consumption.component_material_code];
+
+            const batch = determineBatch(consumption.component_material_code, compMaterial, {
+                preform_batch,
+                primary_coating_batch,
+                secondary_coating_batch,
+            });
+
+            await client.query(`
+                INSERT INTO sap_transaction
+                (transaction_no, process_order_no, material_code, material_description,
+                 plant, storage_location, movement_type, quantity, uom, batch,
+                 posting_date, sap_status)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, CURRENT_DATE, 'PENDING')
+            `, [
+                transactionNo,
+                processOrder.process_o_no,
+                consumption.component_material_code,
+                compMaterial?.material_description || null,
+                '1200',
+                '1204',
+                '551',
+                consumption.consume_qty,
+                compMaterial?.uom || null,
+                spool_id,
+            ]);
+
+            // Update process_order balance for component
+            await client.query(`
+                UPDATE process_order
+                SET balance_qty = balance_qty - $1, updated_at = CURRENT_TIMESTAMP
+                WHERE process_o_no = $2 AND material_code = $3
+            `, [consumption.consume_qty, processOrder.process_o_no, consumption.component_material_code]);
+        }
+
+        // ─── Step 9b: Close component rows if balance reaches zero ───
+        for (const consumption of consumptions) {
+            await client.query(`
+                UPDATE process_order
+                SET balance_qty = 0, is_active = false, updated_at = CURRENT_TIMESTAMP
+                WHERE process_o_no = $1 AND material_code = $2 AND balance_qty <= 0
+            `, [processOrder.process_o_no, consumption.component_material_code]);
+        }
+    }
+
+    console.log('[PT-SAP] Transaction generated:', transactionNo, '| Type:', hasValidFid ? '101+261' : '551');
+
+    return {
+        transaction_no: transactionNo,
+        process_order_no: processOrder.process_o_no,
+        finished_material: finishedMaterial,
+        pt_length: ptQuantity,
+        components_count: consumptions.length,
+        movement_type: hasValidFid ? '101+261' : '551',
+    };
+}
+
 /* ══════════════════════════════════════════════════════════
    HELPER FUNCTIONS
    ══════════════════════════════════════════════════════════ */
