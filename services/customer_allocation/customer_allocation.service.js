@@ -312,7 +312,7 @@ export const runAllocationS = async (spec_ids) => {
                     spec_max: failedParam.max,
                     reason: failedParam.reason,
                 });
-            }
+            }   
         }
 
         // Build length summary if optical length allocation is active for this spec

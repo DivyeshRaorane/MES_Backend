@@ -77,6 +77,7 @@ import tcGenerationRoutes from "./routes/postgress/tc_generation.routes.js"
 import fiberCutIndicationRoutes from "./routes/postgress/fiber_cut_indication.routes.js"
 import fiberCutReasonsRoutes from "./routes/postgress/fiber_cut_reasons.routes.js"
 import preformVendorRoutes from "./routes/postgress/preform_vendor.routes.js"
+import functionReportsRoutes from "./routes/postgress/function_reports.routes.js"
 
 
 const app = express();
@@ -155,6 +156,7 @@ app.use("/api/tc", tcGenerationRoutes)
 app.use("/api", fiberCutIndicationRoutes)
 app.use("/api", fiberCutReasonsRoutes)
 app.use("/api", preformVendorRoutes)
+app.use("/api/function-reports", functionReportsRoutes)
 
 app.use("/api", towerDataRoutes)
 

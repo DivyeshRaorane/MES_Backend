@@ -70,10 +70,10 @@ function qualifiesForSecondaryProduct(measurement) {
 function hasMbendValues(measurement) {
 
   const mbendFields = [
-    'm_100t_50mm_1550',
-    'm_100t_50mm_1310',
-    'm_100t_30mm_1550',
-    'm_100t_30mm_1310'
+   'm_1t_20mm_1550',
+    'm_1t_20mm_1625',
+    'm_10t_30mm_1625',
+    'm_1t_32mm_1550'
     // Add all MBend parameters here
   ];
 
@@ -191,7 +191,7 @@ else {
 console.log("Fiber Color:", fiberColor);
 console.log("Fiber Type:", fiber_type);
   
-    const SECONDARY_PRODUCT_TYPE_FOR_LOW_MAC = 'G657A1250';
+    const SECONDARY_PRODUCT_TYPE_FOR_LOW_MAC = 'G657A1250C';
     const useDualProductTypeSpecs = qualifiesForSecondaryProduct(measurement)
 
     console.log("What is the useDualprodutype:", useDualProductTypeSpecs)
