@@ -188,13 +188,20 @@ else {
 }
 
 
-console.log("Fiber Color:", fiberColor);
-console.log("Fiber Type:", fiber_type);
-  
     const SECONDARY_PRODUCT_TYPE_FOR_LOW_MAC = 'G657A1250C';
-    const useDualProductTypeSpecs = qualifiesForSecondaryProduct(measurement)
 
-    console.log("What is the useDualprodutype:", useDualProductTypeSpecs)
+    // Fetch D-to-A1 conversion flag from app_config table (dynamic user control)
+    const d2a1ConfigRes = await client.query(
+      `SELECT config_value FROM app_config WHERE config_key = $1`,
+      ['enable_d_to_a1_conversion']
+    );
+    const enableDtoA1Conversion = d2a1ConfigRes.rows.length > 0
+      ? d2a1ConfigRes.rows[0].config_value === 'true'
+      : false;
+
+    const useDualProductTypeSpecs = enableDtoA1Conversion
+      ? qualifiesForSecondaryProduct(measurement)
+      : false;
 
     
     const effectiveProductType = useDualProductTypeSpecs

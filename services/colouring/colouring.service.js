@@ -13,7 +13,7 @@ export const scanForColouringS = async (bobbin_no) => {
 
     // Get colouring history
     const historyResult = await pool.query(
-        `SELECT * FROM coloring_entry WHERE bobbin_no = $1 ORDER BY created_at DESC`,
+        `SELECT * FROM coloring_entry WHERE parent_bobbin_no = $1 ORDER BY created_at DESC`,
         [bobbin_no]
     );
 
@@ -33,7 +33,7 @@ export const saveColouringS = async (payload) => {
         await client.query("BEGIN");
 
         const {
-            bobbin_no, fg_color_id, original_color, require_color,
+            bobbin_no, parent_bobbin_no, fg_color_id, original_color, require_color,
             color_batch_code, fiber_length, is_scrap, machine_no,
             die_change, generated_fid, bobbin_type, operator,
             bobbin_color, remark, logged_in_user
@@ -72,11 +72,11 @@ export const saveColouringS = async (payload) => {
         // Step 2: Insert coloring_entry
         await client.query(
             `INSERT INTO coloring_entry (
-                bobbin_no, original_color, current_color, color_batch_code,
+                bobbin_no, parent_bobbin_no, original_color, current_color, color_batch_code,
                 fiber_length, is_scrap, machine_no, fid,
                 bobbin_type, operator, bobbin_color, remark, logged_in_user
-            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
-            [bobbin_no, original_color, require_color, color_batch_code,
+            ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+            [bobbin_no, parent_bobbin_no, original_color, require_color, color_batch_code,
              fiber_length, is_scrap || false, machine_no, generated_fid || null,
              bobbin_type, operator, bobbin_color, remark, logged_in_user]
         );
@@ -101,7 +101,7 @@ export const saveColouringS = async (payload) => {
                 `SELECT spool_id, tower_no, preform_id, fiber_type, spool_fid, preform_type,
                         product_type, pt_machine_no, drawn_length, drawn_date, pt_date, preform_vendor_id
                  FROM bobbin_entries WHERE bobbin_no = $1 LIMIT 1`,
-                [bobbin_no]
+                [parent_bobbin_no]
             );
 
             if (parentResult.rows.length > 0) {
@@ -139,15 +139,15 @@ export const saveColouringS = async (payload) => {
         // Step 5: Update parent bobbin_entries fiber_color
         await client.query(
             `UPDATE bobbin_entries SET fiber_color = $1 WHERE bobbin_no = $2`,
-            [require_color, bobbin_no]
+            [require_color, parent_bobbin_no]
         );
 
         await client.query("COMMIT");
 
         // Get updated history
         const historyResult = await pool.query(
-            `SELECT * FROM coloring_entry WHERE bobbin_no = $1 ORDER BY created_at DESC`,
-            [bobbin_no]
+            `SELECT * FROM coloring_entry WHERE parent_bobbin_no = $1 ORDER BY created_at DESC`,
+            [parent_bobbin_no]
         );
 
         const msg = remaining > 0

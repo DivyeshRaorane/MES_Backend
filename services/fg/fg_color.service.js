@@ -2,7 +2,7 @@ import pool from "../../db/postgres.js";
 
 export const validateColorS = async (bobbin_no, require_color) => {
     const bobbinResult = await pool.query(
-        `SELECT bobbin_no, fid, fiber_color, fiber_length, is_qc_out
+        `SELECT bobbin_no, fid, fiber_color, fiber_length, is_qc_out, dispatch_status, final_grade
          FROM bobbin_entries WHERE bobbin_no = $1`,
         [bobbin_no]
     );
@@ -15,6 +15,14 @@ export const validateColorS = async (bobbin_no, require_color) => {
 
     if (bobbin.is_qc_out !== true) {
         return { success: false, message: "Bobbin is not available in FG." };
+    }
+
+    if (bobbin.dispatch_status === "PACKED" || bobbin.dispatch_status === "YES" ) {
+        return { success: false, message: `Bobbin is Dispatch Status ${bobbin.dispatch_status}`  };
+    }
+
+    if (bobbin.final_grade === 'FAIL' || bobbin.final_grade === "REW") {
+        return { success: false, message: `Bobbin is ${bobbin.final_grade} We Cannot proceed it For Color` };
     }
 
     const colorCheck = await pool.query(

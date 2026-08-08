@@ -70,10 +70,10 @@ function qualifiesForSecondaryProduct(measurement) {
 function hasMbendValues(measurement) {
 
   const mbendFields = [
-    'm_100t_50mm_1550',
-    'm_100t_50mm_1310',
-    'm_100t_30mm_1550',
-    'm_100t_30mm_1310'
+   'm_1t_20mm_1550',
+    'm_1t_20mm_1625',
+    'm_10t_30mm_1625',
+    'm_1t_32mm_1550'
     // Add all MBend parameters here
   ];
 
@@ -158,10 +158,50 @@ export async function validateBobbinQC(bobbinNo) {
 
     const measurement = measurementRes.rows[0];
     const product_type = measurement.product_type;
-  
-    const SECONDARY_PRODUCT_TYPE_FOR_LOW_MAC = 'G657A1250';
-    const useDualProductTypeSpecs = qualifiesForSecondaryProduct(measurement)
 
+    const bobbinRes = await client.query(
+    `SELECT fiber_color
+     FROM bobbin_entries
+     WHERE bobbin_no = $1`,
+    [bobbinNo]
+);
+
+if (bobbinRes.rows.length === 0) {
+    return {
+        status: "ERROR",
+        message: `Bobbin ${bobbinNo} not found in bobbin_entries`
+    };
+}
+
+const fiberColor = (bobbinRes.rows[0].fiber_color || "").trim().toUpperCase();
+
+let fiber_type;
+
+if (fiberColor === "NATURAL") {
+    fiber_type = "NATURAL";
+}
+else if (fiberColor.startsWith("RM ")) {
+    fiber_type = "RING_MARK";
+}
+else {
+    fiber_type = "COLORED";
+}
+
+
+console.log("Fiber Color:", fiberColor);
+console.log("Fiber Type:", fiber_type);
+  
+    const SECONDARY_PRODUCT_TYPE_FOR_LOW_MAC = 'G657A1250C';
+
+    // Control variable: Set to true to enable D-to-A1 conversion logic for G652D250,
+    // Set to false to run normal grade checking for G652D250 (like any other product type)
+    const enableDtoA1Conversion = true;
+
+    const useDualProductTypeSpecs = enableDtoA1Conversion
+      ? qualifiesForSecondaryProduct(measurement)
+      : false;
+
+    console.log("D to A1 Conversion Enabled:", enableDtoA1Conversion);
     console.log("What is the useDualprodutype:", useDualProductTypeSpecs)
 
     
@@ -228,10 +268,10 @@ export async function validateBobbinQC(bobbinNo) {
     } else {
       const specsQuery = `
         SELECT * FROM qc_grade 
-        WHERE product_type = $1 AND Status = true 
+        WHERE product_type = $1 AND Status = true AND color_type = $2
         ORDER BY priority ASC;
       `;
-      specsRes = await client.query(specsQuery, [product_type]);
+      specsRes = await client.query(specsQuery, [product_type,fiber_type ]);
     }
 
 

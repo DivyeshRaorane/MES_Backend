@@ -78,6 +78,11 @@ import fiberCutIndicationRoutes from "./routes/postgress/fiber_cut_indication.ro
 import fiberCutReasonsRoutes from "./routes/postgress/fiber_cut_reasons.routes.js"
 import preformVendorRoutes from "./routes/postgress/preform_vendor.routes.js"
 import functionReportsRoutes from "./routes/postgress/function_reports.routes.js"
+import mesConfigRoutes from "./routes/postgress/mes_config.routes.js"
+import adminPtMachineRoutes from "./routes/postgress/admin_pt_machine.routes.js"
+import adminRewMachineRoutes from "./routes/postgress/admin_rew_machine.routes.js"
+import adminColorMachineRoutes from "./routes/postgress/admin_color_machine.routes.js"
+import adminPtUserRoutes from "./routes/postgress/admin_pt_user.routes.js"
 
 
 const app = express();
@@ -157,6 +162,11 @@ app.use("/api", fiberCutIndicationRoutes)
 app.use("/api", fiberCutReasonsRoutes)
 app.use("/api", preformVendorRoutes)
 app.use("/api/function-reports", functionReportsRoutes)
+app.use("/api", mesConfigRoutes)
+app.use("/api", adminPtMachineRoutes)
+app.use("/api", adminRewMachineRoutes)
+app.use("/api", adminColorMachineRoutes)
+app.use("/api", adminPtUserRoutes)
 
 app.use("/api", towerDataRoutes)
 
