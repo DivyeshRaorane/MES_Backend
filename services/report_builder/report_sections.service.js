@@ -1,6 +1,40 @@
 import pool from "../../db/postgres.js";
 
 // ═══════════════════════════════════════════════════════════════
+// HELPER: Resolve section_keys (strings) to section_ids (integers)
+// Accepts a mix of integer IDs and string keys, returns all as integers.
+// ═══════════════════════════════════════════════════════════════
+
+async function resolveSectionIds(client, sectionIds) {
+    if (!Array.isArray(sectionIds) || sectionIds.length === 0) return [];
+
+    // Separate integers from strings
+    const integerIds = [];
+    const stringKeys = [];
+
+    for (const id of sectionIds) {
+        if (typeof id === 'number' || (typeof id === 'string' && /^\d+$/.test(id))) {
+            integerIds.push(Number(id));
+        } else if (typeof id === 'string' && id.trim()) {
+            stringKeys.push(id.trim());
+        }
+    }
+
+    // Look up string keys in report_section_master
+    if (stringKeys.length > 0) {
+        const result = await client.query(
+            `SELECT section_id FROM report_section_master WHERE section_key = ANY($1)`,
+            [stringKeys]
+        );
+        for (const row of result.rows) {
+            integerIds.push(row.section_id);
+        }
+    }
+
+    return integerIds;
+}
+
+// ═══════════════════════════════════════════════════════════════
 // REPORT SECTION SERVICES
 // ═══════════════════════════════════════════════════════════════
 
@@ -34,6 +68,7 @@ export const getReportSectionsS = async (reportId) => {
 
 /**
  * Update section mappings for a report (replace all)
+ * Accepts both integer section_ids and string section_keys.
  */
 export const updateReportSectionsS = async (reportId, sectionIds) => {
     const client = await pool.connect();
@@ -52,14 +87,11 @@ export const updateReportSectionsS = async (reportId, sectionIds) => {
             throw new Error('Report not found');
         }
 
-        // Validate: all section_ids exist and are active
-        const sectionCheck = await client.query(
-            `SELECT section_id FROM report_section_master 
-             WHERE section_id = ANY($1) AND disable = FALSE`,
-            [sectionIds]
-        );
-        if (sectionCheck.rows.length !== sectionIds.length) {
-            throw new Error('One or more invalid section IDs');
+        // Resolve string section_keys to integer section_ids
+        const resolvedIds = await resolveSectionIds(client, sectionIds);
+
+        if (resolvedIds.length === 0) {
+            throw new Error('No valid sections found');
         }
 
         await client.query('BEGIN');
@@ -71,13 +103,13 @@ export const updateReportSectionsS = async (reportId, sectionIds) => {
         );
 
         // Insert new mappings
-        if (sectionIds.length > 0) {
-            const values = sectionIds.map((sid, i) =>
+        if (resolvedIds.length > 0) {
+            const values = resolvedIds.map((sid, i) =>
                 `($1, $${i + 2})`
             ).join(', ');
             await client.query(
                 `INSERT INTO report_section_mapping (report_id, section_id) VALUES ${values}`,
-                [reportId, ...sectionIds]
+                [reportId, ...resolvedIds]
             );
         }
 
@@ -105,6 +137,7 @@ export const updateReportSectionsS = async (reportId, sectionIds) => {
 /**
  * Save section mappings for a newly created report.
  * If no section_ids provided, defaults to DYNAMIC_REPORTS.
+ * Accepts both integer section_ids and string section_keys.
  * Uses an existing client (for transaction support).
  */
 export const saveSectionMappingsS = async (client, reportId, sectionIds) => {
@@ -122,22 +155,26 @@ export const saveSectionMappingsS = async (client, reportId, sectionIds) => {
         }
     }
 
-    if (sectionsToMap.length > 0) {
-        const values = sectionsToMap.map((sid, i) =>
+    // Resolve string section_keys to integer section_ids
+    const resolvedIds = await resolveSectionIds(client, sectionsToMap);
+
+    if (resolvedIds.length > 0) {
+        const values = resolvedIds.map((sid, i) =>
             `($1, $${i + 2})`
         ).join(', ');
         await client.query(
             `INSERT INTO report_section_mapping (report_id, section_id) VALUES ${values}
              ON CONFLICT (report_id, section_id) DO NOTHING`,
-            [reportId, ...sectionsToMap]
+            [reportId, ...resolvedIds]
         );
     }
 
-    return sectionsToMap;
+    return resolvedIds;
 };
 
 /**
  * Update section mappings within an existing transaction.
+ * Accepts both integer section_ids and string section_keys.
  * Uses an existing client (for transaction support).
  */
 export const updateSectionMappingsInTxS = async (client, reportId, sectionIds) => {
@@ -147,6 +184,13 @@ export const updateSectionMappingsInTxS = async (client, reportId, sectionIds) =
         throw new Error('At least one section must be selected');
     }
 
+    // Resolve string section_keys to integer section_ids
+    const resolvedIds = await resolveSectionIds(client, sectionIds);
+
+    if (resolvedIds.length === 0) {
+        throw new Error('No valid sections found');
+    }
+
     // Delete existing mappings
     await client.query(
         'DELETE FROM report_section_mapping WHERE report_id = $1',
@@ -154,13 +198,13 @@ export const updateSectionMappingsInTxS = async (client, reportId, sectionIds) =
     );
 
     // Insert new mappings
-    const values = sectionIds.map((sid, i) =>
+    const values = resolvedIds.map((sid, i) =>
         `($1, $${i + 2})`
     ).join(', ');
     await client.query(
         `INSERT INTO report_section_mapping (report_id, section_id) VALUES ${values}
          ON CONFLICT (report_id, section_id) DO NOTHING`,
-        [reportId, ...sectionIds]
+        [reportId, ...resolvedIds]
     );
 };
 
