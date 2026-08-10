@@ -57,7 +57,7 @@ export const submitRewindS = async (payload) => {
 
             if (bobbin.rewinding_type === 'CUT' && bobbin.cuts && bobbin.cuts.length > 0) {
                 const remarkParts = bobbin.cuts.map(cut => {
-                    return `Cut from ${cut.p1} km to ${cut.p2}(${cut.c_remark || ''}:)`;
+                    return `Cut from ${cut.p1} km to ${cut.p2} (${cut.c_remark || ''}:)`;
                 });
                 formattedRemark = remarkParts.join(', ');
             } else {

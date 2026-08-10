@@ -2,6 +2,8 @@ import { fetchBobbinQcS, checkProcessCompletionS, submitQcEntryS, updateMissingV
 import { validateBobbinQC } from "../../../services/qc_entry/qc_grade.service.js";
 import { mbendCopyS } from "../../../services/qc_entry/mbend_copy.service.js";
 import { mbendReassignS } from "../../../services/qc_entry/mbend_reassign.service.js";
+import { handleColoredBobbinQcS } from "../../../services/qc_entry/colored_bobbin_qc.service.js";
+import { mfdCableCutoffCalcS } from "../../../services/qc_entry/mfd_cable_cutoff.service.js";
 
 export const fetchBobbinQcC = async (req, res) => {
     
@@ -148,5 +150,37 @@ export const flawRewindC = async (req, res) => {
     } catch (error) {
         console.error("[FlawRewind] Error:", error.message);
         return res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+export const coloredBobbinQcC = async (req, res) => {
+    try {
+        const { bobbin_no } = req.params;
+
+        if (!bobbin_no) {
+            return res.status(400).json({ success: false, message: "bobbin_no is required." });
+        }
+
+        const result = await handleColoredBobbinQcS(bobbin_no);
+        return res.status(200).json(result);
+    } catch (error) {
+        console.error('[ColoredBobbinQC] Controller Error:', error.message);
+        return res.status(500).json({ success: false, message: "Colored bobbin QC check failed", error: error.message });
+    }
+};
+
+export const mfdCableCutoffCalcC = async (req, res) => {
+    try {
+        const { bobbin_no } = req.params;
+
+        if (!bobbin_no) {
+            return res.status(400).json({ success: false, message: "bobbin_no is required." });
+        }
+
+        const result = await mfdCableCutoffCalcS(bobbin_no);
+        return res.status(200).json(result);
+    } catch (error) {
+        console.error('[MfdCableCutoff] Controller Error:', error.message);
+        return res.status(500).json({ success: false, message: "MFD/Cable Cutoff calculation failed", error: error.message });
     }
 };

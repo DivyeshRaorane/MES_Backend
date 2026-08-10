@@ -1,9 +1,10 @@
 import pool from "../../db/postgres.js";
 
 export const scanForRewindingS = async (bobbin_no) => {
+    
     // Step 1: Check if fg_rewind already exists
     let fgRewind = (await pool.query(`SELECT * FROM fg_rewind WHERE bobbin_no = $1 LIMIT 1`, [bobbin_no])).rows[0];
-
+console.log("🔥 fgRewind query completed:", fgRewind);
     // If exists, check if already done
     if (fgRewind && fgRewind.is_rew_done === true) {
         return { success: false, message: "Rewinding has already been completed for this bobbin." };
@@ -18,12 +19,15 @@ export const scanForRewindingS = async (bobbin_no) => {
             return { success: false, message: "Bobbin not found." };
         }
 
+
+console.log("this:", bobbin_no)
         // Check final_grade = REW from qc_entry (or qc_entry_temp)
         let finalGrade = null;
         const qcEntry = (await pool.query(`SELECT final_grade, remark FROM qc_entry WHERE bobbin_no = $1`, [bobbin_no])).rows[0];
         if (qcEntry?.final_grade) {
             finalGrade = qcEntry.final_grade;
             remark = qcEntry.remark;
+            console.log("remark:", qcEntry)
         } else {
             const qcTemp = (await pool.query(`SELECT final_grade, remark FROM qc_entry_temp WHERE bobbin_no = $1`, [bobbin_no])).rows[0];
             if (qcTemp?.final_grade) {
@@ -51,7 +55,9 @@ export const scanForRewindingS = async (bobbin_no) => {
         if (remark && rewType === 'CUT') {
             const parts = remark.split(',').map(s => s.trim()).filter(Boolean);
             for (const part of parts) {
-                const match = part.match(/Cut from ([\d.]+) km to ([\d.]+)\s*\(([^:]+):\)/i);
+                const match = part.match(
+    /Cut from ([\d.]+) km to ([\d.]+)\s*\(([^)]+)\)/i
+);
                 if (match) {
                     await pool.query(
                         `INSERT INTO rewind_instr (bobbin_no, p1, p2, instruction, is_done, logged_in_user)

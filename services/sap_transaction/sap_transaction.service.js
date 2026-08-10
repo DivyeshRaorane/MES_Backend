@@ -183,6 +183,7 @@ export async function generatePTSAPTransactions(ptEntryData, client) {
     const {
         bobbin_no,
         spool_id,
+        fid,
         pt_length,
         product_type,
         process_type,
@@ -217,11 +218,15 @@ export async function generatePTSAPTransactions(ptEntryData, client) {
     }));
 
     // ─── Step 6: Generate Transaction Number ───
-    const transactionNo = generateTransactionNumber();
+    const transactionNo = generateTransactionNumber('PT');
 
     // ─── Step 7: Fetch material details for all materials ───
     const allMaterialCodes = [finishedMaterial, ...bomComponents.map(c => c.component_material_code)];
     const materialDetails = await fetchMaterialDetails(allMaterialCodes, client);
+
+    let totalDrawnLength = 0;
+    let alreadyConsumed = 0;
+    let remainingAfterThis = 0;
 
     if (hasValidFid) {
         // ═══════════════════════════════════════════════════════
@@ -251,6 +256,32 @@ export async function generatePTSAPTransactions(ptEntryData, client) {
         ]);
 
         // ─── Step 9a: Insert Consumption Transactions (Movement Type 261) ───
+
+        // Fetch total drawn_length from draw_entry for this spool
+        const drawLengthResult = await client.query(
+            `SELECT COALESCE(SUM(drawn_length::numeric), 0) as total_drawn_length FROM draw_entry WHERE spool_id = $1`,
+            [spool_id]
+        );
+        totalDrawnLength = parseFloat(drawLengthResult.rows[0].total_drawn_length) || 0;
+
+        // Sum already consumed PT length (from previous PT SAP 261 transactions for this spool)
+        const prevConsumedResult = await client.query(
+            `SELECT COALESCE(SUM(quantity::numeric), 0) as already_consumed 
+             FROM sap_transaction 
+             WHERE batch = $1 AND movement_type = '261' AND transaction_no LIKE 'PT%'`,
+            [spool_id]
+        );
+        alreadyConsumed = parseFloat(prevConsumedResult.rows[0].already_consumed) || 0;
+
+        // Remaining balance after this entry
+        remainingAfterThis = totalDrawnLength - alreadyConsumed - ptQuantity;
+
+        console.log(`[PT-SAP] 261 Tracking — Drawn Length: ${totalDrawnLength}, Already Consumed: ${alreadyConsumed}, This Entry: ${ptQuantity}, Remaining: ${remainingAfterThis}`);
+
+        if (remainingAfterThis < 0) {
+            throw new Error(`PT length (${ptQuantity}) exceeds available balance. Drawn: ${totalDrawnLength}, Already consumed: ${alreadyConsumed}, Available: ${(totalDrawnLength - alreadyConsumed).toFixed(3)}`);
+        }
+
         for (const consumption of consumptions) {
             const compMaterial = materialDetails[consumption.component_material_code];
 
@@ -370,6 +401,11 @@ export async function generatePTSAPTransactions(ptEntryData, client) {
         pt_length: ptQuantity,
         components_count: consumptions.length,
         movement_type: hasValidFid ? '101+261' : '551',
+        ...(hasValidFid && {
+            drawn_length: totalDrawnLength,
+            already_consumed: alreadyConsumed,
+            remaining_balance: remainingAfterThis,
+        }),
     };
 }
 
@@ -413,13 +449,14 @@ async function loadBOM(materialCode, client) {
 
 /**
  * Generate a unique Transaction Number.
- * Format: DT + YYYYMMDDHHMMSSmmm (timestamp with milliseconds)
+ * Format: <prefix> + YYYYMMDDHHMMSSmmm (timestamp with milliseconds)
+ * @param {string} prefix - 'DT' for Draw, 'PT' for PT Entry
  */
-function generateTransactionNumber() {
+function generateTransactionNumber(prefix = 'DT') {
     const now = new Date();
     const pad = (n, len = 2) => String(n).padStart(len, '0');
     const timestamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}${pad(now.getMilliseconds(), 3)}`;
-    return `DT${timestamp}`;
+    return `${prefix}${timestamp}`;
 }
 
 /**

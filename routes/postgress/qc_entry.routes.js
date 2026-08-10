@@ -1,5 +1,5 @@
 import express from 'express';
-import { fetchBobbinQcC, checkProcessCompletionC, gradeBobbinC, submitQcEntryC, updateMissingValuesC, mbendCopyC, mbendReassignC, ptCheckByBobbinC, flawRewindC } from '../../controller/postgres/qc_entry/qc_entry.controller.js';
+import { fetchBobbinQcC, checkProcessCompletionC, gradeBobbinC, submitQcEntryC, updateMissingValuesC, mbendCopyC, mbendReassignC, ptCheckByBobbinC, flawRewindC, coloredBobbinQcC, mfdCableCutoffCalcC } from '../../controller/postgres/qc_entry/qc_entry.controller.js';
 import { authMiddleware } from '../../middleware/aut_middleware.js';
 
 const router = express.Router();
@@ -14,5 +14,7 @@ router.post('/qcentry/mbend-reassign', authMiddleware, mbendReassignC);
 router.post('/qcentry/update-missing-values', authMiddleware, updateMissingValuesC);
 router.post('/qc/update-missing-values', authMiddleware, updateMissingValuesC);
 router.post('/qcentry/flaw-rewind', authMiddleware, flawRewindC);
+router.get('/qcentry/colored-bobbin-qc/:bobbin_no', authMiddleware, coloredBobbinQcC);
+router.get('/qcentry/mfd-cable-cutoff/:bobbin_no', authMiddleware, mfdCableCutoffCalcC);
 
 export default router;

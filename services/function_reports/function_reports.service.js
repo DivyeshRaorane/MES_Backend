@@ -2,6 +2,29 @@ import pool from "../../db/postgres.js";
 
 // ─── 1. Available Functions (READ-ONLY discovery from pg_proc) ───────────────
 
+// export const getAvailableFunctionsS = async () => {
+//     const query = `
+//         SELECT
+//             n.nspname AS schema_name,
+//             p.proname AS function_name,
+//             pg_get_function_result(p.oid) AS return_type,
+//             pg_get_function_arguments(p.oid) AS arguments
+//         FROM pg_proc p
+//         JOIN pg_namespace n ON p.pronamespace = n.oid
+//         WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+//           AND p.prokind = 'f'
+//           AND (
+//               pg_get_function_result(p.oid) = 'SETOF record'
+//               OR pg_get_function_result(p.oid) LIKE 'TABLE%'
+//               OR pg_get_function_result(p.oid) LIKE 'SETOF%'
+//           )
+//         ORDER BY n.nspname, p.proname;
+//     `;
+//     const result = await pool.query(query);
+//     return result.rows;
+// };
+
+
 export const getAvailableFunctionsS = async () => {
     const query = `
         SELECT
@@ -10,17 +33,15 @@ export const getAvailableFunctionsS = async () => {
             pg_get_function_result(p.oid) AS return_type,
             pg_get_function_arguments(p.oid) AS arguments
         FROM pg_proc p
-        JOIN pg_namespace n ON p.pronamespace = n.oid
+        JOIN pg_namespace n
+            ON p.pronamespace = n.oid
         WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
           AND p.prokind = 'f'
-          AND (
-              pg_get_function_result(p.oid) = 'SETOF record'
-              OR pg_get_function_result(p.oid) LIKE 'TABLE%'
-              OR pg_get_function_result(p.oid) LIKE 'SETOF%'
-          )
         ORDER BY n.nspname, p.proname;
     `;
+
     const result = await pool.query(query);
+
     return result.rows;
 };
 
