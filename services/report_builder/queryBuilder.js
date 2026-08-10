@@ -86,7 +86,7 @@ export class QueryBuilder {
     }
 
     buildQuery(options = {}) {
-        const { page, pageSize, filters, sorting, search, isCount, isPreview } = options;
+        const { page, pageSize, filters, sorting, search, isCount, isPreview, dateFrom, dateTo } = options;
 
         this.params = [];
         this.paramIndex = 0;
@@ -100,14 +100,14 @@ export class QueryBuilder {
                 const selectClause = this.buildSelectClause();
                 const fromClause = this.buildFromClause();
                 const joinClauses = this.buildJoinClauses();
-                const whereClause = this.buildWhereClause(filters, search);
+                const whereClause = this.buildWhereClause(filters, search, dateFrom, dateTo);
                 const havingClause = this.buildHavingClause();
                 sql = `SELECT COUNT(*) as total FROM (${selectClause} ${fromClause} ${joinClauses} ${whereClause} ${groupBy} ${havingClause}) as count_query`;
             } else {
                 sql += 'SELECT COUNT(*) as total';
                 sql += ' ' + this.buildFromClause();
                 sql += ' ' + this.buildJoinClauses();
-                sql += ' ' + this.buildWhereClause(filters, search);
+                sql += ' ' + this.buildWhereClause(filters, search, dateFrom, dateTo);
             }
 
             return { sql: sql.replace(/\s+/g, ' ').trim(), params: this.params };
@@ -123,7 +123,7 @@ export class QueryBuilder {
         sql += ' ' + this.buildJoinClauses();
 
         // WHERE clause
-        sql += ' ' + this.buildWhereClause(filters, search);
+        sql += ' ' + this.buildWhereClause(filters, search, dateFrom, dateTo);
 
         // GROUP BY clause
         sql += ' ' + this.buildGroupByClause();
@@ -199,8 +199,27 @@ export class QueryBuilder {
         return sql;
     }
 
-    buildWhereClause(filters, search) {
+    buildWhereClause(filters, search, dateFrom, dateTo) {
         const conditions = [];
+
+        // ── Default Date Range Filter (created_at) ──────────────────────────
+        if (dateFrom || dateTo) {
+            // Auto-detect date column: prefer created_at, then look for date/timestamp columns
+            const dateColumn = this.detectDateColumn();
+            if (dateColumn) {
+                const { table, column } = dateColumn;
+                if (dateFrom) {
+                    this.paramIndex++;
+                    conditions.push(`"${table}"."${column}" >= $${this.paramIndex}`);
+                    this.params.push(dateFrom);
+                }
+                if (dateTo) {
+                    this.paramIndex++;
+                    conditions.push(`"${table}"."${column}" <= $${this.paramIndex}`);
+                    this.params.push(dateTo + ' 23:59:59');
+                }
+            }
+        }
 
         if (filters && typeof filters === 'object') {
             for (const [key, value] of Object.entries(filters)) {
@@ -276,6 +295,49 @@ export class QueryBuilder {
         }
 
         return conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    }
+
+    /**
+     * Auto-detect the best date/timestamp column for default date range filtering.
+     * Priority: created_at > entry_date > draw_date > any date/timestamp column
+     * Returns { table, column } or null if none found.
+     */
+    detectDateColumn() {
+        const mainTable = this.config.main_table;
+        const PREFERRED_DATE_COLS = ['created_at', 'entry_date', 'draw_date', 'created_date', 'date', 'transaction_date', 'record_date'];
+
+        // 1. Check report's selected columns for date types
+        const reportColumns = this.config.columns || [];
+        const dateTypeCols = reportColumns.filter(c =>
+            c.dataType && (c.dataType.includes('date') || c.dataType.includes('timestamp'))
+        );
+
+        if (dateTypeCols.length > 0) {
+            // Prefer well-known column names
+            for (const preferred of PREFERRED_DATE_COLS) {
+                const match = dateTypeCols.find(c => c.column === preferred);
+                if (match) return { table: match.table, column: match.column };
+            }
+            // Fall back to first date column found
+            return { table: dateTypeCols[0].table, column: dateTypeCols[0].column };
+        }
+
+        // 2. Check metadata cache for the main table's columns
+        const tableColumns = metadataCache.columns[mainTable] || [];
+        const metaDateCols = tableColumns.filter(c =>
+            c.data_type && (c.data_type.includes('date') || c.data_type.includes('timestamp'))
+        );
+
+        if (metaDateCols.length > 0) {
+            for (const preferred of PREFERRED_DATE_COLS) {
+                const match = metaDateCols.find(c => c.column_name === preferred);
+                if (match) return { table: mainTable, column: match.column_name };
+            }
+            return { table: mainTable, column: metaDateCols[0].column_name };
+        }
+
+        // No date column found
+        return null;
     }
 
     /**

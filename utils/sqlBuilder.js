@@ -27,7 +27,7 @@ export function toJsonbObj(val) {
  * @returns {{ text: string, values: Array }}
  */
 export function buildTableSQL(config, options = {}) {
-    const { limit, filters = {}, sorting: runtimeSorting } = options;
+    const { limit, filters = {}, sorting: runtimeSorting, dateFrom, dateTo } = options;
 
     const columns = config.columns || [];
     const columnOrder = config.column_order || [];
@@ -93,6 +93,25 @@ export function buildTableSQL(config, options = {}) {
         } else {
             params.push(`%${value}%`); conditions.push(`"${column}" ILIKE $${params.length}`);
         }
+    }
+    // Date range filter on created_at (or first date column)
+    if (dateFrom || dateTo) {
+        const PREFERRED = ['created_at', 'entry_date', 'draw_date', 'created_date', 'date'];
+        const allCols = columns.map(c => ({ col: c.column, type: c.dataType }));
+        let dateCol = null;
+        for (const pref of PREFERRED) {
+            const found = allCols.find(c => c.col === pref && c.type && (c.type.includes('date') || c.type.includes('timestamp')));
+            if (found) { dateCol = found.col; break; }
+        }
+        if (!dateCol) {
+            const anyDate = allCols.find(c => c.type && (c.type.includes('date') || c.type.includes('timestamp')));
+            if (anyDate) dateCol = anyDate.col;
+        }
+        // Fallback: try created_at directly (common column not always in selected columns)
+        if (!dateCol) dateCol = 'created_at';
+
+        if (dateFrom) { params.push(dateFrom); conditions.push(`"${dateCol}" >= $${params.length}`); }
+        if (dateTo) { params.push(dateTo + ' 23:59:59'); conditions.push(`"${dateCol}" <= $${params.length}`); }
     }
     const whereClause = conditions.length > 0 ? 'WHERE ' + conditions.join(' AND ') : '';
 

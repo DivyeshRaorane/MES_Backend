@@ -129,7 +129,7 @@ export const executeUserReportS = async (id, options, user, ipAddress) => {
     const startTime = Date.now();
     const userId = user.id || user.userId;
     const userRole = user.role;
-    const { page, pageSize, filters, sorting, search } = options;
+    const { page, pageSize, filters, sorting, search, dateFrom, dateTo } = options;
 
     // Check report exists
     const reportResult = await pool.query(
@@ -185,7 +185,7 @@ export const executeUserReportS = async (id, options, user, ipAddress) => {
             const executedTables = [];
             for (const tableConfig of sheetTables) {
                 try {
-                    const sql = buildTableSQL(tableConfig, { filters });
+                    const sql = buildTableSQL(tableConfig, { filters, dateFrom, dateTo });
                     const tableResult = await pool.query({ text: sql.text, values: sql.values, statement_timeout: 30000 });
                     executedTables.push({
                         title: tableConfig.table_name,
@@ -234,11 +234,11 @@ export const executeUserReportS = async (id, options, user, ipAddress) => {
     await builder.validateIdentifiers();
 
     // Build data query
-    const { sql, params } = builder.buildQuery({ page, pageSize, filters, sorting, search });
+    const { sql, params } = builder.buildQuery({ page, pageSize, filters, sorting, search, dateFrom, dateTo });
 
     // Build count query
     const countBuilder = new QueryBuilder(reportConfig);
-    const countQuery = countBuilder.buildQuery({ filters, search, isCount: true });
+    const countQuery = countBuilder.buildQuery({ filters, search, isCount: true, dateFrom, dateTo });
 
     
     // Execute both
@@ -275,7 +275,7 @@ export const executeUserReportS = async (id, options, user, ipAddress) => {
 export const executeReportForExportS = async (id, options, user) => {
     const userId = user.id || user.userId;
     const userRole = user.role;
-    const { filters, sorting, search } = options;
+    const { filters, sorting, search, dateFrom, dateTo } = options;
 
     // Check report exists
     const reportResult = await pool.query(
@@ -331,7 +331,7 @@ export const executeReportForExportS = async (id, options, user) => {
             const executedTables = [];
             for (const tableConfig of sheetTables) {
                 try {
-                    const sql = buildTableSQL(tableConfig, { filters });
+                    const sql = buildTableSQL(tableConfig, { filters, dateFrom, dateTo });
                     const tableResult = await pool.query({ text: sql.text, values: sql.values, statement_timeout: 60000 });
                     executedTables.push({
                         table_name: tableConfig.table_name,
@@ -367,7 +367,7 @@ export const executeReportForExportS = async (id, options, user) => {
     await builder.validateIdentifiers();
 
     // Build query without pagination (but with row limit of 100,000)
-    const { sql, params } = builder.buildQuery({ filters, sorting, search, page: 1, pageSize: 100000 });
+    const { sql, params } = builder.buildQuery({ filters, sorting, search, page: 1, pageSize: 100000, dateFrom, dateTo });
 
    
     const result = await pool.query({

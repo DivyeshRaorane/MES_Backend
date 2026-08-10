@@ -391,12 +391,137 @@ export const executeReportS = async (id, params) => {
     const result = await pool.query(sql, paramValues);
     const executionTime = Date.now() - startTime;
 
+    const rawColumns = result.fields.map(f => ({ field: f.name, header: f.name.replace(/_/g, ' ') }));
+
+    // 6. Expand JSON/JSONB object columns into separate flat columns
+    const { columns: expandedColumns, data: expandedData } = expandJsonColumns(result.rows, rawColumns);
+
     return {
-        data: result.rows,
+        data: expandedData,
         totalRows: result.rowCount,
-        columns: result.fields.map(f => ({ field: f.name, header: f.name.replace(/_/g, ' ') })),
+        columns: expandedColumns,
         executionTime
     };
+};
+
+// ─── JSON/JSONB Column Expansion Helper ──────────────────────────────────────
+// Detects columns whose values are plain objects (not arrays, not null) across
+// all rows, then expands each JSON key into its own column. Month-style keys
+// (e.g. "Jul-26", "Apr-26") are sorted chronologically descending.
+
+const MONTH_MAP = {
+    jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+    jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11
+};
+
+/**
+ * Check if a key looks like a month-year pattern (e.g. "Jul-26", "Apr-2026")
+ */
+const isMonthKey = (key) => {
+    const match = key.match(/^([A-Za-z]{3})-(\d{2,4})$/);
+    if (!match) return false;
+    const mon = match[1].toLowerCase();
+    return mon in MONTH_MAP;
+};
+
+/**
+ * Parse a month key into a sortable numeric value (year * 12 + month)
+ */
+const parseMonthKey = (key) => {
+    const match = key.match(/^([A-Za-z]{3})-(\d{2,4})$/);
+    if (!match) return 0;
+    const mon = MONTH_MAP[match[1].toLowerCase()] || 0;
+    let year = parseInt(match[2], 10);
+    if (year < 100) year += 2000; // "26" -> 2026
+    return year * 12 + mon;
+};
+
+/**
+ * Expand JSON/JSONB object fields in result rows into flat scalar columns.
+ * Normal (non-object) columns pass through unchanged.
+ */
+const expandJsonColumns = (rows, originalColumns) => {
+    if (!rows || rows.length === 0) {
+        return { columns: originalColumns, data: rows };
+    }
+
+    // Detect which columns contain expandable JSON objects
+    // A column is expandable if at least one row has a non-null plain object (not array) value
+    const jsonFieldNames = new Set();
+    for (const row of rows) {
+        for (const col of originalColumns) {
+            const val = row[col.field];
+            if (val && typeof val === 'object' && !Array.isArray(val) && !(val instanceof Date)) {
+                jsonFieldNames.add(col.field);
+            }
+        }
+    }
+
+    // If no JSON columns detected, return as-is (backward compatible)
+    if (jsonFieldNames.size === 0) {
+        return { columns: originalColumns, data: rows };
+    }
+
+    // Collect all unique JSON keys per expandable field across all rows
+    const jsonFieldKeys = {}; // { fieldName: Set of keys }
+    for (const fieldName of jsonFieldNames) {
+        jsonFieldKeys[fieldName] = new Set();
+    }
+    for (const row of rows) {
+        for (const fieldName of jsonFieldNames) {
+            const val = row[fieldName];
+            if (val && typeof val === 'object' && !Array.isArray(val)) {
+                Object.keys(val).forEach(k => jsonFieldKeys[fieldName].add(k));
+            }
+        }
+    }
+
+    // Build expanded column list
+    const expandedColumns = [];
+    for (const col of originalColumns) {
+        if (jsonFieldNames.has(col.field)) {
+            // Replace this column with its expanded JSON keys
+            let keys = Array.from(jsonFieldKeys[col.field]);
+
+            // Sort: if all keys are month-style, sort chronologically descending
+            const allMonths = keys.length > 0 && keys.every(isMonthKey);
+            if (allMonths) {
+                keys.sort((a, b) => parseMonthKey(b) - parseMonthKey(a)); // descending
+            }
+            // Otherwise, keep insertion/discovery order (first-seen from rows)
+
+            for (const key of keys) {
+                expandedColumns.push({
+                    field: key,
+                    header: key,
+                    isExpanded: true,
+                    sourceField: col.field
+                });
+            }
+        } else {
+            expandedColumns.push(col);
+        }
+    }
+
+    // Flatten rows: expand JSON fields into top-level scalar properties
+    const expandedData = rows.map(row => {
+        const flatRow = {};
+        for (const col of originalColumns) {
+            if (jsonFieldNames.has(col.field)) {
+                // Expand the JSON object keys into the flat row
+                const obj = row[col.field];
+                const keys = jsonFieldKeys[col.field];
+                for (const key of keys) {
+                    flatRow[key] = (obj && typeof obj === 'object') ? (obj[key] ?? null) : null;
+                }
+            } else {
+                flatRow[col.field] = row[col.field];
+            }
+        }
+        return flatRow;
+    });
+
+    return { columns: expandedColumns, data: expandedData };
 };
 
 // ─── 12. Get Sections ────────────────────────────────────────────────────────
