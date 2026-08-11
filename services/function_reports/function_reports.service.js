@@ -49,19 +49,24 @@ export const getAvailableFunctionsS = async () => {
 
 export const getFunctionParamsS = async (schemaName, functionName) => {
     const query = `
-        SELECT
+        SELECT DISTINCT ON (p.parameter_name)
             p.parameter_name,
             p.data_type,
             p.parameter_default,
             p.ordinal_position,
             p.parameter_mode
         FROM information_schema.parameters p
+        JOIN pg_proc pr ON pr.proname = $2
+        JOIN pg_namespace ns ON ns.oid = pr.pronamespace AND ns.nspname = $1
         WHERE p.specific_schema = $1
-          AND p.specific_name LIKE $2 || '_%'
+          AND p.specific_name = $2 || '_' || pr.oid::text
           AND p.parameter_mode = 'IN'
-        ORDER BY p.ordinal_position;
+        ORDER BY p.parameter_name, p.ordinal_position;
     `;
     const result = await pool.query(query, [schemaName, functionName]);
+
+    // Re-sort by ordinal_position after DISTINCT ON
+    result.rows.sort((a, b) => a.ordinal_position - b.ordinal_position);
     return result.rows;
 };
 
