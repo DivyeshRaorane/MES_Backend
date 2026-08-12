@@ -70,6 +70,32 @@ export const deactivateTrayS = async (tray_id) => {
     return { success: true, message: "Tray deactivated." };
 };
 
+export const activateTrayS = async (tray_id) => {
+    const result = await pool.query(
+        `UPDATE tray_master SET is_active = TRUE WHERE tray_id = $1 RETURNING tray_id`,
+        [tray_id]
+    );
+
+    if (result.rowCount === 0) {
+        return { success: false, message: "Tray not found", notFound: true };
+    }
+
+    return { success: true, message: "Tray activated successfully" };
+};
+
+export const updateTrayNameS = async (tray_id, tray_name) => {
+    const result = await pool.query(
+        `UPDATE tray_master SET tray_name = $1 WHERE tray_id = $2 RETURNING tray_id`,
+        [tray_name, tray_id]
+    );
+
+    if (result.rowCount === 0) {
+        return { success: false, message: "Tray not found", notFound: true };
+    }
+
+    return { success: true, message: "Tray name updated successfully" };
+};
+
 export const getPositionsS = async (tray_id) => {
     const result = await pool.query(
         `SELECT * FROM tray_position WHERE tray_id = $1 ORDER BY position_no`,
