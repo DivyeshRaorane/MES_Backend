@@ -3,7 +3,7 @@ import pool from "../../db/postgres.js";
 export const getPendingBreaksS = async () => {
     const drawPending = await pool.query(
         `SELECT DISTINCT de.spool_fid as fid FROM draw_entry de
-         WHERE LOWER(de.indication_fiber_cut) = 'break'
+         WHERE de.indication_fiber_cut = 'Draw Break'
          AND de.spool_fid IS NOT NULL AND de.spool_fid != ''
          AND de.spool_fid NOT IN (SELECT fiber_id FROM draw_break_analysis WHERE fiber_id IS NOT NULL)
          ORDER BY de.spool_fid`
@@ -16,7 +16,7 @@ export const getPendingBreaksS = async () => {
          AND pe.fid NOT IN (SELECT fiber_id FROM pt_break_analysis WHERE fiber_id IS NOT NULL)
          ORDER BY pe.fid`
     );
-
+console.log("Pending ids:", drawPending)
     return {
         drawPending: drawPending.rows.map(r => r.fid),
         ptPending: ptPending.rows.map(r => r.fid)
@@ -26,7 +26,7 @@ export const getPendingBreaksS = async () => {
 export const getBobbinByFidS = async (fid) => {
     // Check draw_entry first (using spool_fid)
     const drawResult = await pool.query(
-        `SELECT * FROM draw_entry WHERE spool_fid = $1 AND LOWER(indication_fiber_cut) = 'break' LIMIT 1`,
+        `SELECT * FROM draw_entry WHERE spool_fid = $1 AND indication_fiber_cut = 'Draw Break' LIMIT 1`,
         [fid]
     );
 

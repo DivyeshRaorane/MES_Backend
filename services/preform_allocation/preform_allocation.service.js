@@ -262,7 +262,6 @@ export const preformsByTowersS = async (tower_id) => {
       pa.tower_no,
       pa.preform_type,
       pa.product_type,
-      pa.process_type,
       pa.allocation_date,
       ms.balance_qty,
       ms.last_fid,

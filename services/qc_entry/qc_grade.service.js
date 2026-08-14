@@ -304,35 +304,6 @@ else {
       };
     }
 
-    // --- NEW LOGIC: cable_cut_off is conditionally mandatory - only required when
-    // cut_off_top or cut_off_bottom is greater than 1310. At this point cut_off_top and
-    // cut_off_bottom are guaranteed present (they already passed the check above). ---
-    const cutOffTopVal = parseFloat(measurement['cut_off_top']);
-    const cutOffBottomVal = parseFloat(measurement['cut_off_bottom']);
-    const cableCutOffMandatory = cutOffTopVal > 1310 || cutOffBottomVal > 1310;
-
-    const cableCutOffRaw = measurement['cable_cut_off'];
-    const cableCutOffMissing = (cableCutOffRaw === null || cableCutOffRaw === undefined || cableCutOffRaw === '');
-
-    if (cableCutOffMandatory && cableCutOffMissing) {
-      return {
-        status: 'MISSING_DATA',
-        matched_grade: null,
-        matched_priority: null,
-        metrics: { total_checks_performed: 0 },
-        missing_parameters: ['cable_cut_off'], // mandatory because cut_off_top/cut_off_bottom > 1310, but value missing
-        failure_details: null
-      };
-    }
-
-    // If cable_cut_off is NOT mandatory (condition not met) and it happens to be missing,
-    // it should not be graded at all - skip it in the tier loop below.
-    const skipCableCutOffInGradeLoop = (!cableCutOffMandatory && cableCutOffMissing);
-    
- // --------------------------------------------------------------------------
-
-
-
     let totalChecksPerformed = 0;
     let finalMatchedTier = null;
     let validationFailureLog = null;
@@ -343,12 +314,6 @@ else {
 
       // D. INNER LOOP: Check every single parameter against this tier's rules
       for (const paramName of parametersToCheck) {
-
-
-        // NEW: cable_cut_off wasn't mandatory here and is missing - don't grade-check it.
-        if (paramName === 'cable_cut_off' && skipCableCutOffInGradeLoop) {
-          continue;
-        }
 
         totalChecksPerformed++;
 
@@ -451,8 +416,14 @@ else {
       }
       // --------------------------------------------------------------------------
 
-      // --- If bobbin product_type is G657A1250C and it qualified (got a grade), upgrade to G657A1250 ---
-      if (product_type === 'G657A1250C') {
+      // --- Upgrade to G657A1250 if either:
+      //     (a) bobbin's original product_type was already G657A1250C and it passed, OR
+      //     (b) bobbin qualified via the D-to-A1 conversion path (G652D250 -> G657A1250C spec) and passed ---
+      const qualifiedViaDtoA1Conversion =
+        useDualProductTypeSpecs &&
+        finalMatchedTier.product_type === SECONDARY_PRODUCT_TYPE_FOR_LOW_MAC;
+
+      if (product_type === 'G657A1250C' || qualifiedViaDtoA1Conversion) {
         const upgradedProductType = 'G657A1250';
 
         // Update product_type in qc_entry_temp

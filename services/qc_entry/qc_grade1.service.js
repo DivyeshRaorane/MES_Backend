@@ -451,6 +451,24 @@ else {
       }
       // --------------------------------------------------------------------------
 
+      // --- If bobbin product_type is G657A1250C and it qualified (got a grade), upgrade to G657A1250 ---
+      if (product_type === 'G657A1250C') {
+        const upgradedProductType = 'G657A1250';
+
+        // Update product_type in qc_entry_temp
+        await client.query(
+          `UPDATE qc_entry_temp SET product_type = $1 WHERE bobbin_no = $2;`,
+          [upgradedProductType, bobbinNo]
+        );
+
+        // Update product_type in bobbin_entries
+        await client.query(
+          `UPDATE bobbin_entries SET product_type = $1 WHERE bobbin_no = $2;`,
+          [upgradedProductType, bobbinNo]
+        );
+      }
+      // --------------------------------------------------------------------------
+
       return {
         status: 'PASSED',
         matched_grade: finalMatchedTier.grade,

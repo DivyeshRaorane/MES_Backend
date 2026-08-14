@@ -350,7 +350,8 @@ export const drawEntryS = async(payload)=>{
         const spoolId = drawResult.rows[0].spool_id;
 
         // Insert into mat_stock for this spool
-        const mCode = Math.floor(100000 + Math.random() * 900000);
+        console.log("Product type:",payload.product_type.trim() + payload.process_type )
+        const mCode = payload.product_type.trim()+payload.process_type;
 
         await client.query(
             `
