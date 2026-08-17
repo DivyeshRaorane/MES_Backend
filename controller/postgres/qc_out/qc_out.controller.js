@@ -1,4 +1,46 @@
-import { validateBobbinForQcOutS, submitQcOutS } from "../../../services/qc_out/qc_out.service.js";
+import { getPendingQcOutS, bulkValidateQcOutS, bulkSubmitQcOutS, validateBobbinForQcOutS, submitQcOutS } from "../../../services/qc_out/qc_out.service.js";
+
+export const getPendingQcOutC = async (req, res) => {
+    try {
+        const { from_date, to_date } = req.query;
+        const data = await getPendingQcOutS(from_date, to_date);
+        res.status(200).json({ success: true, data });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+export const bulkValidateQcOutC = async (req, res) => {
+    try {
+        const { bobbins } = req.body;
+
+        if (!bobbins || !Array.isArray(bobbins) || bobbins.length === 0) {
+            return res.status(400).json({ success: false, message: "bobbins array is required" });
+        }
+
+        const data = await bulkValidateQcOutS(bobbins);
+        res.status(200).json({ success: true, data });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+export const bulkSubmitQcOutC = async (req, res) => {
+    try {
+        const { user, shift, bobbins } = req.body;
+        const logged_in_user = req.user.emp_id;
+
+        if (!user || !shift || !bobbins || !Array.isArray(bobbins) || bobbins.length === 0) {
+            return res.status(400).json({ success: false, message: "user, shift, and bobbins array are required" });
+        }
+
+        const data = await bulkSubmitQcOutS({ user, shift, bobbins, logged_in_user });
+        res.status(200).json({ success: true, data });
+    } catch (error) {
+        console.error("Bulk QC Out Submit Error:", error.message);
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
 
 export const validateQcOutC = async (req, res) => {
     try {

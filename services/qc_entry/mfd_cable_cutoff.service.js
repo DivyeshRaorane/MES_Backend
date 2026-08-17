@@ -7,7 +7,7 @@ import pool from "../../db/postgres.js";
  * 
  * Logic:
  * 
- * FOR G657A1 product types (G657A1250, G657A1200, G657A1180, G657A1160):
+ * FOR G652D and G657A1 product types (G652D..., G657A1250, G657A1200, G657A1180, G657A1160):
  *   - If mfd_1550_top AND mfd_1550_bottom are already available → skip MFD calculation
  *   - If mfd_1550_top is missing → calculate: mfd_1310_top + 1.16 → update mfd_1550_top
  *   - If mfd_1550_bottom is missing → calculate: mfd_1310_bottom + 1.16 → update mfd_1550_bottom
@@ -23,20 +23,21 @@ import pool from "../../db/postgres.js";
 // Product type prefix identifiers
 const G657A1_PREFIX = 'G657A1';
 const G657A2_PREFIX = 'G657A2';
+const G652D_PREFIX = 'G652D';
 
 // Cable cutoff thresholds and offsets
-const G657A1_CUTOFF_THRESHOLD = 1330;
-const G657A1_CUTOFF_OFFSET = 85;
+const A1_D_CUTOFF_THRESHOLD = 1330;   // G652D & G657A1
+const A1_D_CUTOFF_OFFSET = 85;
 
-const G657A2_CUTOFF_THRESHOLD = 1300;
-const G657A2_CUTOFF_OFFSET = 53;
+const A2_CUTOFF_THRESHOLD = 1300;     // G657A2
+const A2_CUTOFF_OFFSET = 53;
 
 // MFD 1550 offset from MFD 1310
 const MFD_1550_OFFSET = 1.16;
 
 /**
  * Main function: Checks and auto-calculates MFD 1550 and cable_cut_off
- * for G657A1 and G657A2 product types.
+ * for G652D, G657A1, and G657A2 product types.
  * 
  * @param {string} bobbin_no - The scanned bobbin number
  * @returns {object} Result with calculated values and popup flags
@@ -63,11 +64,15 @@ export const mfdCableCutoffCalcS = async (bobbin_no) => {
     const record = tempResult.rows[0];
     const product_type = record.product_type || '';
 
-    // Determine if this is a G657A1 or G657A2 product type
+    // Determine product family
     const isG657A1 = product_type.startsWith(G657A1_PREFIX);
     const isG657A2 = product_type.startsWith(G657A2_PREFIX);
+    const isG652D = product_type.startsWith(G652D_PREFIX);
 
-    if (!isG657A1 && !isG657A2) {
+    // G652D and G657A1 share identical MFD + cable-cutoff rules
+    const isA1OrD = isG657A1 || isG652D;
+
+    if (!isA1OrD && !isG657A2) {
         return {
             success: true,
             applicable: false,
@@ -81,15 +86,15 @@ export const mfdCableCutoffCalcS = async (bobbin_no) => {
     let cable_cutoff_mandatory_popup = false;
 
     // ═══════════════════════════════════════════════════════════
-    // G657A1: MFD 1550 Calculation
+    // G652D / G657A1: MFD 1550 Calculation
     // ═══════════════════════════════════════════════════════════
-    if (isG657A1) {
+    if (isA1OrD) {
         const mfd_1550_top = parseFloatSafe(record.mfd_1550_top);
         const mfd_1550_bottom = parseFloatSafe(record.mfd_1550_bottom);
         const mfd_1310_top = parseFloatSafe(record.mfd_1310_top);
         const mfd_1310_bottom = parseFloatSafe(record.mfd_1310_bottom);
 
-        // If both mfd_1550 values are already available → skip
+        // If mfd_1550 value is already available → skip that side
         const topAvailable = mfd_1550_top !== null;
         const bottomAvailable = mfd_1550_bottom !== null;
 
@@ -109,7 +114,7 @@ export const mfdCableCutoffCalcS = async (bobbin_no) => {
     }
 
     // ═══════════════════════════════════════════════════════════
-    // Cable Cutoff Calculation (both G657A1 and G657A2)
+    // Cable Cutoff Calculation (G652D, G657A1, and G657A2)
     // ═══════════════════════════════════════════════════════════
     const existingCableCutoff = parseFloatSafe(record.cable_cut_off);
 
@@ -122,8 +127,8 @@ export const mfdCableCutoffCalcS = async (bobbin_no) => {
         const cutOffValue = cut_off_top !== null ? cut_off_top : cut_off_bottom;
 
         if (cutOffValue !== null) {
-            const threshold = isG657A1 ? G657A1_CUTOFF_THRESHOLD : G657A2_CUTOFF_THRESHOLD;
-            const offset = isG657A1 ? G657A1_CUTOFF_OFFSET : G657A2_CUTOFF_OFFSET;
+            const threshold = isA1OrD ? A1_D_CUTOFF_THRESHOLD : A2_CUTOFF_THRESHOLD;
+            const offset = isA1OrD ? A1_D_CUTOFF_OFFSET : A2_CUTOFF_OFFSET;
 
             if (cutOffValue < threshold) {
                 // Auto-calculate cable_cut_off
@@ -157,7 +162,7 @@ export const mfdCableCutoffCalcS = async (bobbin_no) => {
         success: true,
         applicable: true,
         product_type,
-        product_family: isG657A1 ? 'G657A1' : 'G657A2',
+        product_family: isA1OrD ? (isG652D ? 'G652D' : 'G657A1') : 'G657A2',
         mfd_calculated,
         cable_cutoff_calculated,
         cable_cutoff_mandatory_popup,

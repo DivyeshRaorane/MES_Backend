@@ -18,6 +18,45 @@ export const getBatchesForIssueS = async () => {
     return result.rows;
 };
 
+// export const validateBobbinForH2S = async (bobbin_no, d2_batch_ids) => {
+//     // Check bobbin exists
+//     const bobbinResult = await pool.query(
+//         `SELECT bobbin_no, d2_batch_id, fiber_type, fiber_color, spool_id, preform_id, is_d2
+//          FROM bobbin_entries WHERE bobbin_no = $1`,
+//         [bobbin_no]
+//     );
+
+//     if (bobbinResult.rows.length === 0) {
+//         return { success: false, message: "Bobbin not found." };
+//     }
+
+//     const bobbin = bobbinResult.rows[0];
+
+//     // Check D2 completed
+//     if (bobbin.is_d2 !== true) {
+//         return { success: false, message: "D2 is not completed for this bobbin." };
+//     }
+
+//     // If d2_batch_ids provided, check bobbin belongs to one of them
+//     if (d2_batch_ids && d2_batch_ids.length > 0) {
+//         if (!d2_batch_ids.includes(bobbin.d2_batch_id)) {
+//             return { success: false, message: "This bobbin does not belong to the selected D2 Batch(es)." };
+//         }
+//     }
+
+//     // Check if already in h2_ageing
+//     const h2Check = await pool.query(
+//         `SELECT h2_ageing_id FROM h2_ageing WHERE bobbin_no = $1`,
+//         [bobbin_no]
+//     );
+
+//     if (h2Check.rows.length > 0) {
+//         return { success: false, message: "H2 Issue has already been created for this bobbin." };
+//     }
+
+//     return { success: true, data: bobbin };
+// };
+
 export const validateBobbinForH2S = async (bobbin_no, d2_batch_ids) => {
     // Check bobbin exists
     const bobbinResult = await pool.query(
@@ -54,8 +93,77 @@ export const validateBobbinForH2S = async (bobbin_no, d2_batch_ids) => {
         return { success: false, message: "H2 Issue has already been created for this bobbin." };
     }
 
+    // Check qc_entry for final_grade
+    const qcResult = await pool.query(
+        `SELECT final_grade FROM qc_entry WHERE bobbin_no = $1`,
+        [bobbin_no]
+    );
+
+    if (qcResult.rows.length > 0) {
+        const { final_grade } = qcResult.rows[0];
+        if (final_grade !== null && final_grade !== "") {
+            return { success: false, message: "This bobbin already has a QC final grade and cannot be added for H2." };
+        }
+    }
+
     return { success: true, data: bobbin };
 };
+
+// export const issueH2S = async (payload) => {
+//     const client = await pool.connect();
+
+//     try {
+//         await client.query("BEGIN");
+
+//         const { chamber, h2_batch_id, h2_date, h2_time, h2_operator, bobbins, logged_in_user } = payload;
+
+//         // Check h2_batch_id duplicate
+//         const dupCheck = await client.query(
+//             `SELECT h2_ageing_id FROM h2_ageing WHERE h2_batch_id = $1 LIMIT 1`,
+//             [h2_batch_id]
+//         );
+
+//         if (dupCheck.rows.length > 0) {
+//             throw new Error("This H2 Batch ID already exists. Please use a different ID.");
+//         }
+
+//         const bobbinNos = bobbins.map(b => b.bobbin_no);
+
+//         // Insert h2_ageing rows (each bobbin may have different d2_batch_id)
+//         for (const bobbin of bobbins) {
+//             await client.query(
+//                 `INSERT INTO h2_ageing (d2_batch_id, h2_batch_id, bobbin_no, h2_date, h2_time, h2_operator, logged_in_user)
+//                  VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+//                 [bobbin.d2_batch_id, h2_batch_id, bobbin.bobbin_no, h2_date, h2_time, h2_operator, logged_in_user]
+//             );
+//         }
+
+//         // Mark d2_issue records as H2 issued (per bobbin, per batch)
+//         for (const bobbin of bobbins) {
+//             await client.query(
+//                 `UPDATE d2_issue SET is_h2 = TRUE WHERE bobbin_no = $1 AND d2_batch_id = $2`,
+//                 [bobbin.bobbin_no, bobbin.d2_batch_id]
+//             );
+//         }
+
+//         // Update bobbin_entries
+//         await client.query(
+//             `UPDATE bobbin_entries SET is_h2 = true, h2_batch_id = $1 WHERE bobbin_no = ANY($2)`,
+//             [h2_batch_id, bobbinNos]
+//         );
+
+//         await client.query("COMMIT");
+//         return { success: true, message: "H2 Issue created successfully." };
+
+//     } catch (error) {
+//         await client.query("ROLLBACK");
+//         throw error;
+//     } finally {
+//         client.release();
+//     }
+// };
+
+
 
 export const issueH2S = async (payload) => {
     const client = await pool.connect();
@@ -96,8 +204,14 @@ export const issueH2S = async (payload) => {
 
         // Update bobbin_entries
         await client.query(
-            `UPDATE bobbin_entries SET is_h2 = true, h2_batch_id = $1 WHERE bobbin_no = ANY($2)`,
-            [h2_batch_id, bobbinNos]
+            `UPDATE bobbin_entries SET is_h2 = true, h2_batch_id = $1, temp_grade = $2 WHERE bobbin_no = ANY($3)`,
+            [h2_batch_id, "REWH2", bobbinNos]
+        );
+
+        // Update qc_entry_temp
+        await client.query(
+            `UPDATE qc_entry_temp SET temp_grade = $1 WHERE bobbin_no = ANY($2)`,
+            ["REWH2", bobbinNos]
         );
 
         await client.query("COMMIT");
@@ -110,6 +224,7 @@ export const issueH2S = async (payload) => {
         client.release();
     }
 };
+
 
 export const getPendingBeforeS = async () => {
     const result = await pool.query(
