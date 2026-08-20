@@ -1,12 +1,29 @@
 import pool from "../../db/postgres.js";
-
+import { mbendCopyS } from "./mbend_copy.service.js";
+import { mfdCableCutoffCalcS } from "./mfd_cable_cutoff.service.js";
+import { handleColoredBobbinQcS } from "./colored_bobbin_qc.service.js";
 // API 1: Fetch bobbin QC data
+
+
 export const fetchBobbinQcS = async (bobbin_no) => {
-    // Step 0: If final_grade in qc_entry_temp is REW or FAIL, auto-insert into qc_entry if not already done
+    // Step 0: Check bobbin_entries first — if not found, stop immediately
+    const bobbinEntryCheck = await pool.query(
+        `SELECT bobbin_no FROM bobbin_entries WHERE bobbin_no = $1 LIMIT 1`,
+        [bobbin_no]
+    );
+    if (bobbinEntryCheck.rows.length === 0) {
+        return { success: false, in_bobbin_entries: false, message: "Bobbin not available." };
+    }
+
+    // Step 1: If final_grade in qc_entry_temp is set (any value, excluding null/empty), auto-insert into qc_entry if not already done
     const tempCheck = await pool.query(`SELECT * FROM qc_entry_temp WHERE bobbin_no = $1`, [bobbin_no]);
     if (tempCheck.rows[0]) {
+        const tempGrade = tempCheck.rows[0].temp_grade;
         const finalGrade = tempCheck.rows[0].final_grade;
-        if (finalGrade === 'REW' || finalGrade === 'FAIL') {
+        const hasTempGrade = tempGrade !== null && tempGrade !== undefined && String(tempGrade).trim() !== '';
+        const hasFinalGrade = finalGrade !== null && finalGrade !== undefined && String(finalGrade).trim() !== '';
+
+        if (hasFinalGrade) {
             const existsInFinal = await pool.query(`SELECT bobbin_no FROM qc_entry WHERE bobbin_no = $1`, [bobbin_no]);
             if (existsInFinal.rows.length === 0) {
                 // Copy qc_entry_temp data into qc_entry
@@ -24,25 +41,114 @@ export const fetchBobbinQcS = async (bobbin_no) => {
                 );
             }
         }
+
+        // Sync temp_grade / final_grade into bobbin_entries whenever either is set on scan
+        if (hasTempGrade || hasFinalGrade) {
+            await pool.query(
+                `UPDATE bobbin_entries SET temp_grade = $1, final_grade = $2 WHERE bobbin_no = $3`,
+                [hasTempGrade ? tempGrade : null, hasFinalGrade ? finalGrade : null, bobbin_no]
+            );
+        }
     }
 
-    // Step 1: Check qc_entry FIRST
+    // Step 2: Check qc_entry FIRST
     const qcEntry = await pool.query(`SELECT * FROM qc_entry WHERE bobbin_no = $1`, [bobbin_no]);
     if (qcEntry.rows[0]) {
+        // Finalized — locked for edit, no MBend/MAC/MFD calc needed here
         return { success: true, source: "final", editable: false, data: qcEntry.rows[0] };
     }
 
-    // Step 2: Check qc_entry_temp
-    const qcTemp = await pool.query(`SELECT * FROM qc_entry_temp WHERE bobbin_no = $1`, [bobbin_no]);
+    // Step 3: Check qc_entry_temp
+    let qcTemp = await pool.query(`SELECT * FROM qc_entry_temp WHERE bobbin_no = $1`, [bobbin_no]);
+
     if (!qcTemp.rows[0]) {
-        return { success: false, message: "Record not found." };
+        // Not in qc_entry_temp — try colored-bobbin copy before giving up
+        let coloredCopied = false;
+        try {
+            const coloredRes = await handleColoredBobbinQcS(bobbin_no);
+            coloredCopied = !!(coloredRes?.success && coloredRes?.copied);
+        } catch (coloredErr) {
+            console.error(`[fetchBobbinQcS] handleColoredBobbinQcS error for ${bobbin_no}:`, coloredErr.message);
+        }
+
+        if (!coloredCopied) {
+            // Not colored, already existing, or copy failed — bobbin IS in bobbin_entries,
+            // just nothing usable in QC tables. Caller should proceed to PT/rewinding check.
+            return { success: false, in_bobbin_entries: true, message: "Record not found." };
+        }
+
+        // Colored bobbin data was copied — re-fetch qc_entry_temp and fall through to Step 4
+        qcTemp = await pool.query(`SELECT * FROM qc_entry_temp WHERE bobbin_no = $1`, [bobbin_no]);
+        if (!qcTemp.rows[0]) {
+            // Safety fallback — copy reported success but row still missing
+            return { success: false, in_bobbin_entries: true, message: "Record not found." };
+        }
     }
 
-    // Step 3: Return editable data
-    return { success: true, source: "temp", editable: true, data: qcTemp.rows[0] };
+    // Step 4: Only reached when bobbin is in qc_entry_temp (directly, or via colored-bobbin copy) and NOT in qc_entry — editable path.
+    // Run MBEnd copy + MAC calc, then MFD/Cable Cutoff calc, before returning.
+    try {
+        await mbendCopyS(bobbin_no);
+    } catch (mbendErr) {
+        console.error(`[fetchBobbinQcS] mbendCopyS error for ${bobbin_no}:`, mbendErr.message);
+    }
+
+    try {
+        await mfdCableCutoffCalcS(bobbin_no);
+    } catch (mfdErr) {
+        console.error(`[fetchBobbinQcS] mfdCableCutoffCalcS error for ${bobbin_no}:`, mfdErr.message);
+    }
+
+    // Re-fetch qc_entry_temp so the returned data reflects any values just calculated above
+    const qcTempFinal = await pool.query(`SELECT * FROM qc_entry_temp WHERE bobbin_no = $1`, [bobbin_no]);
+
+    return { success: true, source: "temp", editable: true, data: qcTempFinal.rows[0] };
 };
 
+// export const fetchBobbinQcS = async (bobbin_no) => {
+//     // Step 0: If final_grade in qc_entry_temp is REW or FAIL, auto-insert into qc_entry if not already done
+//     const tempCheck = await pool.query(`SELECT * FROM qc_entry_temp WHERE bobbin_no = $1`, [bobbin_no]);
+//     if (tempCheck.rows[0]) {
+//         const finalGrade = tempCheck.rows[0].final_grade;
+//         if (finalGrade === 'REW' || finalGrade === 'FAIL') {
+//             const existsInFinal = await pool.query(`SELECT bobbin_no FROM qc_entry WHERE bobbin_no = $1`, [bobbin_no]);
+//             if (existsInFinal.rows.length === 0) {
+//                 // Copy qc_entry_temp data into qc_entry
+//                 const tempRow = tempCheck.rows[0];
+//                 const excludeFields = ['created_at', 'updated_at', 'logged_in_user'];
+//                 const columns = Object.keys(tempRow).filter(k => !excludeFields.includes(k));
+//                 const values = columns.map(k => tempRow[k] === '' ? null : tempRow[k]);
+//                 const placeholders = values.map((_, i) => `$${i + 1}`).join(',');
+//                 const updateSet = columns.filter(k => k !== 'bobbin_no').map(k => `${k} = EXCLUDED.${k}`).join(',');
+
+//                 await pool.query(
+//                     `INSERT INTO qc_entry (${columns.join(',')}) VALUES (${placeholders})
+//                      ON CONFLICT (bobbin_no) DO UPDATE SET ${updateSet}`,
+//                     values
+//                 );
+//             }
+//         }
+//     }
+
+//     // Step 1: Check qc_entry FIRST
+//     const qcEntry = await pool.query(`SELECT * FROM qc_entry WHERE bobbin_no = $1`, [bobbin_no]);
+//     if (qcEntry.rows[0]) {
+//         return { success: true, source: "final", editable: false, data: qcEntry.rows[0] };
+//     }
+
+//     // Step 2: Check qc_entry_temp
+//     const qcTemp = await pool.query(`SELECT * FROM qc_entry_temp WHERE bobbin_no = $1`, [bobbin_no]);
+//     if (!qcTemp.rows[0]) {
+//         return { success: false, message: "Record not found." };
+//     }
+
+//     // Step 3: Return editable data
+//     return { success: true, source: "temp", editable: true, data: qcTemp.rows[0] };
+// };
+
 // API 2: Check process completion
+
+
 export const checkProcessCompletionS = async (bobbin_no) => {
     const result = await pool.query(
         `SELECT is_pv, is_d2, is_h2_after FROM bobbin_entries WHERE bobbin_no = $1`,

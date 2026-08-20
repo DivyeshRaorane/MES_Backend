@@ -504,25 +504,25 @@ export const drawEntryS = async(payload)=>{
             );
         }
 
-        // ─── SAP Transaction Generation ───
+        // ─── SAP Transaction Generation (commented out) ───
         // Only generate if this is a normal draw entry (not preform_end/remove without spool)
-        if (payload.product_type && payload.process_type && payload.drawn_length) {
-            const { generateSAPTransactions } = await import('../sap_transaction/sap_transaction.service.js');
+        // if (payload.product_type && payload.process_type && payload.drawn_length) {
+        //     const { generateSAPTransactions } = await import('../sap_transaction/sap_transaction.service.js');
 
-            const sapData = {
-                spool_id: spoolId,
-                product_type: payload.product_type,
-                process_type: payload.process_type,
-                produced_km: payload.drawn_length,
-                preform_batch: payload.preform_id,
-                primary_coating_batch: payload.primary_batch || null,
-                secondary_coating_batch: payload.secondary_batch || null,
-                
-            };
+        //     const sapData = {
+        //         spool_id: spoolId,
+        //         product_type: payload.product_type,
+        //         process_type: payload.process_type,
+        //         produced_km: payload.drawn_length,
+        //         preform_batch: payload.preform_id,
+        //         primary_coating_batch: payload.primary_batch || null,
+        //         secondary_coating_batch: payload.secondary_batch || null,
+        //         
+        //     };
 
-            const sapResult = await generateSAPTransactions(sapData, client);
-            console.log('[DrawEntry] SAP Transactions generated:', sapResult.transaction_no);
-        }
+        //     const sapResult = await generateSAPTransactions(sapData, client);
+        //     console.log('[DrawEntry] SAP Transactions generated:', sapResult.transaction_no);
+        // }
 
         await client.query("COMMIT");
 

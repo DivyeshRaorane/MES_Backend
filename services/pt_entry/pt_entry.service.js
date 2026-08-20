@@ -626,44 +626,44 @@ export const ptEntryS = async (payload) => {
             // Frontend will show spool end popup based on balance_qty <= 0
         }
 
-        // ─── SAP Transaction Generation ───
+        // ─── SAP Transaction Generation (commented out) ───
         // Generate SAP transactions after successful PT entry save.
         // Requires product_type and process_type from the associated draw_entry.
-        if (payload.pt_length && Number(payload.pt_length) > 0) {
-            try {
-                // Fetch draw_entry data needed for SAP (product_type, process_type, batches)
-                const drawDataResult = await client.query(
-                    `SELECT product_type, process_type, primary_batch, secondary_batch, preform_id
-                     FROM draw_entry WHERE spool_id = $1 LIMIT 1`,
-                    [payload.spool_id]
-                );
+        // if (payload.pt_length && Number(payload.pt_length) > 0) {
+        //     try {
+        //         // Fetch draw_entry data needed for SAP (product_type, process_type, batches)
+        //         const drawDataResult = await client.query(
+        //             `SELECT product_type, process_type, primary_batch, secondary_batch, preform_id
+        //              FROM draw_entry WHERE spool_id = $1 LIMIT 1`,
+        //             [payload.spool_id]
+        //         );
 
-                const drawData = drawDataResult.rows[0];
+        //         const drawData = drawDataResult.rows[0];
 
-                if (drawData && drawData.product_type && drawData.process_type) {
-                    const { generatePTSAPTransactions } = await import('../sap_transaction/sap_transaction.service.js');
+        //         if (drawData && drawData.product_type && drawData.process_type) {
+        //             const { generatePTSAPTransactions } = await import('../sap_transaction/sap_transaction.service.js');
 
-                    const sapData = {
-                        bobbin_no: payload.bobbin_no,
-                        spool_id: payload.spool_id,
-                        fid: payload.fid || null,
-                        pt_length: payload.pt_length,
-                        product_type: drawData.product_type,
-                        process_type: drawData.process_type,
-                        preform_batch: drawData.preform_id || null,
-                        primary_coating_batch: drawData.primary_batch || null,
-                        secondary_coating_batch: drawData.secondary_batch || null,
-                    };
+        //             const sapData = {
+        //                 bobbin_no: payload.bobbin_no,
+        //                 spool_id: payload.spool_id,
+        //                 fid: payload.fid || null,
+        //                 pt_length: payload.pt_length,
+        //                 product_type: drawData.product_type,
+        //                 process_type: drawData.process_type,
+        //                 preform_batch: drawData.preform_id || null,
+        //                 primary_coating_batch: drawData.primary_batch || null,
+        //                 secondary_coating_batch: drawData.secondary_batch || null,
+        //             };
 
-                    const sapResult = await generatePTSAPTransactions(sapData, client);
-                    console.log('[PTEntry] SAP Transactions generated:', sapResult.transaction_no, '| Type:', sapResult.movement_type);
-                }
-            } catch (sapError) {
-                // Log SAP error but do not block PT entry save
-                console.error('[PTEntry] SAP Transaction generation failed:', sapError.message);
-                throw sapError;
-            }
-        }
+        //             const sapResult = await generatePTSAPTransactions(sapData, client);
+        //             console.log('[PTEntry] SAP Transactions generated:', sapResult.transaction_no, '| Type:', sapResult.movement_type);
+        //         }
+        //     } catch (sapError) {
+        //         // Log SAP error but do not block PT entry save
+        //         console.error('[PTEntry] SAP Transaction generation failed:', sapError.message);
+        //         throw sapError;
+        //     }
+        // }
 
         //-------------------------
         // Commit

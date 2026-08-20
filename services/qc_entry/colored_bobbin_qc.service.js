@@ -84,11 +84,164 @@ const COLORED_BOBBIN_COPY_FIELDS = [
  * 6. If not exists → find parent QC record (qc_entry first, then qc_entry_temp)
  * 7. Copy configured parameters into qc_entry_temp for the colored bobbin
  */
+// export const handleColoredBobbinQcS = async (bobbin_no) => {
+//     const client = await pool.connect();
+
+//     try {
+//         await client.query("BEGIN");
+
+//         // Step 1: Check if bobbin exists in coloring_entry
+//         const coloringResult = await client.query(
+//             `SELECT bobbin_no, parent_bobbin_no FROM coloring_entry WHERE bobbin_no = $1 LIMIT 1`,
+//             [bobbin_no]
+//         );
+
+//         if (coloringResult.rows.length === 0) {
+//             // Not a colored bobbin — skip entirely
+//             await client.query("COMMIT");
+//             return {
+//                 success: true,
+//                 is_colored: false,
+//                 copied: false
+//             };
+//         }
+
+//         const coloringRecord = coloringResult.rows[0];
+//         const parent_bobbin_no = coloringRecord.parent_bobbin_no;
+
+//         // Validate parent_bobbin_no exists
+//         if (!parent_bobbin_no) {
+//             await client.query("COMMIT");
+//             return {
+//                 success: true,
+//                 is_colored: true,
+//                 copied: false,
+//                 message: "Colored bobbin found but parent_bobbin_no is missing."
+//             };
+//         }
+
+//         // Step 2: Check if colored bobbin already has data in qc_entry_temp
+//         const existingTemp = await client.query(
+//             `SELECT bobbin_no FROM qc_entry_temp WHERE bobbin_no = $1 LIMIT 1`,
+//             [bobbin_no]
+//         );
+
+//         if (existingTemp.rows.length > 0) {
+//             // Already exists — do NOT copy parent QC data again
+//             await client.query("COMMIT");
+//             return {
+//                 success: true,
+//                 is_colored: true,
+//                 copied: false,
+//                 existing: true
+//             };
+//         }
+
+//         // Step 3: Find parent QC record
+//         // Priority: qc_entry (finalized) first, then qc_entry_temp
+//         let parentQcData = null;
+
+//         const parentQcFinal = await client.query(
+//             `SELECT * FROM qc_entry WHERE bobbin_no = $1 LIMIT 1`,
+//             [parent_bobbin_no]
+//         );
+
+//         if (parentQcFinal.rows.length > 0) {
+//             parentQcData = parentQcFinal.rows[0];
+//         } else {
+//             // Fallback to qc_entry_temp
+//             const parentQcTemp = await client.query(
+//                 `SELECT * FROM qc_entry_temp WHERE bobbin_no = $1 LIMIT 1`,
+//                 [parent_bobbin_no]
+//             );
+
+//             if (parentQcTemp.rows.length > 0) {
+//                 parentQcData = parentQcTemp.rows[0];
+//             }
+//         }
+
+//         if (!parentQcData) {
+//             // Parent QC record not found — cannot copy
+//             await client.query("COMMIT");
+//             return {
+//                 success: true,
+//                 is_colored: true,
+//                 copied: false,
+//                 message: "Parent QC record not found for parent bobbin: " + parent_bobbin_no
+//             };
+//         }
+
+//         // Step 4: Get colored bobbin's identifying info from bobbin_entries
+//         const bobbinInfo = await client.query(
+//             `SELECT fid, product_type FROM bobbin_entries WHERE bobbin_no = $1 LIMIT 1`,
+//             [bobbin_no]
+//         );
+
+//         const bobbin_fid = bobbinInfo.rows.length > 0 ? bobbinInfo.rows[0].fid : null;
+//         const product_type = bobbinInfo.rows.length > 0 ? bobbinInfo.rows[0].product_type : null;
+
+//         // Step 5: Build the INSERT for qc_entry_temp with only configured fields
+//         // Start with identity columns for the colored bobbin
+//         const insertColumns = ['bobbin_no', 'bobbin_fid', 'product_type'];
+//         const insertValues = [bobbin_no, bobbin_fid, product_type];
+
+//         // Add only configured QC measurement parameters from parent
+//         for (const field of COLORED_BOBBIN_COPY_FIELDS) {
+//             const value = parentQcData[field];
+//             if (value !== undefined && value !== null && value !== '') {
+//                 insertColumns.push(field);
+//                 insertValues.push(value);
+//             }
+//         }
+
+//         const placeholders = insertValues.map((_, i) => `$${i + 1}`).join(', ');
+
+//         await client.query(
+//             `INSERT INTO qc_entry_temp (${insertColumns.join(', ')}) VALUES (${placeholders})`,
+//             insertValues
+//         );
+
+//         await client.query("COMMIT");
+
+//         return {
+//             success: true,
+//             is_colored: true,
+//             copied: true,
+//             message: "Colored bobbin QC parameters copied successfully."
+//         };
+
+//     } catch (error) {
+//         await client.query("ROLLBACK");
+//         console.error('[ColoredBobbinQC] Error:', error.message);
+//         throw error;
+//     } finally {
+//         client.release();
+//     }
+// };
+
+
+
 export const handleColoredBobbinQcS = async (bobbin_no) => {
     const client = await pool.connect();
 
     try {
         await client.query("BEGIN");
+
+        // Step 0: If bobbin is already in pt_entry, colored logic should not run
+        const ptEntryCheck = await client.query(
+            `SELECT bobbin_no FROM pt_entry WHERE bobbin_no = $1 LIMIT 1`,
+            [bobbin_no]
+        );
+
+        if (ptEntryCheck.rows.length > 0) {
+            await client.query("COMMIT");
+            return {
+                success: true,
+                is_colored: false,
+                copied: false,
+                message: "Bobbin found in pt_entry — colored bobbin logic skipped."
+            };
+        }
 
         // Step 1: Check if bobbin exists in coloring_entry
         const coloringResult = await client.query(
