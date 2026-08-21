@@ -214,7 +214,8 @@ export const ptEntryS = async (payload) => {
                     pa.preform_vendor_id,
                     de.spool_fid,
                     de.preform_id,
-                    de.process_type
+                    de.process_type,
+                    de.coating_type
                 FROM draw_entry de
                 LEFT JOIN preform_accept pa ON de.preform_id = pa.preform_id
                 WHERE de.spool_id = $1
@@ -257,10 +258,11 @@ export const ptEntryS = async (payload) => {
                     fiber_color,
                     fiber_type,
                     pt_strain,
-                    preform_vendor_id
+                    preform_vendor_id,
+                    coating_type
                 )
                 VALUES (
-                    $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19
+                    $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20
                 )
                 `,
                 [
@@ -282,7 +284,8 @@ export const ptEntryS = async (payload) => {
                     "Natural",
                     extra.preform_type || null,
                     ptStrain,
-                    extra.preform_vendor_id || null
+                    extra.preform_vendor_id || null,
+                    extra.coating_type
                 ]
             );
         }
@@ -321,7 +324,7 @@ export const ptEntryS = async (payload) => {
         await client.query(
             `UPDATE pt_flaw_details SET status = 'MISSED'
              WHERE spool_id = $1 AND is_done = FALSE AND status = 'PENDING'
-             AND ($2::numeric > (pos1::numeric + 2.1))`,
+             AND ($2::numeric > (pos1::numeric + 2.1) OR $2::numeric >= pos2::numeric)`,
             [payload.spool_id, totalPtDone]
         );
 

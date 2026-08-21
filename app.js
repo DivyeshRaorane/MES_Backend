@@ -84,6 +84,7 @@ import adminRewMachineRoutes from "./routes/postgress/admin_rew_machine.routes.j
 import adminColorMachineRoutes from "./routes/postgress/admin_color_machine.routes.js"
 import adminPtUserRoutes from "./routes/postgress/admin_pt_user.routes.js"
 import adminQcUserRoutes from "./routes/postgress/admin_qc_user.routes.js"
+import dispatchRoutes from "./routes/postgress/dispatch.routes.js"
 
 
 const app = express();
@@ -169,6 +170,7 @@ app.use("/api", adminRewMachineRoutes)
 app.use("/api", adminColorMachineRoutes)
 app.use("/api", adminPtUserRoutes)
 app.use("/api", adminQcUserRoutes)
+app.use("/api", dispatchRoutes)
 
 app.use("/api", towerDataRoutes)
 

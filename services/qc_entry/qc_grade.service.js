@@ -226,6 +226,16 @@ else {
 
     const isEmpty = (v) => (v === null || v === undefined || v === '');
 
+    // Track which top/bottom pairs had BOTH sides actually measured (before any borrowing below).
+    // Used later so a failure on a pair where both sides were genuinely tested is flagged as
+    // "Retest" instead of the "Test from Bottom" advice used when only one side was tested.
+    const bothSidesPresentMap = {}; // paramName (top or bottom) -> true/false
+    for (const pair of topBottomPairs) {
+      const bothPresent = !isEmpty(measurement[pair.top]) && !isEmpty(measurement[pair.bottom]);
+      bothSidesPresentMap[pair.top] = bothPresent;
+      bothSidesPresentMap[pair.bottom] = bothPresent;
+    }
+
     if (!fullCheck) {
       for (const pair of topBottomPairs) {
         const topVal = measurement[pair.top];
@@ -243,6 +253,10 @@ else {
         }
       }
     }
+
+    // Which fields ended up with a borrowed value (vs. genuinely tested) — used below
+    // to label top_value / bottom_value in the failure details as "(borrowed)" or "(tested)".
+    const borrowedFields = new Set(synchronizedPairsToUpdate.map(item => item.field));
 
     //For D to A1 Conversion
 
@@ -327,16 +341,53 @@ else {
         if (!passesMin || !passesMax) {
           tierPassed = false;
 
-          // Determine advice message based on whether a top/bottom field failed bounds validation
-          const notice = isTopBottomParameter(paramName) ? "Test from Bottom" : "Standard parameter mismatch";
+          const pairForParam = isTopBottomParameter(paramName)
+            ? topBottomPairs.find(p => p.top === paramName || p.bottom === paramName)
+            : null;
+
+          // If one side of this pair was borrowed, the failure should be attributed to
+          // the side that was ACTUALLY measured (the source of truth), not to whichever
+          // field happened to be checked first in parametersToCheck — and the
+          // recommendation should point at the side that's genuinely missing.
+          let effectiveFailedParameter = paramName;
+          let notice;
+
+          if (pairForParam) {
+            const topBorrowed = borrowedFields.has(pairForParam.top);
+            const bottomBorrowed = borrowedFields.has(pairForParam.bottom);
+
+            if (topBorrowed) {
+              effectiveFailedParameter = pairForParam.bottom; // bottom holds the real measurement
+              notice = "Test from Top";
+            } else if (bottomBorrowed) {
+              effectiveFailedParameter = pairForParam.top; // top holds the real measurement
+              notice = "Test from Bottom";
+            } else {
+              // Both sides were genuinely measured (bothSidesPresentMap true) — no swap needed.
+              notice = "Retest";
+            }
+          } else {
+            notice = "Standard parameter mismatch";
+          }
+
+          // Recompute measured_value/allowed_range against the field we're actually
+          // reporting (identical value to paramName's when borrowed, since that's the
+          // whole point of borrowing — this just keeps the range tied to the right field).
+          const reportedValue = parseFloat(measurement[effectiveFailedParameter]);
+          const reportedMin = parseFloat(tier[`min_${effectiveFailedParameter}`]);
+          const reportedMax = parseFloat(tier[`max_${effectiveFailedParameter}`]);
 
           validationFailureLog = {
             grade_checked: tier.grade,
             priority: tier.priority,
-            failed_parameter: paramName,
-            measured_value: measuredValue,
-            allowed_range: `[${isNaN(minAllowed) ? '-∞' : minAllowed} to ${isNaN(maxAllowed) ? '+∞' : maxAllowed}]`,
-            recommendation: notice
+            failed_parameter: effectiveFailedParameter,
+            measured_value: reportedValue,
+            allowed_range: `[${isNaN(reportedMin) ? '-∞' : reportedMin} to ${isNaN(reportedMax) ? '+∞' : reportedMax}]`,
+            recommendation: notice,
+            ...(pairForParam && {
+              top_value: `${measurement[pairForParam.top]} (${borrowedFields.has(pairForParam.top) ? 'borrowed' : 'tested'})`,
+              bottom_value: `${measurement[pairForParam.bottom]} (${borrowedFields.has(pairForParam.bottom) ? 'borrowed' : 'tested'})`
+            })
           };
 
           break;
