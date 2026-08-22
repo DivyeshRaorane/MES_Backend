@@ -1,12 +1,12 @@
-import {
+﻿import {
     getUserReportsS, executeUserReportS, executeReportForExportS,
     getSavedFiltersS, createSavedFilterS, deleteSavedFilterS
 } from "../../../services/report_builder/dynamic_reports.service.js";
 import { generateExcelBuffer, generateCsvString, generatePdfBuffer } from "../../../services/report_builder/export.service.js";
 
-// ═══════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // USER-FACING REPORTS
-// ═══════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 export const getUserReportsC = async (req, res) => {
     try {
@@ -34,9 +34,9 @@ export const executeUserReportC = async (req, res) => {
     }
 };
 
-// ═══════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // EXPORT
-// ═══════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 export const exportExcelC = async (req, res) => {
     try {
@@ -86,13 +86,13 @@ export const exportPdfC = async (req, res) => {
     }
 };
 
-// ═══════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // SAVED FILTERS
-// ═══════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 export const getSavedFiltersC = async (req, res) => {
     try {
-        const userId = req.user.id || req.user.userId;
+        const userId = req.user.id || req.user.userId || req.user.emp_id;
         const data = await getSavedFiltersS(req.params.id, userId);
         res.status(200).json({ success: true, data });
     } catch (error) {
@@ -102,7 +102,7 @@ export const getSavedFiltersC = async (req, res) => {
 
 export const createSavedFilterC = async (req, res) => {
     try {
-        const userId = req.user.id || req.user.userId;
+        const userId = req.user.id || req.user.userId || req.user.emp_id;
         const data = await createSavedFilterS(req.params.id, userId, req.body);
         res.status(201).json({ success: true, data });
     } catch (error) {
@@ -112,7 +112,7 @@ export const createSavedFilterC = async (req, res) => {
 
 export const deleteSavedFilterC = async (req, res) => {
     try {
-        const userId = req.user.id || req.user.userId;
+        const userId = req.user.id || req.user.userId || req.user.emp_id;
         const result = await deleteSavedFilterS(req.params.filterId, userId);
         res.status(200).json(result);
     } catch (error) {
@@ -123,9 +123,9 @@ export const deleteSavedFilterC = async (req, res) => {
     }
 };
 
-// ═══════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // MULTI-SHEET EXCEL EXPORT
-// ═══════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 export const exportMultiExcelC = async (req, res) => {
     try {

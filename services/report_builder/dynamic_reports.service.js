@@ -1,9 +1,9 @@
-import pool from "../../db/postgres.js";
+﻿import pool from "../../db/postgres.js";
 import { QueryBuilder } from "./queryBuilder.js";
 
-// ═══════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // HELPER: Build columns metadata for frontend table rendering
-// ═══════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 const buildColumnsMeta = (reportConfig) => {
     const columns = [];
@@ -48,12 +48,12 @@ const buildColumnsMeta = (reportConfig) => {
     return columns;
 };
 
-// ═══════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // USER-FACING DYNAMIC REPORTS
-// ═══════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 export const getUserReportsS = async (user, section) => {
-    const userId = user.id || user.userId;
+    const userId = user.id || user.userId || user.emp_id;
     const userRole = user.role;
 
     // Admin gets all active reports
@@ -84,50 +84,43 @@ export const getUserReportsS = async (user, section) => {
         return result.rows;
     }
 
-    // Non-admin: filter by permissions
+    // Non-admin: section-based access
+    // If a report is mapped to a section, any user who can access that section sees it.
+    // Access to the section page is already enforced by the frontend sidebar (department-based).
     if (section) {
-        // Filter by section + permissions
+        // Show all reports mapped to this section (same as admin query)
         const result = await pool.query(`
             SELECT DISTINCT rm.*
             FROM report_master rm
-            INNER JOIN report_permissions rp ON rm.id = rp.report_id
             INNER JOIN report_section_mapping rsm_map ON rsm_map.report_id = rm.id
             INNER JOIN report_section_master rsm ON rsm.section_id = rsm_map.section_id
             WHERE rm.is_deleted = FALSE
             AND rm.status = 'active'
             AND rsm.section_key = $1
             AND rsm.disable = FALSE
-            AND rp.can_view = TRUE
-            AND (
-                (rp.permission_type = 'role' AND rp.entity_id = $2)
-                OR (rp.permission_type = 'user' AND rp.entity_id = $3::text)
-            )
             ORDER BY rm.report_name ASC
-        `, [section, userRole, String(userId)]);
+        `, [section]);
         return result.rows;
     }
 
-    // No filter - return all permitted reports (existing behavior)
+    // No section filter - return all active reports mapped to any section
     const result = await pool.query(`
         SELECT DISTINCT rm.*
         FROM report_master rm
-        INNER JOIN report_permissions rp ON rm.id = rp.report_id
+        INNER JOIN report_section_mapping rsm_map ON rsm_map.report_id = rm.id
+        INNER JOIN report_section_master rsm ON rsm.section_id = rsm_map.section_id
         WHERE rm.is_deleted = FALSE
         AND rm.status = 'active'
-        AND rp.can_view = TRUE
-        AND (
-            (rp.permission_type = 'role' AND rp.entity_id = $1)
-            OR (rp.permission_type = 'user' AND rp.entity_id = $2::text)
-        )
+        AND rsm.disable = FALSE
         ORDER BY rm.module, rm.report_name
-    `, [userRole, String(userId)]);
+    `);
 
     return result.rows;
 };
 
 export const executeUserReportS = async (id, options, user, ipAddress) => {
     const startTime = Date.now();
-    const userId = user.id || user.userId;
+    const userId = user.id || user.userId || user.emp_id;
     const userRole = user.role;
     const { page, pageSize, filters, sorting, search, dateFrom, dateTo } = options;
 
@@ -143,24 +136,35 @@ export const executeUserReportS = async (id, options, user, ipAddress) => {
 
     // Check permission (admin always has access)
     if (userRole !== 'admin') {
-        const permCheck = await pool.query(`
-            SELECT 1 FROM report_permissions
-            WHERE report_id = $1 AND can_view = TRUE
-            AND (
-                (permission_type = 'role' AND entity_id = $2)
-                OR (permission_type = 'user' AND entity_id = $3::text)
-            )
+        // Allow access if report is mapped to any active section (section-based access)
+        const sectionAccess = await pool.query(`
+            SELECT 1 FROM report_section_mapping rsm_map
+            INNER JOIN report_section_master rsm ON rsm.section_id = rsm_map.section_id
+            WHERE rsm_map.report_id = $1 AND rsm.disable = FALSE
             LIMIT 1
-        `, [id, userRole, String(userId)]);
+        `, [id]);
 
-        if (permCheck.rows.length === 0) {
-            throw new Error('Access denied');
+        // If no section mapping, fall back to explicit permissions
+        if (sectionAccess.rows.length === 0) {
+            const permCheck = await pool.query(`
+                SELECT 1 FROM report_permissions
+                WHERE report_id = $1 AND can_view = TRUE
+                AND (
+                    (permission_type = 'role' AND entity_id = $2)
+                    OR (permission_type = 'user' AND entity_id = $3::text)
+                )
+                LIMIT 1
+            `, [id, userRole, String(userId)]);
+
+            if (permCheck.rows.length === 0) {
+                throw new Error('Access denied');
+            }
         }
     }
 
     const reportConfig = reportResult.rows[0];
 
-    // ── Multi-Sheet Execution ───────────────────────────────────────
+    // â”€â”€ Multi-Sheet Execution â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (reportConfig.is_multi_sheet) {
         const { buildTableSQL, buildColumnDefs } = await import('../../utils/sqlBuilder.js');
 
@@ -228,7 +232,7 @@ export const executeUserReportS = async (id, options, user, ipAddress) => {
         };
     }
 
-    // ── Single-Table Execution (existing logic) ─────────────────────
+    // â”€â”€ Single-Table Execution (existing logic) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const builder = new QueryBuilder(reportConfig);
 
     await builder.validateIdentifiers();
@@ -273,7 +277,7 @@ export const executeUserReportS = async (id, options, user, ipAddress) => {
 };
 
 export const executeReportForExportS = async (id, options, user) => {
-    const userId = user.id || user.userId;
+    const userId = user.id || user.userId || user.emp_id;
     const userRole = user.role;
     const { filters, sorting, search, dateFrom, dateTo } = options;
 
@@ -289,24 +293,35 @@ export const executeReportForExportS = async (id, options, user) => {
 
     // Check export permission
     if (userRole !== 'admin') {
-        const permCheck = await pool.query(`
-            SELECT 1 FROM report_permissions
-            WHERE report_id = $1 AND can_export = TRUE
-            AND (
-                (permission_type = 'role' AND entity_id = $2)
-                OR (permission_type = 'user' AND entity_id = $3::text)
-            )
+        // Allow export if report is mapped to any active section (section-based access)
+        const sectionAccess = await pool.query(`
+            SELECT 1 FROM report_section_mapping rsm_map
+            INNER JOIN report_section_master rsm ON rsm.section_id = rsm_map.section_id
+            WHERE rsm_map.report_id = $1 AND rsm.disable = FALSE
             LIMIT 1
-        `, [id, userRole, String(userId)]);
+        `, [id]);
 
-        if (permCheck.rows.length === 0) {
-            throw new Error('Export access denied');
+        // If no section mapping, fall back to explicit permissions
+        if (sectionAccess.rows.length === 0) {
+            const permCheck = await pool.query(`
+                SELECT 1 FROM report_permissions
+                WHERE report_id = $1 AND can_export = TRUE
+                AND (
+                    (permission_type = 'role' AND entity_id = $2)
+                    OR (permission_type = 'user' AND entity_id = $3::text)
+                )
+                LIMIT 1
+            `, [id, userRole, String(userId)]);
+
+            if (permCheck.rows.length === 0) {
+                throw new Error('Export access denied');
+            }
         }
     }
 
     const reportConfig = reportResult.rows[0];
 
-    // ── Multi-Sheet Export ───────────────────────────────────────────
+    // â”€â”€ Multi-Sheet Export â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if (reportConfig.is_multi_sheet) {
         const { buildTableSQL, buildColumnDefs } = await import('../../utils/sqlBuilder.js');
 
@@ -361,7 +376,7 @@ export const executeReportForExportS = async (id, options, user) => {
         };
     }
 
-    // ── Single-Table Export (existing logic) ─────────────────────────
+    // â”€â”€ Single-Table Export (existing logic) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const builder = new QueryBuilder(reportConfig);
 
     await builder.validateIdentifiers();
@@ -403,9 +418,9 @@ export const executeReportForExportS = async (id, options, user) => {
     };
 };
 
-// ═══════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // SAVED FILTERS
-// ═══════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 export const getSavedFiltersS = async (reportId, userId) => {
     const result = await pool.query(

@@ -1,4 +1,4 @@
-import ExcelJS from "exceljs";
+﻿import ExcelJS from "exceljs";
 import {
     getAvailableFunctionsS,
     getFunctionParamsS,
@@ -13,7 +13,7 @@ import {
     getSectionsS
 } from "../../../services/function_reports/function_reports.service.js";
 
-// ─── 1. GET /available-functions ─────────────────────────────────────────────
+// â”€â”€â”€ 1. GET /available-functions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export const getAvailableFunctionsC = async (req, res) => {
     try {
@@ -24,7 +24,7 @@ export const getAvailableFunctionsC = async (req, res) => {
     }
 };
 
-// ─── 2. GET /function-params/:schemaName/:functionName ───────────────────────
+// â”€â”€â”€ 2. GET /function-params/:schemaName/:functionName â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export const getFunctionParamsC = async (req, res) => {
     try {
@@ -36,7 +36,7 @@ export const getFunctionParamsC = async (req, res) => {
     }
 };
 
-// ─── 3. GET / (all reports - admin) ──────────────────────────────────────────
+// â”€â”€â”€ 3. GET / (all reports - admin) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export const getAllReportsC = async (req, res) => {
     try {
@@ -48,7 +48,7 @@ export const getAllReportsC = async (req, res) => {
     }
 };
 
-// ─── 4. GET /:id ─────────────────────────────────────────────────────────────
+// â”€â”€â”€ 4. GET /:id â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export const getReportByIdC = async (req, res) => {
     try {
@@ -63,11 +63,11 @@ export const getReportByIdC = async (req, res) => {
     }
 };
 
-// ─── 5. POST / (create report) ───────────────────────────────────────────────
+// â”€â”€â”€ 5. POST / (create report) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export const createReportC = async (req, res) => {
     try {
-        const created_by = req.user?.user_id || req.user?.userId || null;
+        const created_by = req.user?.user_id || req.user?.userId || req.user?.emp_id || null;
         const data = await createReportS({ ...req.body, created_by });
         res.status(201).json({ success: true, data });
     } catch (error) {
@@ -76,7 +76,7 @@ export const createReportC = async (req, res) => {
     }
 };
 
-// ─── 6. PUT /:id (update report) ─────────────────────────────────────────────
+// â”€â”€â”€ 6. PUT /:id (update report) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export const updateReportC = async (req, res) => {
     try {
@@ -91,7 +91,7 @@ export const updateReportC = async (req, res) => {
     }
 };
 
-// ─── 7. PATCH /:id/toggle-status ─────────────────────────────────────────────
+// â”€â”€â”€ 7. PATCH /:id/toggle-status â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export const toggleReportStatusC = async (req, res) => {
     try {
@@ -104,7 +104,7 @@ export const toggleReportStatusC = async (req, res) => {
     }
 };
 
-// ─── 8. DELETE /:id (soft delete) ────────────────────────────────────────────
+// â”€â”€â”€ 8. DELETE /:id (soft delete) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export const deleteReportC = async (req, res) => {
     try {
@@ -117,7 +117,7 @@ export const deleteReportC = async (req, res) => {
     }
 };
 
-// ─── 9. GET /user/reports ────────────────────────────────────────────────────
+// â”€â”€â”€ 9. GET /user/reports â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export const getUserReportsC = async (req, res) => {
     try {
@@ -129,7 +129,7 @@ export const getUserReportsC = async (req, res) => {
     }
 };
 
-// ─── 10. POST /:id/execute ───────────────────────────────────────────────────
+// â”€â”€â”€ 10. POST /:id/execute â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export const executeReportC = async (req, res) => {
     try {
@@ -145,7 +145,7 @@ export const executeReportC = async (req, res) => {
     }
 };
 
-// ─── 11. POST /:id/export/excel ──────────────────────────────────────────────
+// â”€â”€â”€ 11. POST /:id/export/excel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export const exportExcelC = async (req, res) => {
     try {
@@ -191,7 +191,7 @@ export const exportExcelC = async (req, res) => {
     }
 };
 
-// ─── 12. POST /:id/export/csv ────────────────────────────────────────────────
+// â”€â”€â”€ 12. POST /:id/export/csv â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export const exportCsvC = async (req, res) => {
     try {
@@ -234,7 +234,7 @@ export const exportCsvC = async (req, res) => {
     }
 };
 
-// ─── 13. GET /sections ───────────────────────────────────────────────────────
+// â”€â”€â”€ 13. GET /sections â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export const getSectionsC = async (req, res) => {
     try {

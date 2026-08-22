@@ -1,13 +1,13 @@
-import {
+﻿import {
     getTablesS, getTableColumnsS, getTableRelationshipsS,
     getAllReportsS, getReportByIdS, createReportS, updateReportS, deleteReportS, duplicateReportS,
     previewReportS, generateSqlS, executeReportS, previewTableS,
     getReportPermissionsS, updateReportPermissionsS, getRolesS, getUsersS
 } from "../../../services/report_builder/report_builder.service.js";
 
-// ═══════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // DATABASE DISCOVERY
-// ═══════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 export const getTablesC = async (req, res) => {
     try {
@@ -41,9 +41,9 @@ export const getTableRelationshipsC = async (req, res) => {
     }
 };
 
-// ═══════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // REPORT CRUD
-// ═══════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 export const getAllReportsC = async (req, res) => {
     try {
@@ -68,7 +68,7 @@ export const getReportByIdC = async (req, res) => {
 
 export const createReportC = async (req, res) => {
     try {
-        const userId = req.user.id || req.user.userId;
+        const userId = req.user.id || req.user.userId || req.user.emp_id;
         const data = await createReportS(req.body, userId);
         res.status(201).json({ success: true, data });
     } catch (error) {
@@ -78,7 +78,7 @@ export const createReportC = async (req, res) => {
 
 export const updateReportC = async (req, res) => {
     try {
-        const userId = req.user.id || req.user.userId;
+        const userId = req.user.id || req.user.userId || req.user.emp_id;
         const data = await updateReportS(req.params.id, req.body, userId);
         res.status(200).json({ success: true, data });
     } catch (error) {
@@ -91,7 +91,7 @@ export const updateReportC = async (req, res) => {
 
 export const deleteReportC = async (req, res) => {
     try {
-        const userId = req.user.id || req.user.userId;
+        const userId = req.user.id || req.user.userId || req.user.emp_id;
         const result = await deleteReportS(req.params.id, userId);
         res.status(200).json(result);
     } catch (error) {
@@ -104,7 +104,7 @@ export const deleteReportC = async (req, res) => {
 
 export const duplicateReportC = async (req, res) => {
     try {
-        const userId = req.user.id || req.user.userId;
+        const userId = req.user.id || req.user.userId || req.user.emp_id;
         const data = await duplicateReportS(req.params.id, userId);
         res.status(201).json({ success: true, data });
     } catch (error) {
@@ -112,9 +112,9 @@ export const duplicateReportC = async (req, res) => {
     }
 };
 
-// ═══════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // PREVIEW & EXECUTION
-// ═══════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 export const previewReportC = async (req, res) => {
     try {
@@ -136,7 +136,7 @@ export const generateSqlC = async (req, res) => {
 
 export const executeReportC = async (req, res) => {
     try {
-        const userId = req.user.id || req.user.userId;
+        const userId = req.user.id || req.user.userId || req.user.emp_id;
         const ipAddress = req.ip || req.connection?.remoteAddress;
         const data = await executeReportS(req.params.id, req.body, userId, ipAddress);
         res.status(200).json({ success: true, ...data });
@@ -145,9 +145,9 @@ export const executeReportC = async (req, res) => {
     }
 };
 
-// ═══════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // PERMISSIONS
-// ═══════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 export const getReportPermissionsC = async (req, res) => {
     try {
@@ -189,9 +189,9 @@ export const getUsersC = async (req, res) => {
     }
 };
 
-// ═══════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // PREVIEW TABLE (multi-sheet table configuration)
-// ═══════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 export const previewTableC = async (req, res) => {
     try {
