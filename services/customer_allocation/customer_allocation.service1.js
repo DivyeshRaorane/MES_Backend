@@ -1,4 +1,5 @@
 import pool from "../../db/postgres.js";
+import { getEffectiveLength } from "../../utils/opticalLengthHelper.js";
 
 // Top/Bottom pairs — if bottom is null but top has value, use top value for comparison
 const topBottomPairs = [
@@ -53,10 +54,17 @@ const defaultParametersToCheck = [
 ]
 
 export const runAllocationS = async (spec_ids) => {
+    // Ensure spec_ids are integers
+    const specIdsInt = spec_ids.map(id => parseInt(id, 10)).filter(n => !isNaN(n));
+
     // Step 1: Load selected specs sorted by priority
     const specResult = await pool.query(
-        `SELECT * FROM spec_master WHERE spec_id = ANY($1) AND is_active = TRUE ORDER BY priority ASC, spec_id ASC`,
-        [spec_ids]
+        `SELECT sm.*, bc.bobbin_color_name AS fiber_color_name
+         FROM spec_master sm
+         LEFT JOIN bobbin_color bc ON CAST(NULLIF(sm.fiber_color, '') AS INTEGER) = bc.bobbin_color_id
+         WHERE sm.spec_id = ANY($1::int[]) AND sm.is_active = TRUE 
+         ORDER BY sm.priority ASC, sm.spec_id ASC`,
+        [specIdsInt]
     );
     const specs = specResult.rows;
 
@@ -66,8 +74,8 @@ export const runAllocationS = async (spec_ids) => {
 
     // Step 1b: Load spec_mandatory params for all selected spec_ids
     const mandatoryResult = await pool.query(
-        `SELECT spec_id, mandatory_params FROM spec_mandatory WHERE spec_id = ANY($1)`,
-        [spec_ids]
+        `SELECT spec_id, mandatory_params FROM spec_mandatory WHERE spec_id = ANY($1::int[])`,
+        [specIdsInt]
     );
     const specMandatoryMap = {};
     for (const row of mandatoryResult.rows) {
@@ -89,6 +97,7 @@ export const runAllocationS = async (spec_ids) => {
 
     let bobbinQuery = `
         SELECT be.bobbin_no, be.fid, be.fiber_length, be.pt_strain, be.product_type,
+               be.preform_vendor_id, be.fiber_color,
                be.drawn_date, be.created_at
         FROM bobbin_entries be
         WHERE be.is_qc_out = TRUE
@@ -132,8 +141,6 @@ export const runAllocationS = async (spec_ids) => {
     const allRejected = [];
 
     for (const spec of specs) {
-        const requiredKm = parseFloat(spec.quantity_km) || 0;
-        let allocatedKm = 0;
         const specAllocated = [];
 
         // Get parametersToCheck from spec_mandatory for this spec_id (fallback to default list)
@@ -161,11 +168,45 @@ export const runAllocationS = async (spec_ids) => {
             if (allocatedPool.has(b.bobbin_no)) return false;
             if (spec.pt_strain && String(b.pt_strain) !== String(spec.pt_strain)) return false;
             if (spec.product_type && b.product_type !== spec.product_type) return false;
+            if (spec.preform_vendor_id && Number(b.preform_vendor_id) !== Number(spec.preform_vendor_id)) return false;
+            const fiberValue = (b.fiber_color || '').trim().toUpperCase();
+
+    let bobbinColorType = '';
+    let bobbinColor = '';
+
+    if (fiberValue === 'NATURAL') {
+        bobbinColorType = 'NATURAL';
+        bobbinColor = 'NATURAL';
+    } else if (fiberValue.startsWith('RM ')) {
+        bobbinColorType = 'RM';
+        bobbinColor = fiberValue.substring(3).trim();   // RM RED -> RED
+    } else {
+        bobbinColorType = 'COLORED';
+        bobbinColor = fiberValue;                       // RED -> RED
+    }
+
+    // Fiber Type
+    if (
+        spec.color_type &&
+        bobbinColorType !== spec.color_type.toUpperCase()
+    )
+        return false;
+
+    // Fiber Color
+    if (
+        spec.fiber_color_name &&
+        bobbinColor !== spec.fiber_color_name.toUpperCase()
+    )
+        return false;
+
             return true;
         });
 
+        // Optical length allocation config for this spec
+        const allocationRatio = spec.allocation_ratio ? parseFloat(spec.allocation_ratio) : null;
+        const minimumLength = spec.minimum_length ? parseFloat(spec.minimum_length) : null;
+
         for (const bobbin of eligible) {
-            if (allocatedKm >= requiredKm) break;
             if (allocatedPool.has(bobbin.bobbin_no)) continue;
 
             const qcData = qcMap[bobbin.bobbin_no];
@@ -203,15 +244,64 @@ export const runAllocationS = async (spec_ids) => {
             }
 
             if (passed) {
-                allocatedPool.add(bobbin.bobbin_no);
-                allocatedKm += parseFloat(bobbin.fiber_length) || 0;
-                specAllocated.push(bobbin);
-                allAllocated.push({
-                    ...bobbin,
-                    assigned_spec: spec.cust_spec_name,
-                    spec_id: spec.spec_id,
-                    draw_date: bobbin.drawn_date || bobbin.created_at?.toString().split('T')[0],
-                });
+                // Optical Length Based Allocation check (only if spec has allocation_ratio)
+                if (allocationRatio) {
+                    const opticalLength = qcData.optical_length !== null && qcData.optical_length !== undefined
+                        ? parseFloat(qcData.optical_length)
+                        : null;
+
+                    const effectiveLength = getEffectiveLength(opticalLength, allocationRatio);
+
+                    // Reject if effective length is null (below one unit of ratio)
+                    if (effectiveLength === null) {
+                        allRejected.push({
+                            bobbin_no: bobbin.bobbin_no,
+                            spec_id: spec.spec_id,
+                            reason: 'Below Minimum Allocation Length',
+                            optical_length: opticalLength,
+                            effective_length: null,
+                            required_minimum_length: minimumLength,
+                        });
+                        continue;
+                    }
+
+                    // Reject if effective length is below spec minimum_length
+                    if (minimumLength && effectiveLength < minimumLength) {
+                        allRejected.push({
+                            bobbin_no: bobbin.bobbin_no,
+                            spec_id: spec.spec_id,
+                            reason: 'Below Minimum Allocation Length',
+                            optical_length: opticalLength,
+                            effective_length: effectiveLength,
+                            required_minimum_length: minimumLength,
+                        });
+                        continue;
+                    }
+
+                    // Passed optical length check — allocate with optical length info
+                    allocatedPool.add(bobbin.bobbin_no);
+                    specAllocated.push({ ...bobbin, effective_length: effectiveLength });
+                    allAllocated.push({
+                        ...bobbin,
+                        assigned_spec: spec.cust_spec_name,
+                        spec_id: spec.spec_id,
+                        draw_date: bobbin.drawn_date || bobbin.created_at?.toString().split('T')[0],
+                        optical_length: opticalLength,
+                        effective_length: effectiveLength,
+                        allocation_ratio: allocationRatio,
+                        allocated_length_label: `Allocated as ${effectiveLength} km`,
+                    });
+                } else {
+                    // No optical length allocation — existing behavior
+                    allocatedPool.add(bobbin.bobbin_no);
+                    specAllocated.push(bobbin);
+                    allAllocated.push({
+                        ...bobbin,
+                        assigned_spec: spec.cust_spec_name,
+                        spec_id: spec.spec_id,
+                        draw_date: bobbin.drawn_date || bobbin.created_at?.toString().split('T')[0],
+                    });
+                }
             } else {
                 allRejected.push({
                     bobbin_no: bobbin.bobbin_no,
@@ -222,11 +312,31 @@ export const runAllocationS = async (spec_ids) => {
                     spec_max: failedParam.max,
                     reason: failedParam.reason,
                 });
-            }
+            }   
         }
 
-        const remainingKm = Math.max(0, requiredKm - allocatedKm);
-        specResults.push({
+        // Build length summary if optical length allocation is active for this spec
+        let lengthSummary = [];
+        let totalAllocatedKm = 0;
+
+        if (allocationRatio) {
+            const lengthGroups = {};
+            for (const b of specAllocated) {
+                const el = b.effective_length;
+                if (el !== null && el !== undefined) {
+                    if (!lengthGroups[el]) {
+                        lengthGroups[el] = { effective_length: el, bobbin_count: 0, total_allocated_km: 0 };
+                    }
+                    lengthGroups[el].bobbin_count += 1;
+                    lengthGroups[el].total_allocated_km = Math.round(lengthGroups[el].effective_length * lengthGroups[el].bobbin_count * 10) / 10;
+                }
+            }
+            lengthSummary = Object.values(lengthGroups).sort((a, b) => a.effective_length - b.effective_length);
+            totalAllocatedKm = lengthSummary.reduce((sum, g) => sum + g.total_allocated_km, 0);
+            totalAllocatedKm = Math.round(totalAllocatedKm * 10) / 10;
+        }
+
+        const specResultEntry = {
             spec_id: spec.spec_id,
             customer_name: spec.customer_name,
             cust_spec_name: spec.cust_spec_name,
@@ -234,13 +344,18 @@ export const runAllocationS = async (spec_ids) => {
             pt_strain: spec.pt_strain,
             product_type: spec.product_type,
             priority: spec.priority,
-            required_km: requiredKm,
-            allocated_km: parseFloat(allocatedKm.toFixed(3)),
-            remaining_km: parseFloat(remainingKm.toFixed(3)),
             bobbin_count: specAllocated.length,
             parameters_checked: paramsToCheck.length,
-            status: remainingKm <= 0 ? 'FULLY_ALLOCATED' : allocatedKm > 0 ? 'PARTIALLY_ALLOCATED' : 'WAITING_FOR_PRODUCTION',
-        });
+        };
+
+        // Add optical length summary fields if allocation_ratio is set
+        if (allocationRatio) {
+            specResultEntry.allocated_bobbins = specAllocated.length;
+            specResultEntry.total_allocated_km = totalAllocatedKm;
+            specResultEntry.length_summary = lengthSummary;
+        }
+
+        specResults.push(specResultEntry);
     }
 
     return { specs: specResults, allocated: allAllocated, rejected: allRejected };

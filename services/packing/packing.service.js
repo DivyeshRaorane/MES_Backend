@@ -87,6 +87,13 @@ export const submitPackingS = async (payload) => {
                 `UPDATE bobbin_entries SET dispatch_status = 'PACKED' WHERE bobbin_no = $1`,
                 [bobbin.bobbin_no]
             );
+
+            // Check if this bobbin occupies a tray position; if so, delete that row.
+            // If no tray_position row exists for this bobbin, skip.
+            await client.query(
+                `DELETE FROM tray_position WHERE bobbin_no = $1`,
+                [bobbin.bobbin_no]
+            );
         }
 
         // Mark packing order as packed

@@ -1,6 +1,6 @@
 import pool from "../../db/postgres.js";
 
-const FIXED_TEMPS = [23, -60, 85, -60, -85, 23];
+const FIXED_TEMPS = [23, -60, 85, -60, 85, 23];
 
 // List temp entries with filters
 export const getTempEntryListS = async (filters) => {
@@ -9,12 +9,13 @@ export const getTempEntryListS = async (filters) => {
     const params = [];
 
     if (bobbin_no) { params.push(`%${bobbin_no}%`); query += ` AND bobbin_no ILIKE $${params.length}`; }
-    if (date_from) { params.push(date_from); query += ` AND start_date >= $${params.length}`; }
-    if (date_to) { params.push(date_to); query += ` AND start_date <= $${params.length}`; }
+    if (date_from) { params.push(date_from); query += ` AND created_at::date >= $${params.length}`; }
+    if (date_to) { params.push(date_to); query += ` AND created_at::date <= $${params.length}`; }
 
     query += ` ORDER BY temp_entry_id DESC`;
 
     const result = await pool.query(query, params);
+    console.log("Result", result)
     return result.rows;
 };
 
@@ -28,7 +29,20 @@ export const getTempEntryByIdS = async (id) => {
         [id]
     );
 
-    return { master: master.rows[0], cycles: cycles.rows };
+    // Single max change-in-attenuation row for this entry (may not exist yet)
+    const maxChResult = await pool.query(
+        `SELECT max_ch_nm_1310, max_ch_nm_1550, max_ch_nm_1625
+         FROM temp_ch_entry WHERE temp_entry_id = $1 LIMIT 1`,
+        [id]
+    );
+
+    const maxCh = maxChResult.rows[0] || {
+        max_ch_nm_1310: null,
+        max_ch_nm_1550: null,
+        max_ch_nm_1625: null
+    };
+
+    return { master: master.rows[0], cycles: cycles.rows, maxCh };
 };
 
 // Create temp entry with cycles (transaction)
@@ -38,7 +52,7 @@ export const createTempEntryS = async (payload) => {
     try {
         await client.query("BEGIN");
 
-        const { master, cycles, logged_in_user } = payload;
+        const { master, cycles, maxCh, logged_in_user } = payload;
 
         const masterResult = await client.query(
             `INSERT INTO temp_entry (
@@ -65,17 +79,31 @@ export const createTempEntryS = async (payload) => {
                 await client.query(
                     `INSERT INTO temp_cycle_entry (
                         temp_entry_id, bobbin_no, temperature, "date", "time",
-                        nm_1550, nm_1625, ch_nm_1550, ch_nm_1625, operator, remark, logged_in_user
-                    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+                        nm_1310, nm_1550, nm_1625, operator, remark, logged_in_user
+                    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
                     [
                         temp_entry_id, master.bobbin_no, FIXED_TEMPS[i],
                         c.date || null, c.time || null,
-                        c.nm_1550 || null, c.nm_1625 || null,
-                        c.ch_nm_1550 || null, c.ch_nm_1625 || null,
+                        c.nm_1310 || null, c.nm_1550 || null, c.nm_1625 || null,
                         c.operator || null, c.remark || null, logged_in_user
                     ]
                 );
             }
+        }
+
+        // Insert the single max change-in-attenuation row for this entry
+        if (maxCh) {
+            await client.query(
+                `INSERT INTO temp_ch_entry (
+                    temp_entry_id, max_ch_nm_1310, max_ch_nm_1550, max_ch_nm_1625
+                ) VALUES ($1,$2,$3,$4)`,
+                [
+                    temp_entry_id,
+                    maxCh.max_ch_nm_1310 || null,
+                    maxCh.max_ch_nm_1550 || null,
+                    maxCh.max_ch_nm_1625 || null
+                ]
+            );
         }
 
         await client.query("COMMIT");
@@ -96,7 +124,7 @@ export const updateTempEntryS = async (id, payload) => {
     try {
         await client.query("BEGIN");
 
-        const { master, cycles, logged_in_user } = payload;
+        const { master, cycles, maxCh, logged_in_user } = payload;
 
         await client.query(
             `UPDATE temp_entry SET
@@ -125,17 +153,35 @@ export const updateTempEntryS = async (id, payload) => {
                 await client.query(
                     `INSERT INTO temp_cycle_entry (
                         temp_entry_id, bobbin_no, temperature, "date", "time",
-                        nm_1550, nm_1625, ch_nm_1550, ch_nm_1625, operator, remark, logged_in_user
-                    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+                        nm_1310, nm_1550, nm_1625, operator, remark, logged_in_user
+                    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
                     [
                         id, master.bobbin_no, FIXED_TEMPS[i],
                         c.date || null, c.time || null,
-                        c.nm_1550 || null, c.nm_1625 || null,
-                        c.ch_nm_1550 || null, c.ch_nm_1625 || null,
+                        c.nm_1310 || null, c.nm_1550 || null, c.nm_1625 || null,
                         c.operator || null, c.remark || null, logged_in_user
                     ]
                 );
             }
+        }
+
+        // Upsert the single max change-in-attenuation row for this entry
+        if (maxCh) {
+            await client.query(
+                `INSERT INTO temp_ch_entry (
+                    temp_entry_id, max_ch_nm_1310, max_ch_nm_1550, max_ch_nm_1625
+                ) VALUES ($1,$2,$3,$4)
+                ON CONFLICT (temp_entry_id) DO UPDATE SET
+                    max_ch_nm_1310 = EXCLUDED.max_ch_nm_1310,
+                    max_ch_nm_1550 = EXCLUDED.max_ch_nm_1550,
+                    max_ch_nm_1625 = EXCLUDED.max_ch_nm_1625`,
+                [
+                    id,
+                    maxCh.max_ch_nm_1310 || null,
+                    maxCh.max_ch_nm_1550 || null,
+                    maxCh.max_ch_nm_1625 || null
+                ]
+            );
         }
 
         await client.query("COMMIT");

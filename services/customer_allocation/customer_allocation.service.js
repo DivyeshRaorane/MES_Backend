@@ -96,7 +96,7 @@ export const runAllocationS = async (spec_ids) => {
     const productTypes = [...new Set(specs.map(s => s.product_type).filter(Boolean))];
 
     let bobbinQuery = `
-        SELECT be.bobbin_no, be.fid, be.fiber_length, be.pt_strain, be.product_type,
+        SELECT be.bobbin_no, be.fid, be.optical_length, be.pt_strain, be.product_type,
                be.preform_vendor_id, be.fiber_color,
                be.drawn_date, be.created_at
         FROM bobbin_entries be
@@ -246,8 +246,13 @@ export const runAllocationS = async (spec_ids) => {
             if (passed) {
                 // Optical Length Based Allocation check (only if spec has allocation_ratio)
                 if (allocationRatio) {
-                    const opticalLength = qcData.optical_length !== null && qcData.optical_length !== undefined
-                        ? parseFloat(qcData.optical_length)
+                    // Use optical_length from bobbin_entries; if null, fall back to qc_entry optical_length
+                    const rawOpticalLength = (bobbin.optical_length !== null && bobbin.optical_length !== undefined)
+                        ? bobbin.optical_length
+                        : qcData.optical_length;
+
+                    const opticalLength = rawOpticalLength !== null && rawOpticalLength !== undefined
+                        ? parseFloat(rawOpticalLength)
                         : null;
 
                     const effectiveLength = getEffectiveLength(opticalLength, allocationRatio);
@@ -356,6 +361,28 @@ export const runAllocationS = async (spec_ids) => {
         }
 
         specResults.push(specResultEntry);
+    }
+
+    // Step 5: Attach tray position for each allocated bobbin
+    // Format: tray_name-tray_no-position_no (from tray_position joined with tray_master)
+    const allocatedBobbinNos = allAllocated.map(a => a.bobbin_no);
+    if (allocatedBobbinNos.length > 0) {
+        const positionResult = await pool.query(
+            `SELECT tp.bobbin_no, tp.position_no, tm.tray_no, tm.tray_name
+             FROM tray_position tp
+             JOIN tray_master tm ON tp.tray_id = tm.tray_id
+             WHERE tp.bobbin_no = ANY($1)`,
+            [allocatedBobbinNos]
+        );
+
+        const positionMap = {};
+        for (const row of positionResult.rows) {
+            positionMap[row.bobbin_no] = `${row.tray_name}-${row.tray_no}-${row.position_no}`;
+        }
+
+        for (const a of allAllocated) {
+            a.position = positionMap[a.bobbin_no] || null;
+        }
     }
 
     return { specs: specResults, allocated: allAllocated, rejected: allRejected };

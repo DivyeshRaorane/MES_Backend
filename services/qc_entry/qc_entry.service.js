@@ -39,13 +39,24 @@ export const fetchBobbinQcS = async (bobbin_no) => {
                      ON CONFLICT (bobbin_no) DO UPDATE SET ${updateSet}`,
                     values
                 );
+
+                // Stamp final_grade_date on the qc_entry row we just created
+                await pool.query(
+                    `UPDATE qc_entry SET final_grade_date = NOW() WHERE bobbin_no = $1`,
+                    [bobbin_no]
+                );
             }
         }
 
-        // Sync temp_grade / final_grade into bobbin_entries whenever either is set on scan
+        // Sync temp_grade / final_grade into bobbin_entries whenever either is set on scan.
+        // Stamp final_grade_date only when a final_grade is present.
         if (hasTempGrade || hasFinalGrade) {
             await pool.query(
-                `UPDATE bobbin_entries SET temp_grade = $1, final_grade = $2 WHERE bobbin_no = $3`,
+                `UPDATE bobbin_entries
+                 SET temp_grade = $1,
+                     final_grade = $2::text,
+                     final_grade_date = CASE WHEN $2::text IS NOT NULL THEN NOW() ELSE final_grade_date END
+                 WHERE bobbin_no = $3`,
                 [hasTempGrade ? tempGrade : null, hasFinalGrade ? finalGrade : null, bobbin_no]
             );
         }
@@ -83,6 +94,17 @@ export const fetchBobbinQcS = async (bobbin_no) => {
             // Safety fallback — copy reported success but row still missing
             return { success: false, in_bobbin_entries: true, message: "Record not found." };
         }
+    }
+
+    // qc_entry_temp is confirmed available here — sync optical_length into bobbin_entries
+    try {
+        const opticalLengthVal = qcTemp.rows[0].optical_length === '' ? null : qcTemp.rows[0].optical_length;
+        await pool.query(
+            `UPDATE bobbin_entries SET optical_length = $2::numeric WHERE bobbin_no = $1`,
+            [bobbin_no, opticalLengthVal]
+        );
+    } catch (opticalErr) {
+        console.error(`[fetchBobbinQcS] optical_length sync error for ${bobbin_no}:`, opticalErr.message);
     }
 
     // Step 4: Only reached when bobbin is in qc_entry_temp (directly, or via colored-bobbin copy) and NOT in qc_entry — editable path.
@@ -282,11 +304,31 @@ export const submitQcEntryS = async (payload) => {
                 values
             );
 
-            // Update bobbin_entries
+            // Update bobbin_entries (keep temp_grade and final_grade in sync, stamp final_grade_date)
             await client.query(
-                `UPDATE bobbin_entries SET final_grade = $2 WHERE bobbin_no = $1`,
+                `UPDATE bobbin_entries SET temp_grade = $2, final_grade = $2, final_grade_date = NOW() WHERE bobbin_no = $1`,
                 [bobbin_no, finalGrade]
             );
+
+            // If final grade is DCA1, upgrade product_type to G657A1250 across all tables
+            if (finalGrade === 'DCA1') {
+                const upgradedProductType = 'G657A1250';
+
+                await client.query(
+                    `UPDATE qc_entry_temp SET product_type = $2 WHERE bobbin_no = $1`,
+                    [bobbin_no, upgradedProductType]
+                );
+
+                await client.query(
+                    `UPDATE qc_entry SET product_type = $2 WHERE bobbin_no = $1`,
+                    [bobbin_no, upgradedProductType]
+                );
+
+                await client.query(
+                    `UPDATE bobbin_entries SET product_type = $2 WHERE bobbin_no = $1`,
+                    [bobbin_no, upgradedProductType]
+                );
+            }
 
             await client.query("COMMIT");
             return { success: true, type: "final", message: `Final QC submitted! Grade: ${finalGrade}`, grade: finalGrade };

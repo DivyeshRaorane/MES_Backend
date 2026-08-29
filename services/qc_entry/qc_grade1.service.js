@@ -341,23 +341,48 @@ else {
         if (!passesMin || !passesMax) {
           tierPassed = false;
 
-          // Determine advice message based on whether a top/bottom field failed bounds validation
-          const notice = isTopBottomParameter(paramName)
-            ? (bothSidesPresentMap[paramName] ? "Retest" : "Test from Bottom")
-            : "Standard parameter mismatch";
-
-          // For top/bottom parameters, also surface both side's values (each labeled
-          // "tested" or "borrowed") instead of only the single side that failed.
           const pairForParam = isTopBottomParameter(paramName)
             ? topBottomPairs.find(p => p.top === paramName || p.bottom === paramName)
             : null;
 
+          // If one side of this pair was borrowed, the failure should be attributed to
+          // the side that was ACTUALLY measured (the source of truth), not to whichever
+          // field happened to be checked first in parametersToCheck — and the
+          // recommendation should point at the side that's genuinely missing.
+          let effectiveFailedParameter = paramName;
+          let notice;
+
+          if (pairForParam) {
+            const topBorrowed = borrowedFields.has(pairForParam.top);
+            const bottomBorrowed = borrowedFields.has(pairForParam.bottom);
+
+            if (topBorrowed) {
+              effectiveFailedParameter = pairForParam.bottom; // bottom holds the real measurement
+              notice = "Test from Top";
+            } else if (bottomBorrowed) {
+              effectiveFailedParameter = pairForParam.top; // top holds the real measurement
+              notice = "Test from Bottom";
+            } else {
+              // Both sides were genuinely measured (bothSidesPresentMap true) — no swap needed.
+              notice = "Retest";
+            }
+          } else {
+            notice = "Standard parameter mismatch";
+          }
+
+          // Recompute measured_value/allowed_range against the field we're actually
+          // reporting (identical value to paramName's when borrowed, since that's the
+          // whole point of borrowing — this just keeps the range tied to the right field).
+          const reportedValue = parseFloat(measurement[effectiveFailedParameter]);
+          const reportedMin = parseFloat(tier[`min_${effectiveFailedParameter}`]);
+          const reportedMax = parseFloat(tier[`max_${effectiveFailedParameter}`]);
+
           validationFailureLog = {
             grade_checked: tier.grade,
             priority: tier.priority,
-            failed_parameter: paramName,
-            measured_value: measuredValue,
-            allowed_range: `[${isNaN(minAllowed) ? '-∞' : minAllowed} to ${isNaN(maxAllowed) ? '+∞' : maxAllowed}]`,
+            failed_parameter: effectiveFailedParameter,
+            measured_value: reportedValue,
+            allowed_range: `[${isNaN(reportedMin) ? '-∞' : reportedMin} to ${isNaN(reportedMax) ? '+∞' : reportedMax}]`,
             recommendation: notice,
             ...(pairForParam && {
               top_value: `${measurement[pairForParam.top]} (${borrowedFields.has(pairForParam.top) ? 'borrowed' : 'tested'})`,

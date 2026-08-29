@@ -24,7 +24,20 @@ export const getTrhEntryByIdS = async (id) => {
         [id]
     );
 
-    return { master: master.rows[0], cycles: cycles.rows };
+    // Single max change-in-attenuation row for this entry (may not exist yet)
+    const maxChResult = await pool.query(
+        `SELECT max_ch_nm_1310, max_ch_nm_1550, max_ch_nm_1625
+         FROM trh_ch_entry WHERE trh_entry_id = $1 LIMIT 1`,
+        [id]
+    );
+
+    const maxCh = maxChResult.rows[0] || {
+        max_ch_nm_1310: null,
+        max_ch_nm_1550: null,
+        max_ch_nm_1625: null
+    };
+
+    return { master: master.rows[0], cycles: cycles.rows, maxCh };
 };
 
 export const createTrhEntryS = async (payload) => {
@@ -33,7 +46,7 @@ export const createTrhEntryS = async (payload) => {
     try {
         await client.query("BEGIN");
 
-        const { master, cycles, logged_in_user } = payload;
+        const { master, cycles, maxCh, logged_in_user } = payload;
 
         const masterResult = await client.query(
             `INSERT INTO trh_entry (
@@ -58,15 +71,31 @@ export const createTrhEntryS = async (payload) => {
                 await client.query(
                     `INSERT INTO trh_cycle_entry (
                         trh_entry_id, bobbin_no, cycle_no, temperature, rh,
-                        trh_date, trh_time, at_1550, at_1625, tested_by, logged_in_user
-                    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+                        trh_date, trh_time, at_1310, at_1550, at_1625, tested_by, logged_in_user
+                    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
                     [
                         trh_entry_id, master.bobbin_no, c.cycle_no, c.temperature, c.rh,
                         c.trh_date || null, c.trh_time || null,
-                        c.at_1550 || null, c.at_1625 || null, c.tested_by || null, logged_in_user
+                        c.at_1310 || null, c.at_1550 || null, c.at_1625 || null,
+                        c.tested_by || null, logged_in_user
                     ]
                 );
             }
+        }
+
+        // Insert the single max change-in-attenuation row for this entry
+        if (maxCh) {
+            await client.query(
+                `INSERT INTO trh_ch_entry (
+                    trh_entry_id, max_ch_nm_1310, max_ch_nm_1550, max_ch_nm_1625
+                ) VALUES ($1,$2,$3,$4)`,
+                [
+                    trh_entry_id,
+                    maxCh.max_ch_nm_1310 || null,
+                    maxCh.max_ch_nm_1550 || null,
+                    maxCh.max_ch_nm_1625 || null
+                ]
+            );
         }
 
         await client.query("COMMIT");
@@ -86,7 +115,7 @@ export const updateTrhEntryS = async (id, payload) => {
     try {
         await client.query("BEGIN");
 
-        const { master, cycles, logged_in_user } = payload;
+        const { master, cycles, maxCh, logged_in_user } = payload;
 
         await client.query(
             `UPDATE trh_entry SET
@@ -111,15 +140,35 @@ export const updateTrhEntryS = async (id, payload) => {
                 await client.query(
                     `INSERT INTO trh_cycle_entry (
                         trh_entry_id, bobbin_no, cycle_no, temperature, rh,
-                        trh_date, trh_time, at_1550, at_1625, tested_by, logged_in_user
-                    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+                        trh_date, trh_time, at_1310, at_1550, at_1625, tested_by, logged_in_user
+                    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
                     [
                         id, master.bobbin_no, c.cycle_no, c.temperature, c.rh,
                         c.trh_date || null, c.trh_time || null,
-                        c.at_1550 || null, c.at_1625 || null, c.tested_by || null, logged_in_user
+                        c.at_1310 || null, c.at_1550 || null, c.at_1625 || null,
+                        c.tested_by || null, logged_in_user
                     ]
                 );
             }
+        }
+
+        // Upsert the single max change-in-attenuation row for this entry
+        if (maxCh) {
+            await client.query(
+                `INSERT INTO trh_ch_entry (
+                    trh_entry_id, max_ch_nm_1310, max_ch_nm_1550, max_ch_nm_1625
+                ) VALUES ($1,$2,$3,$4)
+                ON CONFLICT (trh_entry_id) DO UPDATE SET
+                    max_ch_nm_1310 = EXCLUDED.max_ch_nm_1310,
+                    max_ch_nm_1550 = EXCLUDED.max_ch_nm_1550,
+                    max_ch_nm_1625 = EXCLUDED.max_ch_nm_1625`,
+                [
+                    id,
+                    maxCh.max_ch_nm_1310 || null,
+                    maxCh.max_ch_nm_1550 || null,
+                    maxCh.max_ch_nm_1625 || null
+                ]
+            );
         }
 
         await client.query("COMMIT");

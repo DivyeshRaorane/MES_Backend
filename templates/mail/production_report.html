@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Daily Production Report</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; padding: 0; background-color: #f4f4f4; }
+    .container { max-width: 650px; margin: 20px auto; background: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+    .header { background-color: #003399; color: #ffffff; padding: 25px 30px; text-align: center; }
+    .header h1 { margin: 0; font-size: 22px; letter-spacing: 1px; }
+    .header p { margin: 5px 0 0; font-size: 14px; opacity: 0.9; }
+    .body { padding: 30px; color: #333333; line-height: 1.7; }
+    .body h2 { color: #003399; font-size: 18px; margin-top: 0; }
+    .info-box { background-color: #e8f0fe; border-left: 4px solid #003399; padding: 15px; margin: 20px 0; border-radius: 4px; }
+    .info-box p { margin: 5px 0; }
+    .info-box strong { color: #003399; }
+    .highlight { background-color: #fff3e0; border-left: 4px solid #ff9800; padding: 12px 15px; margin: 15px 0; border-radius: 4px; font-size: 13px; }
+    .footer { background-color: #f9f9f9; padding: 15px 30px; text-align: center; font-size: 12px; color: #888888; border-top: 1px solid #eeeeee; }
+    .btn { display: inline-block; padding: 12px 24px; background-color: #003399; color: #ffffff; text-decoration: none; border-radius: 5px; margin-top: 15px; font-weight: bold; }
+    table { width: 100%; border-collapse: collapse; margin: 15px 0; }
+    table th { background-color: #003399; color: #ffffff; padding: 8px 10px; font-size: 12px; text-align: center; }
+    table td { border: 1px solid #dddddd; padding: 7px 10px; font-size: 12px; text-align: center; }
+    table tr:nth-child(even) { background-color: #f9f9f9; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>West Coast Optilinks Hyderabad</h1>
+      <p>OPTICAL FIBRE PLANT - HYDERABAD</p>
+    </div>
+    <div class="body">
+      <h2>Daily Production Report - {{reportDate}}</h2>
+      
+      <div class="info-box">
+        <p><strong>Report Date:</strong> {{reportDate}}</p>
+        <p><strong>Generated At:</strong> {{generatedAt}}</p>
+        <p><strong>Report Type:</strong> Daily Production Summary</p>
+        <p><strong>Prepared By:</strong> {{preparedBy}}</p>
+      </div>
+
+      <p>Please find attached the <strong>Daily Production Report</strong> for {{reportDate}}. The Excel report contains the following sheets:</p>
+
+      <table>
+        <tr>
+          <th>Sheet</th>
+          <th>Contents</th>
+        </tr>
+        <tr>
+          <td><strong>Cover</strong></td>
+          <td>Report cover page with company branding</td>
+        </tr>
+        <tr>
+          <td><strong>Production Report</strong></td>
+          <td>Draw Yield, PT Proof Test, Optical & Packing data</td>
+        </tr>
+        <tr>
+          <td><strong>OEE Report</strong></td>
+          <td>On-Date OEE + Cumulative OEE (Month-to-Date)</td>
+        </tr>
+      </table>
+
+      <div class="highlight">
+        <strong>Note:</strong> This is an auto-generated scheduled report. The attached Excel file contains detailed data with all towers and cumulative figures.
+      </div>
+
+      <p>For any discrepancies or questions, please contact the Production team.</p>
+    </div>
+    <div class="footer">
+      <p>&copy; {{year}} West Coast Optilinks Hyderabad. All rights reserved.</p>
+      <p>This is an automated email from MES System. Please do not reply.</p>
+    </div>
+  </div>
+</body>
+</html>

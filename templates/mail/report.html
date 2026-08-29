@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Report</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; padding: 0; background-color: #f4f4f4; }
+    .container { max-width: 600px; margin: 20px auto; background: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+    .header { background-color: #4caf50; color: #ffffff; padding: 20px 30px; text-align: center; }
+    .header h1 { margin: 0; font-size: 24px; }
+    .body { padding: 30px; color: #333333; line-height: 1.6; }
+    .summary-table { width: 100%; border-collapse: collapse; margin: 15px 0; }
+    .summary-table th, .summary-table td { border: 1px solid #dddddd; padding: 10px; text-align: left; }
+    .summary-table th { background-color: #4caf50; color: #ffffff; }
+    .summary-table tr:nth-child(even) { background-color: #f9f9f9; }
+    .footer { background-color: #f9f9f9; padding: 15px 30px; text-align: center; font-size: 12px; color: #888888; border-top: 1px solid #eeeeee; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>{{reportTitle}}</h1>
+    </div>
+    <div class="body">
+      <p>Hi {{userName}},</p>
+      <p>Please find the {{reportType}} report summary below:</p>
+      <table class="summary-table">
+        <tr>
+          <th>Parameter</th>
+          <th>Value</th>
+        </tr>
+        <tr>
+          <td>Report Period</td>
+          <td>{{reportPeriod}}</td>
+        </tr>
+        <tr>
+          <td>Total Production</td>
+          <td>{{totalProduction}}</td>
+        </tr>
+        <tr>
+          <td>Quality Pass Rate</td>
+          <td>{{qualityPassRate}}</td>
+        </tr>
+        <tr>
+          <td>Rejection Rate</td>
+          <td>{{rejectionRate}}</td>
+        </tr>
+      </table>
+      <p>For detailed report, please log in to the MES system.</p>
+    </div>
+    <div class="footer">
+      <p>&copy; {{year}} MES System. All rights reserved.</p>
+      <p>This is an automated report. Please do not reply.</p>
+    </div>
+  </div>
+</body>
+</html>

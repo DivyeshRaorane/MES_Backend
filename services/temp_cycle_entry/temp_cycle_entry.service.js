@@ -59,13 +59,12 @@ export const saveCycleEntryS = async (payload) => {
         for (const cycle of cycles) {
             await client.query(
                 `INSERT INTO temp_cycle_entry (
-                    bobbin_no, temperature, "date", "time", nm_1550, nm_1625,
-                    ch_nm_1550, ch_nm_1625, operator, remark, logged_in_user
-                ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+                    bobbin_no, temperature, "date", "time", nm_1310, nm_1550, nm_1625,
+                    operator, remark, logged_in_user
+                ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
                 [
                     bobbin_no, cycle.temperature, cycle.date, cycle.time,
-                    cycle.nm_1550 || null, cycle.nm_1625 || null,
-                    cycle.ch_nm_1550 || null, cycle.ch_nm_1625 || null,
+                    cycle.nm_1310 || null, cycle.nm_1550 || null, cycle.nm_1625 || null,
                     cycle.operator || null, cycle.remark || null, logged_in_user
                 ]
             );

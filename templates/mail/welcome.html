@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Welcome</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; padding: 0; background-color: #f4f4f4; }
+    .container { max-width: 600px; margin: 20px auto; background: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+    .header { background-color: #1a73e8; color: #ffffff; padding: 20px 30px; text-align: center; }
+    .header h1 { margin: 0; font-size: 24px; }
+    .body { padding: 30px; color: #333333; line-height: 1.6; }
+    .body h2 { color: #1a73e8; }
+    .footer { background-color: #f9f9f9; padding: 15px 30px; text-align: center; font-size: 12px; color: #888888; border-top: 1px solid #eeeeee; }
+    .btn { display: inline-block; padding: 12px 24px; background-color: #1a73e8; color: #ffffff; text-decoration: none; border-radius: 5px; margin-top: 15px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>Welcome to MES System</h1>
+    </div>
+    <div class="body">
+      <h2>Hello, {{userName}}!</h2>
+      <p>Welcome to the MES (Manufacturing Execution System). Your account has been successfully created.</p>
+      <p><strong>Your Details:</strong></p>
+      <ul>
+        <li>Employee ID: {{empId}}</li>
+        <li>Department: {{department}}</li>
+        <li>Role: {{role}}</li>
+      </ul>
+      <p>You can now log in to the system and start using the features assigned to your role.</p>
+      <a href="{{loginUrl}}" class="btn">Login Now</a>
+    </div>
+    <div class="footer">
+      <p>&copy; {{year}} MES System. All rights reserved.</p>
+      <p>This is an automated email. Please do not reply.</p>
+    </div>
+  </div>
+</body>
+</html>

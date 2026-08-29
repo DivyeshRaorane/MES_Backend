@@ -4,6 +4,7 @@ CREATE TABLE htha_day_entry(
     bobbin_no VARCHAR(50),
     htha_date DATE,
     htha_day INT,
+    at_1310 DECIMAL(10,3),
     at_1550 DECIMAL(10,3),
     at_1625 DECIMAL(10,3),
 

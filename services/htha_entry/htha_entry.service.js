@@ -24,7 +24,20 @@ export const getHthaEntryByIdS = async (id) => {
         [id]
     );
 
-    return { master: master.rows[0], days: days.rows };
+    // Single max change-in-attenuation row for this entry (may not exist yet)
+    const maxChResult = await pool.query(
+        `SELECT max_ch_nm_1310, max_ch_nm_1550, max_ch_nm_1625
+         FROM htha_ch_entry WHERE htha_entry_id = $1 LIMIT 1`,
+        [id]
+    );
+
+    const maxCh = maxChResult.rows[0] || {
+        max_ch_nm_1310: null,
+        max_ch_nm_1550: null,
+        max_ch_nm_1625: null
+    };
+
+    return { master: master.rows[0], days: days.rows, maxCh };
 };
 
 export const createHthaEntryS = async (payload) => {
@@ -33,7 +46,7 @@ export const createHthaEntryS = async (payload) => {
     try {
         await client.query("BEGIN");
 
-        const { master, days, logged_in_user } = payload;
+        const { master, days, maxCh, logged_in_user } = payload;
 
         const masterResult = await client.query(
             `INSERT INTO htha_entry (
@@ -57,11 +70,26 @@ export const createHthaEntryS = async (payload) => {
         if (days && days.length > 0) {
             for (const day of days) {
                 await client.query(
-                    `INSERT INTO htha_day_entry (htha_entry_id, bobbin_no, htha_date, htha_day, at_1550, at_1625, logged_in_user)
-                     VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-                    [htha_entry_id, master.bobbin_no, day.htha_date || null, day.htha_day, day.at_1550 || null, day.at_1625 || null, logged_in_user]
+                    `INSERT INTO htha_day_entry (htha_entry_id, bobbin_no, htha_date, htha_day, at_1310, at_1550, at_1625, logged_in_user)
+                     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+                    [htha_entry_id, master.bobbin_no, day.htha_date || null, day.htha_day, day.at_1310 || null, day.at_1550 || null, day.at_1625 || null, logged_in_user]
                 );
             }
+        }
+
+        // Insert the single max change-in-attenuation row for this entry
+        if (maxCh) {
+            await client.query(
+                `INSERT INTO htha_ch_entry (
+                    htha_entry_id, max_ch_nm_1310, max_ch_nm_1550, max_ch_nm_1625
+                ) VALUES ($1,$2,$3,$4)`,
+                [
+                    htha_entry_id,
+                    maxCh.max_ch_nm_1310 || null,
+                    maxCh.max_ch_nm_1550 || null,
+                    maxCh.max_ch_nm_1625 || null
+                ]
+            );
         }
 
         await client.query("COMMIT");
@@ -81,7 +109,7 @@ export const updateHthaEntryS = async (id, payload) => {
     try {
         await client.query("BEGIN");
 
-        const { master, days, logged_in_user } = payload;
+        const { master, days, maxCh, logged_in_user } = payload;
 
         await client.query(
             `UPDATE htha_entry SET
@@ -105,11 +133,30 @@ export const updateHthaEntryS = async (id, payload) => {
         if (days && days.length > 0) {
             for (const day of days) {
                 await client.query(
-                    `INSERT INTO htha_day_entry (htha_entry_id, bobbin_no, htha_date, htha_day, at_1550, at_1625, logged_in_user)
-                     VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-                    [id, master.bobbin_no, day.htha_date || null, day.htha_day, day.at_1550 || null, day.at_1625 || null, logged_in_user]
+                    `INSERT INTO htha_day_entry (htha_entry_id, bobbin_no, htha_date, htha_day, at_1310, at_1550, at_1625, logged_in_user)
+                     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+                    [id, master.bobbin_no, day.htha_date || null, day.htha_day, day.at_1310 || null, day.at_1550 || null, day.at_1625 || null, logged_in_user]
                 );
             }
+        }
+
+        // Upsert the single max change-in-attenuation row for this entry
+        if (maxCh) {
+            await client.query(
+                `INSERT INTO htha_ch_entry (
+                    htha_entry_id, max_ch_nm_1310, max_ch_nm_1550, max_ch_nm_1625
+                ) VALUES ($1,$2,$3,$4)
+                ON CONFLICT (htha_entry_id) DO UPDATE SET
+                    max_ch_nm_1310 = EXCLUDED.max_ch_nm_1310,
+                    max_ch_nm_1550 = EXCLUDED.max_ch_nm_1550,
+                    max_ch_nm_1625 = EXCLUDED.max_ch_nm_1625`,
+                [
+                    id,
+                    maxCh.max_ch_nm_1310 || null,
+                    maxCh.max_ch_nm_1550 || null,
+                    maxCh.max_ch_nm_1625 || null
+                ]
+            );
         }
 
         await client.query("COMMIT");

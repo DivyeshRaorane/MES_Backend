@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Notification</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; padding: 0; background-color: #f4f4f4; }
+    .container { max-width: 600px; margin: 20px auto; background: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+    .header { background-color: #ff9800; color: #ffffff; padding: 20px 30px; text-align: center; }
+    .header h1 { margin: 0; font-size: 24px; }
+    .body { padding: 30px; color: #333333; line-height: 1.6; }
+    .alert-box { background-color: #fff3e0; border-left: 4px solid #ff9800; padding: 15px; margin: 15px 0; border-radius: 4px; }
+    .footer { background-color: #f9f9f9; padding: 15px 30px; text-align: center; font-size: 12px; color: #888888; border-top: 1px solid #eeeeee; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>{{notificationTitle}}</h1>
+    </div>
+    <div class="body">
+      <p>Hi {{userName}},</p>
+      <div class="alert-box">
+        <p><strong>{{alertType}}</strong></p>
+        <p>{{alertMessage}}</p>
+      </div>
+      <p><strong>Details:</strong></p>
+      <ul>
+        <li>Module: {{module}}</li>
+        <li>Timestamp: {{timestamp}}</li>
+        <li>Action Required: {{actionRequired}}</li>
+      </ul>
+      <p>Please take the necessary action at the earliest.</p>
+    </div>
+    <div class="footer">
+      <p>&copy; {{year}} MES System. All rights reserved.</p>
+      <p>This is an automated notification. Please do not reply.</p>
+    </div>
+  </div>
+</body>
+</html>

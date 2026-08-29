@@ -7,6 +7,7 @@ CREATE TABLE trh_cycle_entry(
     rh VARCHAR(20),
     trh_date DATE,
     trh_time TIME,
+    at_1310 DECIMAL(10,3),
     at_1550 DECIMAL(10,3),
     at_1625 DECIMAL(10,3),
 

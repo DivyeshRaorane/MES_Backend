@@ -43,7 +43,7 @@ export const markDispatchedS = async (tc_id) => {
         // Update bobbin_entries dispatch_status to 'YES'
         const placeholders = bobbinNos.map((_, i) => `$${i + 1}`).join(", ");
         const updateResult = await client.query(
-            `UPDATE bobbin_entries SET dispatch_status = 'YES' WHERE bobbin_no IN (${placeholders})`,
+            `UPDATE bobbin_entries SET dispatch_status = 'YES', dispatched_date = NOW() WHERE bobbin_no IN (${placeholders})`,
             bobbinNos
         );
 

@@ -8,6 +8,7 @@ import departmetRoutes from "./routes/postgress/department_routes.js"
 import userRoutes from "./routes/postgress/user_routes.js"
 import preformDataRoutes from "./routes/postgress/preform_data.routes.js"
 import { startShedular } from "./schedulars/preform_data.shedular.js";
+import { startMailSchedular } from "./schedulars/mail.schedular.js";
 import preformAcceptRoutes from "./routes/postgress/preform_accept.routes.js"
 import handleJoinRoutes from "./routes/postgress/handle_join.routes.js"
 import drawTowerRoutes from "./routes/postgress/draw_tower.routes.js"
@@ -85,6 +86,8 @@ import adminColorMachineRoutes from "./routes/postgress/admin_color_machine.rout
 import adminPtUserRoutes from "./routes/postgress/admin_pt_user.routes.js"
 import adminQcUserRoutes from "./routes/postgress/admin_qc_user.routes.js"
 import dispatchRoutes from "./routes/postgress/dispatch.routes.js"
+import mailRoutes from "./routes/postgress/mail.routes.js"
+import productionReportRoutes from "./routes/postgress/production_report.routes.js"
 
 
 const app = express();
@@ -171,6 +174,8 @@ app.use("/api", adminColorMachineRoutes)
 app.use("/api", adminPtUserRoutes)
 app.use("/api", adminQcUserRoutes)
 app.use("/api", dispatchRoutes)
+app.use("/api", mailRoutes)
+app.use("/api", productionReportRoutes)
 
 app.use("/api", towerDataRoutes)
 
@@ -180,5 +185,8 @@ app.use("/dt3", test3Routes)
 app.use("/dt4", test4Routes)
 
 
+
+// Start Schedulers
+startMailSchedular();
 
 export default app
