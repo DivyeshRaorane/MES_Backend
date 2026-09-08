@@ -68,6 +68,35 @@ export const submitColorS = async (payload) => {
                 `UPDATE bobbin_entries SET dispatch_status = 'COLOR' WHERE bobbin_no = $1`,
                 [bobbin.bobbin_no]
             );
+
+            // Fetch product_type for the stock_transfer row
+            const beResult = await client.query(
+                `SELECT product_type FROM bobbin_entries WHERE bobbin_no = $1 LIMIT 1`,
+                [bobbin.bobbin_no]
+            );
+            const material_code = `SMF${(beResult.rows[0]?.product_type || "").toString().trim()}`;
+
+            // Queue a stock_transfer row for this bobbin
+            await client.query(
+                `
+                INSERT INTO stock_transfer (
+                    material_code, plant, storage_location, batch,
+                    receiving_plant, receiving_storage_location, qty, uom, transfer
+                )
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+                `,
+                [
+                    material_code,        // SMF + product_type
+                    1200,                 // plant
+                    1206,                 // storage_location
+                    bobbin.bobbin_no,     // batch
+                    1200,                 // receiving_plant
+                    1207,               // receiving_storage_location
+                    bobbin.total_length,  // qty
+                    "KM",                 // uom
+                    false                 // transfer
+                ]
+            );
         }
 
         await client.query("COMMIT");

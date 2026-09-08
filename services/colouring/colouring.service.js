@@ -1,4 +1,5 @@
 import pool from "../../db/postgres.js";
+import { insertSapTransaction } from "../sap_integrate/sap_transaction/sap_transaction_insert.service.js";
 
 export const scanForColouringS = async (bobbin_no) => {
     // Find pending fg_color record
@@ -141,6 +142,60 @@ export const saveColouringS = async (payload) => {
             `UPDATE bobbin_entries SET fiber_color = $1 WHERE bobbin_no = $2`,
             [require_color, parent_bobbin_no]
         );
+
+        //-------------------------
+        // SAP Transaction Insert (FG + component)
+        //   generated_fid present -> fg = good  (type FG)
+        //   generated_fid absent  -> fg = scrap (type SCRAP, skips process-order lookup)
+        //   fg_batch   = bobbin_no        (the coloured FG bobbin)
+        //   comp_batch = parent_bobbin_no (the component consumed)
+        // Reuses the SAME client so it stays in this transaction.
+        //-------------------------
+
+        // Resolve material codes:
+        //   1. Get product_type from bobbin_entries of the parent (component) bobbin.
+        //   2. comp_material_code = "SMF" + product_type.
+        //   3. fg_material_code   = col_material_code.material_code where
+        //                           product = product_type AND color = require_color.
+        const sapProductResult = await client.query(
+            `SELECT product_type FROM bobbin_entries WHERE bobbin_no = $1 LIMIT 1`,
+            [parent_bobbin_no]
+        );
+        const sapProductType = sapProductResult.rows[0]?.product_type || null;
+
+        let sapFgMaterialCode = null;
+        let sapCompMaterialCode = null;
+        if (sapProductType) {
+            // Component material code = SMF + product_type
+            sapCompMaterialCode = "SMF" + String(sapProductType).trim();
+
+            // FG material code from col_material_code master
+            const sapFgMatResult = await client.query(
+                `SELECT material_code FROM col_material_code
+                 WHERE product = $1 AND color = $2
+                 LIMIT 1`,
+                [sapProductType, require_color]
+            );
+            sapFgMaterialCode = sapFgMatResult.rows[0]?.material_code || null;
+        }
+
+        const sapConfQty = fiber_length === "" ? null : Number(fiber_length);
+
+        const sap_data = {
+            fg: hasNewFid ? "good" : "scrap",
+            operation: 10,
+            conf_qty: sapConfQty,
+            fg_batch: hasNewFid ? (bobbin_no || null) : (parent_bobbin_no || null),
+            fg_material_code: sapFgMaterialCode,
+            comp_material_code: sapCompMaterialCode,
+            plant: 1200,
+            s_location: 1201,
+            comp_batch: parent_bobbin_no || null,
+            comp_quantity: sapConfQty,
+            comp_batch: parent_bobbin_no || null,
+        };
+
+        await insertSapTransaction(sap_data, client);
 
         await client.query("COMMIT");
 

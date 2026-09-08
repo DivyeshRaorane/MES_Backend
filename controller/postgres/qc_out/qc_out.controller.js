@@ -1,4 +1,4 @@
-import { getPendingQcOutS, bulkValidateQcOutS, bulkSubmitQcOutS, validateBobbinForQcOutS, submitQcOutS } from "../../../services/qc_out/qc_out.service.js";
+import { getPendingQcOutS, bulkValidateQcOutS, validateBobbinForQcOutS, submitQcOutS } from "../../../services/qc_out/qc_out.service.js";
 
 export const getPendingQcOutC = async (req, res) => {
     try {
@@ -34,7 +34,7 @@ export const bulkSubmitQcOutC = async (req, res) => {
             return res.status(400).json({ success: false, message: "user, shift, and bobbins array are required" });
         }
 
-        const data = await bulkSubmitQcOutS({ user, shift, bobbins, logged_in_user });
+        const data = await submitQcOutS({ user, shift, bobbins, logged_in_user });
         res.status(200).json({ success: true, data });
     } catch (error) {
         console.error("Bulk QC Out Submit Error:", error.message);
@@ -60,8 +60,8 @@ export const validateQcOutC = async (req, res) => {
 export const submitQcOutC = async (req, res) => {
     try {
         const emp_id = req.user.emp_id;
-        const result = await submitQcOutS({ ...req.body, logged_in_user: emp_id });
-        res.status(201).json(result);
+        const data = await submitQcOutS({ ...req.body, logged_in_user: emp_id });
+        res.status(201).json({ success: true, data });
     } catch (error) {
         console.error("QC Out Error:", error.message);
         res.status(500).json({ success: false, message: error.message });

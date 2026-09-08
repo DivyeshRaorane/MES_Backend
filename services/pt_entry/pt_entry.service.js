@@ -1,4 +1,5 @@
 import pool from "../../db/postgres.js";
+import { insertSapTransaction } from "../sap_integrate/sap_transaction/sap_transaction_insert.service.js";
 
 export const ptEntryS = async (payload) => {
     console.log("Payload:",payload)
@@ -632,44 +633,47 @@ export const ptEntryS = async (payload) => {
             // Frontend will show spool end popup based on balance_qty <= 0
         }
 
-        // ─── SAP Transaction Generation (commented out) ───
-        // Generate SAP transactions after successful PT entry save.
-        // Requires product_type and process_type from the associated draw_entry.
-        // if (payload.pt_length && Number(payload.pt_length) > 0) {
-        //     try {
-        //         // Fetch draw_entry data needed for SAP (product_type, process_type, batches)
-        //         const drawDataResult = await client.query(
-        //             `SELECT product_type, process_type, primary_batch, secondary_batch, preform_id
-        //              FROM draw_entry WHERE spool_id = $1 LIMIT 1`,
-        //             [payload.spool_id]
-        //         );
+        //-------------------------
+        // SAP Transaction Insert (FG only — no component data)
+        //   fid present -> fg = good  (type FG)
+        //   fid absent  -> fg = scrap (type SCRAP, skips process-order lookup)
+        // Reuses the SAME client so it stays in this transaction.
+        //-------------------------
 
-        //         const drawData = drawDataResult.rows[0];
+        // Resolve the finished material code from draw_entry for this spool
+        // (works for both good and scrap since it is keyed on spool_id).
+        const sapMatResult = await client.query(
+            `SELECT product_type, process_type FROM draw_entry WHERE spool_id = $1 LIMIT 1`,
+            [payload.spool_id]
+        );
+        const sapMat = sapMatResult.rows[0] || {};
+        const sapFgMaterialCode = ["SMF"+ sapMat.product_type, sapMat.process_type]
+            .filter(Boolean)
+            .map((s) => String(s).trim())
+            .join("");
+        const sapCompMaterialCode = ["DT"+ sapMat.product_type, sapMat.process_type]
+            .filter(Boolean)
+            .map((s) => String(s).trim())
+            .join("");
 
-        //         if (drawData && drawData.product_type && drawData.process_type) {
-        //             const { generatePTSAPTransactions } = await import('../sap_transaction/sap_transaction.service.js');
+        const sapConfQty = payload.pt_length === "" ? null : Number(payload.pt_length);
 
-        //             const sapData = {
-        //                 bobbin_no: payload.bobbin_no,
-        //                 spool_id: payload.spool_id,
-        //                 fid: payload.fid || null,
-        //                 pt_length: payload.pt_length,
-        //                 product_type: drawData.product_type,
-        //                 process_type: drawData.process_type,
-        //                 preform_batch: drawData.preform_id || null,
-        //                 primary_coating_batch: drawData.primary_batch || null,
-        //                 secondary_coating_batch: drawData.secondary_batch || null,
-        //             };
+        const sap_data = {
+    fg: payload.fid ? "good" : "scrap",
+    operation: 10,
+    conf_qty: sapConfQty,
+    fg_batch: payload.bobbin_no || null,
+    fg_material_code: sapFgMaterialCode,
+    comp_material_code: sapCompMaterialCode,
+    plant: 1200,
+    s_location: 1207,
+    comp_batch: payload.spool_id || null,
+    comp_quantity: sapConfQty,
+    ud_required: payload.fid ? true : false,
+    order_type:"PT"
+};
 
-        //             const sapResult = await generatePTSAPTransactions(sapData, client);
-        //             console.log('[PTEntry] SAP Transactions generated:', sapResult.transaction_no, '| Type:', sapResult.movement_type);
-        //         }
-        //     } catch (sapError) {
-        //         // Log SAP error but do not block PT entry save
-        //         console.error('[PTEntry] SAP Transaction generation failed:', sapError.message);
-        //         throw sapError;
-        //     }
-        // }
+        await insertSapTransaction(sap_data, client);
 
         //-------------------------
         // Commit

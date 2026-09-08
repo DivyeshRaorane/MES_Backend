@@ -37,6 +37,10 @@ export const invalidateMetadataCache = () => {
 };
 
 export class QueryBuilder {
+    // Hard safety cap: the maximum number of rows any single query may return,
+    // even in "fetch all" mode. Protects the server from runaway result sets.
+    static HARD_MAX_ROWS = 200000;
+
     constructor(reportConfig) {
         this.config = reportConfig;
         this.params = [];
@@ -430,9 +434,22 @@ export class QueryBuilder {
     buildPaginationClause(page, pageSize, isPreview) {
         if (isPreview) return 'LIMIT 100';
 
+        // "Fetch all rows" mode: pageSize -1 or 0 means no user pagination.
+        // We still enforce QueryBuilder.HARD_MAX_ROWS to protect the server.
+        const fetchAll = pageSize === -1 || pageSize === 0;
+
+        if (fetchAll) {
+            // Return every matching row, capped at the hard maximum.
+            this.paramIndex++;
+            this.params.push(QueryBuilder.HARD_MAX_ROWS);
+            return `LIMIT $${this.paramIndex}`;
+        }
+
+        // Default on-screen page size when nothing is supplied.
         if (!page && !pageSize) return 'LIMIT 50';
 
-        const limit = Math.min(pageSize || 50, 500);
+        // Honor large per-request page sizes, clamped to the hard maximum.
+        const limit = Math.min(pageSize || 50, QueryBuilder.HARD_MAX_ROWS);
         const offset = ((page || 1) - 1) * limit;
 
         this.paramIndex++;

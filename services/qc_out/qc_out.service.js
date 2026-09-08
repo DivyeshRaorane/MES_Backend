@@ -91,90 +91,131 @@ export const bulkValidateQcOutS = async (bobbins) => {
     return results;
 };
 
-export const bulkSubmitQcOutS = async (payload) => {
-    const { user, shift, bobbins, logged_in_user } = payload;
+export const submitQcOutS = async (payload) => {
+    const { user, shift, bobbins, logged_in_user, out_date: payloadOutDate } = payload;
     const results = [];
 
-    for (const bobbin_no of bobbins) {
-        // 1. Check bobbin exists in bobbin_entries
-        const bobbinResult = await pool.query(
-            `SELECT bobbin_no, fid, product_type, is_qc_out FROM bobbin_entries WHERE bobbin_no = $1`,
-            [bobbin_no]
-        );
+    const client = await pool.connect();
 
-        if (bobbinResult.rows.length === 0) {
-            results.push({ bobbin_no, bobbin_fid: "", product_type: "", final_grade: "", is_qc_out: false, reason: "Bobbin not found in bobbin_entries" });
-            continue;
+    try {
+        await client.query("BEGIN");
+
+        for (const rawBobbin of bobbins) {
+            // Accept both shapes: a plain bobbin_no string or an object { bobbin_no, ... }
+            const isObject = rawBobbin !== null && typeof rawBobbin === "object";
+            const bobbin_no = isObject ? rawBobbin.bobbin_no : rawBobbin;
+            const payloadOutTime = isObject ? rawBobbin.out_time : undefined;
+            // 1. Check bobbin exists in bobbin_entries
+            const bobbinResult = await client.query(
+                `SELECT bobbin_no, fid, product_type, is_qc_out FROM bobbin_entries WHERE bobbin_no = $1`,
+                [bobbin_no]
+            );
+
+            if (bobbinResult.rows.length === 0) {
+                results.push({ bobbin_no, bobbin_fid: "", product_type: "", final_grade: "", is_qc_out: false, reason: "Bobbin not found in bobbin_entries" });
+                continue;
+            }
+
+            const bobbin = bobbinResult.rows[0];
+
+            // 2. Check if already marked QC Out in bobbin_entries
+            if (bobbin.is_qc_out === true) {
+                results.push({ bobbin_no, bobbin_fid: bobbin.fid || "", product_type: bobbin.product_type || "", final_grade: "", is_qc_out: false, reason: "Already QC Out" });
+                continue;
+            }
+
+            // 3. Check if already exists in qc_out table
+            const qcOutExists = await client.query(
+                `SELECT 1 FROM qc_out WHERE bobbin_no = $1 LIMIT 1`,
+                [bobbin_no]
+            );
+
+            if (qcOutExists.rows.length > 0) {
+                results.push({ bobbin_no, bobbin_fid: bobbin.fid || "", product_type: bobbin.product_type || "", final_grade: "", is_qc_out: false, reason: "Already exists in QC Out records" });
+                continue;
+            }
+
+            // 4. Check bobbin exists in qc_entry and get final_grade + optical_length
+            const qcResult = await client.query(
+                `SELECT final_grade, optical_length FROM qc_entry WHERE bobbin_no = $1 LIMIT 1`,
+                [bobbin_no]
+            );
+
+            if (qcResult.rows.length === 0) {
+                results.push({ bobbin_no, bobbin_fid: bobbin.fid || "", product_type: bobbin.product_type || "", final_grade: "", is_qc_out: false, reason: "No QC entry found" });
+                continue;
+            }
+
+            const final_grade = qcResult.rows[0].final_grade;
+            const fiber_length = qcResult.rows[0].optical_length;
+
+            // 5. Check final_grade is not null / empty
+            if (!final_grade || final_grade.trim() === '') {
+                results.push({ bobbin_no, bobbin_fid: bobbin.fid || "", product_type: bobbin.product_type || "", final_grade: "", is_qc_out: false, reason: "Final grade is pending" });
+                continue;
+            }
+
+            // 6. Check final_grade not in exclusion list
+            const upperGrade = final_grade.toUpperCase();
+            if (['REW', 'FAIL', 'REWH2'].includes(upperGrade)) {
+                results.push({ bobbin_no, bobbin_fid: bobbin.fid || "", product_type: bobbin.product_type || "", final_grade, is_qc_out: false, reason: `Final grade is ${final_grade}, cannot QC Out` });
+                continue;
+            }
+
+            // 7. All checks passed — update bobbin_entries and insert into qc_out
+            await client.query(
+                `UPDATE bobbin_entries SET is_qc_out = true WHERE bobbin_no = $1`,
+                [bobbin_no]
+            );
+
+            // Use payload-provided out_date/out_time when present, otherwise generate now
+            const now = new Date();
+            const out_date = payloadOutDate || now.toISOString().split('T')[0]; // YYYY-MM-DD
+            const out_time = payloadOutTime || now.toTimeString().split(' ')[0]; // HH:MM:SS
+
+            // Log QC out entry
+            await client.query(
+                `INSERT INTO qc_out (bobbin_no, bobbin_fid, out_date, out_time, "user", shift, fiber_length, logged_in_user)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+                [bobbin_no, bobbin.fid, out_date, out_time, user, shift, fiber_length, logged_in_user]
+            );
+
+            // 8. Queue a stock_transfer row for this bobbin
+            const material_code = `SMF${(bobbin.product_type || "").toString().trim()}`;
+
+            await client.query(
+                `
+                INSERT INTO stock_transfer (
+                    material_code, plant, storage_location, batch,
+                    receiving_plant, receiving_storage_location, qty, uom, transfer
+                )
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+                `,
+                [
+                    material_code,   // SMF + product_type
+                    1200,            // plant
+                    "D2N2",            // storage_location
+                    bobbin_no,       // batch
+                    1200,            // receiving_plant
+                    "1206",          // receiving_storage_location
+                    fiber_length,    // qty (optical_length from qc_entry)
+                    "KM",            // uom
+                    false            // transfer
+                ]
+            );
+
+            results.push({ bobbin_no, bobbin_fid: bobbin.fid || "", product_type: bobbin.product_type || "", final_grade, is_qc_out: true, reason: "" });
         }
 
-        const bobbin = bobbinResult.rows[0];
+        await client.query("COMMIT");
+        return results;
 
-        // 2. Check if already marked QC Out in bobbin_entries
-        if (bobbin.is_qc_out === true) {
-            results.push({ bobbin_no, bobbin_fid: bobbin.fid || "", product_type: bobbin.product_type || "", final_grade: "", is_qc_out: false, reason: "Already QC Out" });
-            continue;
-        }
-
-        // 3. Check if already exists in qc_out table
-        const qcOutExists = await pool.query(
-            `SELECT 1 FROM qc_out WHERE bobbin_no = $1 LIMIT 1`,
-            [bobbin_no]
-        );
-
-        if (qcOutExists.rows.length > 0) {
-            results.push({ bobbin_no, bobbin_fid: bobbin.fid || "", product_type: bobbin.product_type || "", final_grade: "", is_qc_out: false, reason: "Already exists in QC Out records" });
-            continue;
-        }
-
-        // 4. Check bobbin exists in qc_entry and get final_grade + optical_length
-        const qcResult = await pool.query(
-            `SELECT final_grade, optical_length FROM qc_entry WHERE bobbin_no = $1 LIMIT 1`,
-            [bobbin_no]
-        );
-
-        if (qcResult.rows.length === 0) {
-            results.push({ bobbin_no, bobbin_fid: bobbin.fid || "", product_type: bobbin.product_type || "", final_grade: "", is_qc_out: false, reason: "No QC entry found" });
-            continue;
-        }
-
-        const final_grade = qcResult.rows[0].final_grade;
-        const fiber_length = qcResult.rows[0].optical_length;
-
-        // 5. Check final_grade is not null / empty
-        if (!final_grade || final_grade.trim() === '') {
-            results.push({ bobbin_no, bobbin_fid: bobbin.fid || "", product_type: bobbin.product_type || "", final_grade: "", is_qc_out: false, reason: "Final grade is pending" });
-            continue;
-        }
-
-        // 6. Check final_grade not in exclusion list
-        const upperGrade = final_grade.toUpperCase();
-        if (['REW', 'FAIL', 'REWH2'].includes(upperGrade)) {
-            results.push({ bobbin_no, bobbin_fid: bobbin.fid || "", product_type: bobbin.product_type || "", final_grade, is_qc_out: false, reason: `Final grade is ${final_grade}, cannot QC Out` });
-            continue;
-        }
-
-        // 7. All checks passed — update bobbin_entries and insert into qc_out
-        await pool.query(
-            `UPDATE bobbin_entries SET is_qc_out = true WHERE bobbin_no = $1`,
-            [bobbin_no]
-        );
-
-        // Current date and time for out_date and out_time
-        const now = new Date();
-        const out_date = now.toISOString().split('T')[0]; // YYYY-MM-DD
-        const out_time = now.toTimeString().split(' ')[0]; // HH:MM:SS
-
-        // Log QC out entry
-        await pool.query(
-            `INSERT INTO qc_out (bobbin_no, bobbin_fid, out_date, out_time, "user", shift, fiber_length, logged_in_user)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-            [bobbin_no, bobbin.fid, out_date, out_time, user, shift, fiber_length, logged_in_user]
-        );
-
-        results.push({ bobbin_no, bobbin_fid: bobbin.fid || "", product_type: bobbin.product_type || "", final_grade, is_qc_out: true, reason: "" });
+    } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+    } finally {
+        client.release();
     }
-
-    return results;
 };
 
 export const validateBobbinForQcOutS = async (bobbin_no) => {
@@ -242,54 +283,4 @@ export const validateBobbinForQcOutS = async (bobbin_no) => {
     };
 };
 
-export const submitQcOutS = async (payload) => {
-    const client = await pool.connect();
 
-    try {
-        await client.query("BEGIN");
-
-        const { out_date, user, shift, bobbins, logged_in_user } = payload;
-
-        for (const bobbin of bobbins) {
-            // Check if already marked QC Out
-            const checkResult = await client.query(
-                `SELECT is_qc_out FROM bobbin_entries WHERE bobbin_no = $1`,
-                [bobbin.bobbin_no]
-            );
-
-            if (checkResult.rows.length > 0 && checkResult.rows[0].is_qc_out === true) {
-                throw new Error(`Bobbin ${bobbin.bobbin_no} is already QC Out`);
-            }
-
-            // Check if already exists in qc_out table
-            const qcOutExists = await client.query(
-                `SELECT 1 FROM qc_out WHERE bobbin_no = $1 LIMIT 1`,
-                [bobbin.bobbin_no]
-            );
-
-            if (qcOutExists.rows.length > 0) {
-                throw new Error(`Bobbin ${bobbin.bobbin_no} already exists in QC Out records`);
-            }
-
-            await client.query(
-                `INSERT INTO qc_out (bobbin_no, bobbin_fid, out_date, out_time, "user", shift, fiber_length, logged_in_user)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-                [bobbin.bobbin_no, bobbin.bobbin_fid, out_date, bobbin.out_time, user, shift, bobbin.fiber_length, logged_in_user]
-            );
-
-            await client.query(
-                `UPDATE bobbin_entries SET is_qc_out = true WHERE bobbin_no = $1`,
-                [bobbin.bobbin_no]
-            );
-        }
-
-        await client.query("COMMIT");
-        return { success: true, message: "QC Out submitted successfully." };
-
-    } catch (error) {
-        await client.query("ROLLBACK");
-        throw error;
-    } finally {
-        client.release();
-    }
-};

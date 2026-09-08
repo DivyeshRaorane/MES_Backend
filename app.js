@@ -23,6 +23,8 @@ import ptMachineRoutes from "./routes/postgress/pt_machine.routes.js"
 import ptUsersRoutes from "./routes/postgress/pt_user.routes.js"
 import ptAllocationRoutes from "./routes/postgress/pt_allocation.routes.js"
 import bobbinColorRoutes from "./routes/postgress/bobbin_color.routes.js"
+import fiberColorRoutes from "./routes/postgress/fiber_color.routes.js"
+import colMaterialCodeRoutes from "./routes/postgress/col_material_code.routes.js"
 import bobbinTypeRoutes from "./routes/postgress/bobbin_type.routes.js"
 import ptEntryRoutes from "./routes/postgress/pt_entry.routes.js"
 import materialMasterRoutes from "./routes/postgress/material_master.route.js"
@@ -88,6 +90,18 @@ import adminQcUserRoutes from "./routes/postgress/admin_qc_user.routes.js"
 import dispatchRoutes from "./routes/postgress/dispatch.routes.js"
 import mailRoutes from "./routes/postgress/mail.routes.js"
 import productionReportRoutes from "./routes/postgress/production_report.routes.js"
+import materialStockRoutes from "./routes/postgress/material_stock.routes.js"
+import adminOrderRoutes from "./routes/postgress/admin_order.routes.js"
+import processOrderSyncRoutes from "./routes/postgress/process_order_sync.routes.js"
+import sapTransactionPostRoutes from "./routes/postgress/sap_transaction_post.routes.js"
+import inspectionLotUdRoutes from "./routes/postgress/inspection_lot_ud.routes.js"
+import userDecisionRoutes from "./routes/postgress/user_decision.routes.js"
+import { startMaterialStockSchedular } from "./schedulars/material_stock.schedular.js";
+import { startProcessOrderSchedular } from "./schedulars/process_order.schedular.js";
+import { startSapTransactionPostSchedular } from "./schedulars/sap_transaction_post.schedular.js";
+import { startInspectionLotUdSchedular } from "./schedulars/inspection_lot_ud.schedular.js";
+import { startMaterialMoveSchedular } from "./schedulars/material_move.schedular.js";
+import { startStockTransferSchedular } from "./schedulars/stock_transfer.schedular.js";
 
 
 const app = express();
@@ -111,6 +125,8 @@ app.use("/api", ptMachineRoutes)
 app.use("/api", ptUsersRoutes)
 app.use("/api", ptAllocationRoutes)
 app.use("/api", bobbinColorRoutes)
+app.use("/api", fiberColorRoutes)
+app.use("/api", colMaterialCodeRoutes)
 app.use("/api", bobbinTypeRoutes)
 app.use("/api", ptEntryRoutes)
 app.use("/api", materialMasterRoutes)
@@ -176,6 +192,12 @@ app.use("/api", adminQcUserRoutes)
 app.use("/api", dispatchRoutes)
 app.use("/api", mailRoutes)
 app.use("/api", productionReportRoutes)
+app.use("/api", materialStockRoutes)
+app.use("/api/admin", adminOrderRoutes)
+app.use("/api", processOrderSyncRoutes)
+app.use("/api", sapTransactionPostRoutes)
+app.use("/api", inspectionLotUdRoutes)
+app.use("/api", userDecisionRoutes)
 
 app.use("/api", towerDataRoutes)
 
@@ -187,6 +209,12 @@ app.use("/dt4", test4Routes)
 
 
 // Start Schedulers
-startMailSchedular();
+//startMailSchedular();
+//startMaterialStockSchedular();
+//startProcessOrderSchedular();
+startSapTransactionPostSchedular();
+//startInspectionLotUdSchedular();
+//startMaterialMoveSchedular();
+//startStockTransferSchedular();
 
 export default app

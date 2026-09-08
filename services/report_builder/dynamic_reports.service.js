@@ -197,6 +197,7 @@ export const executeUserReportS = async (id, options, user, ipAddress) => {
                         columns: buildColumnDefs(tableConfig),
                         data: tableResult.rows,
                         rowCount: tableResult.rows.length,
+                        truncated: tableResult.rows.length >= QueryBuilder.HARD_MAX_ROWS,
                         spacing: tableConfig.spacing || 2,
                     });
                 } catch (tableError) {
@@ -265,10 +266,16 @@ export const executeUserReportS = async (id, options, user, ipAddress) => {
     // Build columns metadata for frontend
     const columns = buildColumnsMeta(reportConfig);
 
+    // Truncation: in fetch-all mode (pageSize -1/0) we cap the returned rows at
+    // HARD_MAX_ROWS. Flag it so the client knows the export/data is incomplete.
+    const fetchAll = pageSize === -1 || pageSize === 0;
+    const truncated = fetchAll && totalRows > QueryBuilder.HARD_MAX_ROWS;
+
     return {
         columns,
         data: dataResult.rows,
         totalRows,
+        truncated,
         executionTime,
         sql,
         reportName: reportConfig.report_name,
@@ -352,6 +359,7 @@ export const executeReportForExportS = async (id, options, user) => {
                         table_name: tableConfig.table_name,
                         columns: buildColumnDefs(tableConfig),
                         data: tableResult.rows,
+                        truncated: tableResult.rows.length >= QueryBuilder.HARD_MAX_ROWS,
                         spacing: tableConfig.spacing || 2,
                         formatting: tableConfig.formatting || {},
                     });
@@ -381,15 +389,30 @@ export const executeReportForExportS = async (id, options, user) => {
 
     await builder.validateIdentifiers();
 
-    // Build query without pagination (but with row limit of 100,000)
-    const { sql, params } = builder.buildQuery({ filters, sorting, search, page: 1, pageSize: 100000, dateFrom, dateTo });
+    // Fetch-all mode: pageSize -1 returns every matching row (capped at
+    // QueryBuilder.HARD_MAX_ROWS) so exports are never truncated at 500.
+    const { sql, params } = builder.buildQuery({ filters, sorting, search, page: 1, pageSize: -1, dateFrom, dateTo });
 
-   
-    const result = await pool.query({
-        text: sql,
-        values: params,
-        statement_timeout: 60000, // 60 seconds for export
-    });
+    // Count query applies the same WHERE (filters/search/date range) so we can
+    // detect whether the export hit the hard-max guardrail.
+    const countBuilder = new QueryBuilder(reportConfig);
+    const countQuery = countBuilder.buildQuery({ filters, search, isCount: true, dateFrom, dateTo });
+
+    const [result, countResult] = await Promise.all([
+        pool.query({
+            text: sql,
+            values: params,
+            statement_timeout: 60000, // 60 seconds for export
+        }),
+        pool.query({
+            text: countQuery.sql,
+            values: countQuery.params,
+            statement_timeout: 60000,
+        }),
+    ]);
+
+    const totalRows = parseInt(countResult.rows[0]?.total || 0);
+    const truncated = totalRows > QueryBuilder.HARD_MAX_ROWS;
 
     
     // Build column order including aggregates and expressions
@@ -412,6 +435,8 @@ export const executeReportForExportS = async (id, options, user) => {
 
     return {
         data: result.rows,
+        totalRows,
+        truncated,
         reportName: reportConfig.report_name,
         columnOrder: fullColumnOrder,
         columnDisplayNames: fullDisplayNames,

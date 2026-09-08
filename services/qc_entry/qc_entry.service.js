@@ -2,6 +2,72 @@ import pool from "../../db/postgres.js";
 import { mbendCopyS } from "./mbend_copy.service.js";
 import { mfdCableCutoffCalcS } from "./mfd_cable_cutoff.service.js";
 import { handleColoredBobbinQcS } from "./colored_bobbin_qc.service.js";
+import { postInspectionLotUd } from "../sap_integrate/inspection_lot/inspection_lot_ud.service.js";
+import { resolveUdCode } from "../sap_integrate/inspection_lot/ud_code.js";
+
+/**
+ * Fire-and-forget SAP Usage Decision (UD) posting for a bobbin once its
+ * final_grade is set.
+ *
+ * This is a best-effort side effect: it NEVER throws and NEVER blocks the QC
+ * flow. Any error (no lot, SAP failure, DB issue) is logged and swallowed so
+ * the surrounding QC transaction / request is unaffected.
+ *
+ * Flow:
+ *   1. Resolve the UD code from the final_grade:
+ *        REW  -> A2
+ *        FAIL -> R3
+ *        else -> A1
+ *   2. Find the bobbin's inspection lot in order_conf (fg_batch = bobbin_no).
+ *      Only rows with a real inspection_lot AND ud = false are considered;
+ *      if ud is already true the UD was posted before -> skip.
+ *   3. Post the UD via the shared inspection_lot_ud service with type "FTUD",
+ *      which flips order_conf.ud = true on SAP success.
+ *
+ * @param {string} bobbin_no
+ * @param {string} finalGrade
+ * @returns {Promise<void>}
+ */
+const tryPostUdForBobbin = async (bobbin_no, finalGrade) => {
+    try {
+        if (!bobbin_no) return;
+        if (finalGrade === null || finalGrade === undefined || String(finalGrade).trim() === "") {
+            return;
+        }
+
+        // Find the inspection lot for this bobbin. order_conf.fg_batch holds the
+        // FG bobbin_no. Only pick up rows with a real lot that are not yet posted.
+        const lotResult = await pool.query(
+            `SELECT inspection_lot
+               FROM order_conf
+              WHERE fg_batch = $1
+                AND COALESCE(ud, false) = false
+                AND inspection_lot IS NOT NULL
+                AND inspection_lot <> 0
+              ORDER BY order_conf_id DESC
+              LIMIT 1`,
+            [bobbin_no]
+        );
+
+        const row = lotResult.rows[0];
+        if (!row) {
+            // Nothing to post: either no confirmation row yet, no lot, or ud already true.
+            return;
+        }
+
+        const udCode = resolveUdCode(finalGrade);
+
+        await postInspectionLotUd({
+            InspectionLot: String(row.inspection_lot),
+            UD_CODE: udCode,
+            type: "FTUD",
+        });
+    } catch (error) {
+        // Best effort only — never disturb the QC flow.
+        console.error(`[qc_entry][UD] Skipped UD post for bobbin ${bobbin_no}:`, error.message);
+    }
+};
+
 // API 1: Fetch bobbin QC data
 
 
@@ -45,6 +111,9 @@ export const fetchBobbinQcS = async (bobbin_no) => {
                     `UPDATE qc_entry SET final_grade_date = NOW() WHERE bobbin_no = $1`,
                     [bobbin_no]
                 );
+
+                // Best-effort: post SAP UD for this finalized bobbin (never blocks).
+                await tryPostUdForBobbin(bobbin_no, finalGrade);
             }
         }
 
@@ -182,7 +251,7 @@ export const checkProcessCompletionS = async (bobbin_no) => {
     }
 
     const { is_pv, is_d2, is_h2_after } = result.rows[0];
-    const is_final_eligible = is_pv === true && is_d2 === true && is_h2_after === true;
+    const is_final_eligible = is_pv === true && is_d2 === true;
 
     const pending = [];
     if (!is_pv) pending.push("PV");
@@ -264,6 +333,10 @@ export const submitQcEntryS = async (payload) => {
             );
 
             await client.query("COMMIT");
+
+            // Best-effort: post SAP UD after the QC save is committed (never blocks).
+            await tryPostUdForBobbin(bobbin_no, grade);
+
             return { success: true, type: "final", message: `Bobbin marked as ${grade}.`, grade };
         }
 
@@ -314,6 +387,16 @@ export const submitQcEntryS = async (payload) => {
             if (finalGrade === 'DCA1') {
                 const upgradedProductType = 'G657A1250';
 
+                // Capture the current product_type BEFORE the upgrade so we can
+                // record the movement (existing -> new) in material_move.
+                // Also grab fiber_length to store as the moved quantity (qty).
+                const existingRes = await client.query(
+                    `SELECT product_type, fiber_length FROM bobbin_entries WHERE bobbin_no = $1`,
+                    [bobbin_no]
+                );
+                const existingProductType = existingRes.rows[0]?.product_type ?? null;
+                const qty = existingRes.rows[0]?.fiber_length ?? null;
+
                 await client.query(
                     `UPDATE qc_entry_temp SET product_type = $2 WHERE bobbin_no = $1`,
                     [bobbin_no, upgradedProductType]
@@ -328,9 +411,20 @@ export const submitQcEntryS = async (payload) => {
                     `UPDATE bobbin_entries SET product_type = $2 WHERE bobbin_no = $1`,
                     [bobbin_no, upgradedProductType]
                 );
+
+                // Record the product-type movement for later stock transfer.
+                await client.query(
+                    `INSERT INTO material_move (bobbin_no, existing_product_type, new_product_type, qty)
+                     VALUES ($1, $2, $3, $4)`,
+                    [bobbin_no, existingProductType, upgradedProductType, qty]
+                );
             }
 
             await client.query("COMMIT");
+
+            // Best-effort: post SAP UD after the QC save is committed (never blocks).
+            await tryPostUdForBobbin(bobbin_no, finalGrade);
+
             return { success: true, type: "final", message: `Final QC submitted! Grade: ${finalGrade}`, grade: finalGrade };
         }
 
@@ -636,6 +730,9 @@ export const flawRewindS = async (payload) => {
         );
 
         await client.query("COMMIT");
+
+        // Best-effort: post SAP UD after the flaw-rewind save is committed (never blocks).
+        await tryPostUdForBobbin(bobbin_no, 'REW');
 
         return { success: true, message: "Flaw rewind instruction saved and bobbin marked as REW." };
     } catch (error) {

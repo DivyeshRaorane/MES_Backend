@@ -1,4 +1,5 @@
 import pool from "../../db/postgres.js";
+import { insertSapTransaction } from "../sap_integrate/sap_transaction/sap_transaction_insert.service.js";
 
 // export const drawEntryS = async (payload) => {
 //     const client = await pool.connect();
@@ -504,28 +505,28 @@ export const drawEntryS = async(payload)=>{
             );
         }
 
-        // ─── SAP Transaction Generation (commented out) ───
-        // Only generate if this is a normal draw entry (not preform_end/remove without spool)
-        // if (payload.product_type && payload.process_type && payload.drawn_length) {
-        //     const { generateSAPTransactions } = await import('../sap_transaction/sap_transaction.service.js');
+        // ── SAP Transaction Insert (fg = good) ──
+        // Reuses the SAME client so it participates in this transaction.
+        // comp_material_code is omitted on purpose — it is resolved from
+        // comp_batch (preform_id) via preform_data inside the SAP service.
+        const sap_data = {
+            fg: "good",
+            conf_qty: toNum(payload.drawn_length),
+            fg_batch: payload.spool_id,
+            fg_material_code: "DT" + payload.product_type.trim() + payload.process_type,
+            operation: 10,
+            plant: 1200,
+            s_location: 1201,
+            comp_batch: payload.preform_id,
+            comp_quantity: toNum(payload.drawn_weight),
+            ud_required: false,
+            order_type : "DRAW"
 
-        //     const sapData = {
-        //         spool_id: spoolId,
-        //         product_type: payload.product_type,
-        //         process_type: payload.process_type,
-        //         produced_km: payload.drawn_length,
-        //         preform_batch: payload.preform_id,
-        //         primary_coating_batch: payload.primary_batch || null,
-        //         secondary_coating_batch: payload.secondary_batch || null,
-        //         
-        //     };
+        };
 
-        //     const sapResult = await generateSAPTransactions(sapData, client);
-        //     console.log('[DrawEntry] SAP Transactions generated:', sapResult.transaction_no);
-        // }
+        await insertSapTransaction(sap_data, client);
 
         await client.query("COMMIT");
-
         return {
             success: true,
             spool_id: spoolId,

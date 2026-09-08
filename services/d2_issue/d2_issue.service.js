@@ -112,6 +112,37 @@ export const submitD2IssueS = async (payload) => {
                 `UPDATE bobbin_entries SET d2_issue = true, d2_batch_id = $1 WHERE bobbin_no = $2`,
                 [d2_batch_id, bobbin.bobbin_no]
             );
+
+            // Fetch product_type and fiber_length for the stock_transfer row
+            const beResult = await client.query(
+                `SELECT product_type, fiber_length FROM bobbin_entries WHERE bobbin_no = $1 LIMIT 1`,
+                [bobbin.bobbin_no]
+            );
+            const beRow = beResult.rows[0] || {};
+            const material_code = `SMF${(beRow.product_type || "").toString().trim()}`;
+            const fiber_length = beRow.fiber_length ?? null;
+
+            // Queue a stock_transfer row for this bobbin
+            await client.query(
+                `
+                INSERT INTO stock_transfer (
+                    material_code, plant, storage_location, batch,
+                    receiving_plant, receiving_storage_location, qty, uom, transfer
+                )
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+                `,
+                [
+                    material_code,   // SMF + product_type
+                    1200,            // plant
+                    1207,            // storage_location
+                    bobbin.bobbin_no,// batch
+                    1200,            // receiving_plant
+                    "D2N2",          // receiving_storage_location
+                    fiber_length,    // qty
+                    "KM",            // uom
+                    false            // transfer
+                ]
+            );
         }
 
         // Mark D2 chamber as occupied

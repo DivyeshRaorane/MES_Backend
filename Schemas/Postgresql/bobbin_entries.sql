@@ -47,5 +47,10 @@ CREATE TABLE bobbin_entries (
 
     is_h2_after BOOLEAN DEFAULT FALSE,
 
-    pt_strain VARCHAR(100)
+    pt_strain VARCHAR(100),
+
+    ud_grade VARCHAR(20)
 );
+
+-- Add ud_grade (SAP UD_CODE returned on a successful Usage Decision)
+ALTER TABLE bobbin_entries ADD COLUMN IF NOT EXISTS ud_grade VARCHAR(20);

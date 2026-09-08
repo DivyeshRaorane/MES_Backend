@@ -26,6 +26,10 @@ export function toJsonbObj(val) {
  * @param {Object} options - { limit, offset, filters, sorting }
  * @returns {{ text: string, values: Array }}
  */
+// Hard safety cap for multi-sheet table queries. Even when no explicit limit is
+// requested (full-data mode), never return more than this many rows per table.
+export const HARD_MAX_ROWS = 200000;
+
 export function buildTableSQL(config, options = {}) {
     const { limit, filters = {}, sorting: runtimeSorting, dateFrom, dateTo } = options;
 
@@ -137,7 +141,14 @@ export function buildTableSQL(config, options = {}) {
     }
 
     // 7. LIMIT
-    const limitClause = limit ? `LIMIT ${Math.min(Number(limit), 10000)}` : '';
+    // If an explicit limit is provided, honor it up to the hard maximum.
+    // If no limit is provided (full-data mode for execute/export), still apply
+    // the hard maximum as a runaway-query guardrail so each sheet/table returns
+    // its complete dataset (up to HARD_MAX_ROWS) rather than a capped subset.
+    const effectiveLimit = limit
+        ? Math.min(Number(limit), HARD_MAX_ROWS)
+        : HARD_MAX_ROWS;
+    const limitClause = `LIMIT ${effectiveLimit}`;
 
     // 8. Assemble
     const text = `SELECT ${selectClause} ${fromClause} ${whereClause} ${groupByClause} ${havingClause} ${orderByClause} ${limitClause}`.trim();

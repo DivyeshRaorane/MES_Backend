@@ -1,4 +1,5 @@
 import pool from "../../db/postgres.js";
+import { insertSapTransaction } from "../sap_integrate/sap_transaction/sap_transaction_insert.service.js";
 
 export const scanForRewindingS = async (bobbin_no) => {
     
@@ -261,6 +262,49 @@ export const saveRewindingS = async (payload) => {
                 [selected_instructions]
             );
         }
+
+        //-------------------------
+        // SAP Transaction Insert (FG + component)
+        //   generated_fid present -> fg = good  (type FG)
+        //   generated_fid absent  -> fg = scrap (type SCRAP, skips process-order lookup)
+        //   fg_batch   = bobbin_no    (the rewound FG bobbin)
+        //   comp_batch = trackBobbin  (the component consumed = parent bobbin)
+        // Reuses the SAME client so it stays in this transaction.
+        //-------------------------
+
+        // Resolve the material code from bobbin_entries via the parent's product_type.
+        //   Both FG and component material code = "SMF" + product_type.
+        const sapProductResult = await client.query(
+            `SELECT product_type FROM bobbin_entries WHERE bobbin_no = $1 LIMIT 1`,
+            [trackBobbin]
+        );
+        const sapProductType = sapProductResult.rows[0]?.product_type || null;
+
+        let sapFgMaterialCode = null;
+        let sapCompMaterialCode = null;
+        if (sapProductType) {
+            const sapMaterialCode = "SMF" + String(sapProductType).trim();
+            sapFgMaterialCode = sapMaterialCode;
+            sapCompMaterialCode = sapMaterialCode;
+        }
+
+        const sapConfQty = fiber_length === "" ? null : Number(fiber_length);
+
+        const sap_data = {
+            fg: hasNewFid ? "good" : "scrap",
+            operation: 10,
+            conf_qty: sapConfQty,
+            fg_batch: hasNewFid ? (bobbin_no || null) : (trackBobbin || null),
+            fg_material_code: sapFgMaterialCode,
+            comp_material_code: sapCompMaterialCode,
+            plant: 1200,
+            s_location: 1201,
+            comp_batch: trackBobbin || null,
+            comp_quantity: sapConfQty,
+            order_type: "REW"
+        };
+
+        await insertSapTransaction(sap_data, client);
 
         await client.query("COMMIT");
 
