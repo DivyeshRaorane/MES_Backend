@@ -209,12 +209,12 @@ app.use("/dt4", test4Routes)
 
 
 // Start Schedulers
-//startMailSchedular();
-//startMaterialStockSchedular();
-//startProcessOrderSchedular();
+startMailSchedular();
+startMaterialStockSchedular();
+startProcessOrderSchedular();
 startSapTransactionPostSchedular();
-//startInspectionLotUdSchedular();
-//startMaterialMoveSchedular();
-//startStockTransferSchedular();
+startInspectionLotUdSchedular();
+startMaterialMoveSchedular();
+startStockTransferSchedular();
 
 export default app
