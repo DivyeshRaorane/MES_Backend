@@ -298,10 +298,10 @@ export const saveRewindingS = async (payload) => {
             fg_material_code: sapFgMaterialCode,
             comp_material_code: sapCompMaterialCode,
             plant: 1200,
-            s_location: 1201,
+            s_location: 1207,
             comp_batch: trackBobbin || null,
             comp_quantity: sapConfQty,
-            order_type: "REW"
+            order_type: "ZOFR"
         };
 
         await insertSapTransaction(sap_data, client);

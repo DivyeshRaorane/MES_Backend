@@ -670,7 +670,7 @@ export const ptEntryS = async (payload) => {
     comp_batch: payload.spool_id || null,
     comp_quantity: sapConfQty,
     ud_required: payload.fid ? true : false,
-    order_type:"PT"
+    order_type:"ZSFG"
 };
 
         await insertSapTransaction(sap_data, client);

@@ -183,24 +183,26 @@ export const submitQcOutS = async (payload) => {
             // 8. Queue a stock_transfer row for this bobbin
             const material_code = `SMF${(bobbin.product_type || "").toString().trim()}`;
 
+            // Queue a location-to-location (311) transfer in the unified
+            // transactions table for the SAP posting scheduler.
             await client.query(
                 `
-                INSERT INTO stock_transfer (
-                    material_code, plant, storage_location, batch,
-                    receiving_plant, receiving_storage_location, qty, uom, transfer
+                INSERT INTO transactions (
+                    type, comp_material_code, plant, s_location, comp_batch,
+                    receiving_plant, receiving_s_location, comp_quantity, uom,
+                    ud_required, status, created_at
                 )
-                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+                VALUES ('LTL',$1,$2,$3,$4,$5,$6,$7,$8,false,false,current_timestamp)
                 `,
                 [
-                    material_code,   // SMF + product_type
+                    material_code,   // SMF + product_type -> comp_material_code
                     1200,            // plant
-                    "D2N2",            // storage_location
-                    bobbin_no,       // batch
+                    "D2N2",          // s_location
+                    bobbin_no,       // comp_batch
                     1200,            // receiving_plant
-                    "1206",          // receiving_storage_location
-                    fiber_length,    // qty (optical_length from qc_entry)
+                    "1206",          // receiving_s_location
+                    fiber_length,    // comp_quantity (optical_length from qc_entry)
                     "KM",            // uom
-                    false            // transfer
                 ]
             );
 

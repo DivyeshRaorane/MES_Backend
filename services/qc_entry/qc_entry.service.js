@@ -268,14 +268,81 @@ export const submitQcEntryS = async (payload) => {
     try {
         await client.query("BEGIN");
 
-        const { bobbin_no, grade, action, remark } = payload;
+        const { bobbin_no, grade, action, remark, no_qc_data } = payload;
 
-        // Block if already in qc_entry (finalized)
-        const finalCheck = await client.query(
+        // ═══════════════════════════════════════════
+        // CASE: Manual REW for a bobbin that has NO QC data yet
+        // (no row in qc_entry_temp or qc_entry). The frontend signals this
+        // with no_qc_data === true; we also detect it defensively below.
+        // Source bobbin_fid + product_type from bobbin_entries (source of truth),
+        // then upsert REW rows into qc_entry_temp and qc_entry.
+        // ═══════════════════════════════════════════
+        const tempExists = await client.query(
+            `SELECT bobbin_no FROM qc_entry_temp WHERE bobbin_no = $1`,
+            [bobbin_no]
+        );
+        const finalExists = await client.query(
             `SELECT bobbin_no FROM qc_entry WHERE bobbin_no = $1`,
             [bobbin_no]
         );
-        if (finalCheck.rows.length > 0) {
+        const hasQcData = tempExists.rows.length > 0 || finalExists.rows.length > 0;
+
+        if (no_qc_data === true || !hasQcData) {
+            // Look up the bobbin in bobbin_entries — source of truth for fid/product_type.
+            const bobbinRow = await client.query(
+                `SELECT fid, product_type FROM bobbin_entries WHERE bobbin_no = $1 LIMIT 1`,
+                [bobbin_no]
+            );
+
+            if (bobbinRow.rows.length === 0) {
+                await client.query("ROLLBACK");
+                return { success: false, message: "Bobbin not found in bobbin_entries" };
+            }
+
+            const { fid: bobbin_fid, product_type } = bobbinRow.rows[0];
+
+            // Upsert qc_entry_temp (idempotent — skip duplicate, refresh on conflict)
+            await client.query(
+                `INSERT INTO qc_entry_temp (bobbin_no, bobbin_fid, product_type, temp_grade, final_grade, remark)
+                 VALUES ($1, $2, $3, 'REW', 'REW', $4)
+                 ON CONFLICT (bobbin_no) DO UPDATE
+                   SET bobbin_fid   = EXCLUDED.bobbin_fid,
+                       product_type = EXCLUDED.product_type,
+                       remark       = COALESCE($4, qc_entry_temp.remark),
+                       temp_grade   = 'REW',
+                       final_grade  = 'REW'`,
+                [bobbin_no, bobbin_fid, product_type, remark || null]
+            );
+
+            // Upsert qc_entry (idempotent — same values)
+            await client.query(
+                `INSERT INTO qc_entry (bobbin_no, bobbin_fid, product_type, temp_grade, final_grade, remark)
+                 VALUES ($1, $2, $3, 'REW', 'REW', $4)
+                 ON CONFLICT (bobbin_no) DO UPDATE
+                   SET bobbin_fid   = EXCLUDED.bobbin_fid,
+                       product_type = EXCLUDED.product_type,
+                       remark       = COALESCE($4, qc_entry.remark),
+                       temp_grade   = 'REW',
+                       final_grade  = 'REW'`,
+                [bobbin_no, bobbin_fid, product_type, remark || null]
+            );
+
+            // Propagate grades to bobbin_entries (mirror existing REW flow).
+            await client.query(
+                `UPDATE bobbin_entries SET temp_grade = 'REW', final_grade = 'REW' WHERE bobbin_no = $1`,
+                [bobbin_no]
+            );
+
+            await client.query("COMMIT");
+
+            // Best-effort: post SAP UD after the QC save is committed (never blocks).
+            await tryPostUdForBobbin(bobbin_no, 'REW');
+
+            return { success: true };
+        }
+
+        // Block if already in qc_entry (finalized) — normal flow unchanged.
+        if (finalExists.rows.length > 0) {
             throw new Error("Final QC has already been completed for this bobbin.");
         }
 
@@ -412,11 +479,18 @@ export const submitQcEntryS = async (payload) => {
                     [bobbin_no, upgradedProductType]
                 );
 
-                // Record the product-type movement for later stock transfer.
+                // Queue the product-type movement as an MTM (309) transfer in the
+                // unified transactions table for the SAP posting scheduler:
+                //   comp_material_code    <- existing product_type (issuing)
+                //   issg_or_rcvg_material <- new product_type       (receiving)
+                //   comp_batch            <- bobbin_no              (Batch)
+                //   comp_quantity         <- fiber_length           (qty)
                 await client.query(
-                    `INSERT INTO material_move (bobbin_no, existing_product_type, new_product_type, qty)
-                     VALUES ($1, $2, $3, $4)`,
-                    [bobbin_no, existingProductType, upgradedProductType, qty]
+                    `INSERT INTO transactions (
+                        type, comp_material_code, issg_or_rcvg_material,
+                        comp_batch, comp_quantity, ud_required, status, created_at
+                    ) VALUES ('MTM', $1, $2, $3, $4, false, false, current_timestamp)`,
+                    [existingProductType, upgradedProductType, bobbin_no, qty]
                 );
             }
 

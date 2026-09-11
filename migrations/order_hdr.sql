@@ -15,3 +15,8 @@ ALTER TABLE order_hdr ADD COLUMN IF NOT EXISTS storage_location varchar(10);
 -- Order type (DRAW/PT/REW/COLOR) lives in the existing `type` column.
 -- Exposed via the API as `order_type` (SELECT type AS order_type).
 ALTER TABLE order_hdr ADD COLUMN IF NOT EXISTS type varchar(10);
+
+-- Soft-delete flag. Disabled orders (is_active = false) are hidden from the
+-- frontend list and are NOT overwritten by the SAP re-sync. Defaults to true
+-- so existing/synced orders remain visible.
+ALTER TABLE order_hdr ADD COLUMN IF NOT EXISTS is_active boolean DEFAULT true;

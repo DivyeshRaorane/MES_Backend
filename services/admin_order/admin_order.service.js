@@ -57,6 +57,7 @@ export const getAllOrdersS = async () => {
             SELECT order_no, COUNT(*)::int AS total_operations
             FROM order_opr GROUP BY order_no
         ) o ON o.order_no = h.order_no
+        WHERE COALESCE(h.is_active, true) = true
         ORDER BY h.order_creation_date DESC NULLS LAST, h.updated_at DESC NULLS LAST;
     `;
 
@@ -251,4 +252,26 @@ export const updateOrderS = async (orderNo, payload) => {
     } finally {
         client.release();
     }
+};
+
+// ─── SOFT DELETE / RESTORE: flip is_active. Never removes rows. ───
+// Disabled orders (is_active = false) are hidden from the list and are skipped
+// by the SAP re-sync (they are not overwritten or resurrected).
+export const setOrderActiveS = async (orderNo, isActive) => {
+    const result = await pool.query(
+        `UPDATE order_hdr
+            SET is_active = $1,
+                updated_at = now()
+          WHERE order_no = $2
+        RETURNING order_no, is_active`,
+        [isActive, orderNo]
+    );
+
+    if (result.rowCount === 0) {
+        const err = new Error("Order not found");
+        err.code = "ORDER_NOT_FOUND";
+        throw err;
+    }
+
+    return result.rows[0];
 };

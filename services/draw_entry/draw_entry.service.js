@@ -516,11 +516,11 @@ export const drawEntryS = async(payload)=>{
             fg_material_code: "DT" + payload.product_type.trim() + payload.process_type,
             operation: 10,
             plant: 1200,
-            s_location: 1201,
+            s_location: 1204,
             comp_batch: payload.preform_id,
             comp_quantity: toNum(payload.drawn_weight),
             ud_required: false,
-            order_type : "DRAW"
+            order_type : "ZSFG"
 
         };
 

@@ -189,10 +189,11 @@ export const saveColouringS = async (payload) => {
             fg_material_code: sapFgMaterialCode,
             comp_material_code: sapCompMaterialCode,
             plant: 1200,
-            s_location: 1201,
+            s_location: 1207,
             comp_batch: parent_bobbin_no || null,
             comp_quantity: sapConfQty,
             comp_batch: parent_bobbin_no || null,
+            order_type:"ZSFG"
         };
 
         await insertSapTransaction(sap_data, client);

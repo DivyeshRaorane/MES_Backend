@@ -104,7 +104,7 @@ const insertTransactionRow = async (client, row) => {
     } = row;
 
     const result = await client.query(
-        `INSERT INTO sap_transaction (
+        `INSERT INTO transactions (
             prod_order, operation, conf_qty, fg_batch, fg_material_code,
             comp_material_code, plant, s_location, comp_batch, comp_quantity,
             type, ud_required, status, created_at

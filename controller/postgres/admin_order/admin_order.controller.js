@@ -3,6 +3,7 @@ import {
     getOrderByNoS,
     createOrderS,
     updateOrderS,
+    setOrderActiveS,
 } from "../../../services/admin_order/admin_order.service.js";
 
 // GET /api/admin/orders
@@ -78,6 +79,58 @@ export const updateOrderC = async (req, res) => {
         }
         if (error.code === "INVALID_ORDER_TYPE") {
             return res.status(400).json({ success: false, message: error.message });
+        }
+        console.error(error);
+        return res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// DELETE /api/admin/orders/:orderNo
+// Soft delete: sets is_active = false so the order is hidden from the list and
+// skipped by the SAP re-sync. No rows are physically removed.
+export const deleteOrderC = async (req, res) => {
+    try {
+        const { orderNo } = req.params;
+
+        if (!orderNo || String(orderNo).length > 10) {
+            return res.status(400).json({ success: false, message: "Invalid order_no" });
+        }
+
+        const data = await setOrderActiveS(orderNo, false);
+        return res.status(200).json({ success: true, message: "Order disabled successfully.", data });
+    } catch (error) {
+        if (error.code === "ORDER_NOT_FOUND") {
+            return res.status(404).json({ success: false, message: "Order not found" });
+        }
+        console.error(error);
+        return res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// PATCH /api/admin/orders/:orderNo/status  body: { "is_active": true | false }
+// Enable or disable an order. Use to restore a soft-deleted order (is_active = true)
+// or disable an active one (is_active = false).
+export const setOrderActiveC = async (req, res) => {
+    try {
+        const { orderNo } = req.params;
+        const { is_active } = req.body || {};
+
+        if (!orderNo || String(orderNo).length > 10) {
+            return res.status(400).json({ success: false, message: "Invalid order_no" });
+        }
+        if (typeof is_active !== "boolean") {
+            return res.status(400).json({ success: false, message: "is_active (boolean) is required" });
+        }
+
+        const data = await setOrderActiveS(orderNo, is_active);
+        return res.status(200).json({
+            success: true,
+            message: `Order ${is_active ? "enabled" : "disabled"} successfully.`,
+            data,
+        });
+    } catch (error) {
+        if (error.code === "ORDER_NOT_FOUND") {
+            return res.status(404).json({ success: false, message: "Order not found" });
         }
         console.error(error);
         return res.status(500).json({ success: false, message: error.message });

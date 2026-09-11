@@ -5,12 +5,12 @@ import { syncProcessOrders } from "../../../../services/sap_integrate/process_or
  *
  * Body (optional):
  * {
- *   "date": "YYYY-MM-DD"   // defaults to today if omitted
+ *   "date": "YYYY-MM-DD"   // omit or leave empty to fetch ALL orders
  * }
  *
- * Fetches process orders from SAP /getorder for the given date, skips orders
- * already present in order_hdr, and inserts new ones into
- * order_hdr / order_comp / order_opr.
+ * Fetches process orders from SAP for the given date and syncs them into
+ * order_hdr / order_comp / order_opr: new orders are inserted and orders
+ * already present in order_hdr are updated in place.
  */
 export const syncProcessOrdersC = async (req, res) => {
     try {

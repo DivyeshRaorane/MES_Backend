@@ -98,10 +98,8 @@ import inspectionLotUdRoutes from "./routes/postgress/inspection_lot_ud.routes.j
 import userDecisionRoutes from "./routes/postgress/user_decision.routes.js"
 import { startMaterialStockSchedular } from "./schedulars/material_stock.schedular.js";
 import { startProcessOrderSchedular } from "./schedulars/process_order.schedular.js";
-import { startSapTransactionPostSchedular } from "./schedulars/sap_transaction_post.schedular.js";
+import { startTransactionPostSchedular } from "./schedulars/transaction_post.schedular.js";
 import { startInspectionLotUdSchedular } from "./schedulars/inspection_lot_ud.schedular.js";
-import { startMaterialMoveSchedular } from "./schedulars/material_move.schedular.js";
-import { startStockTransferSchedular } from "./schedulars/stock_transfer.schedular.js";
 
 
 const app = express();
@@ -209,12 +207,10 @@ app.use("/dt4", test4Routes)
 
 
 // Start Schedulers
-startMailSchedular();
-startMaterialStockSchedular();
-startProcessOrderSchedular();
-startSapTransactionPostSchedular();
-startInspectionLotUdSchedular();
-startMaterialMoveSchedular();
-startStockTransferSchedular();
+//startMailSchedular();
+//startMaterialStockSchedular();
+//startProcessOrderSchedular();
+startTransactionPostSchedular();
+//startInspectionLotUdSchedular();
 
 export default app

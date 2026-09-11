@@ -6,14 +6,21 @@ import { logSapCall } from "../sap_log.service.js";
 /**
  * SAP Process Order sync.
  *
- * Calls the SAP POST /getorder endpoint with the current date, receives today's
- * process orders, and for each order:
+ * Calls the SAP process-order endpoint. When a creation date is supplied the
+ * results are filtered by that date; when no date is supplied ALL orders are
+ * fetched. For each order returned:
  *   - checks whether order_no already exists in order_hdr,
- *   - if it exists -> skip,
+ *   - if it exists -> UPDATE the header and re-sync its components/operations,
  *   - if not -> insert header + components + operations across
  *     order_hdr / order_comp / order_opr in a single transaction.
  *
- * order_conf is never written here (SAP populates it separately later).
+ * On re-sync of an existing order the header is updated in place (including
+ * gr_qty and the order type from SAP's ManufacturingOrderType, e.g. "ZSFG")
+ * and its order_comp / order_opr rows are replaced (delete + re-insert) so the
+ * DB mirrors the latest SAP payload.
+ *
+ * order_conf is never written or touched here (SAP populates it separately
+ * later, keyed independently by confirmation).
  *
  * NOTE: The exact SAP field names for /getorder are not yet confirmed. The
  * pick() helpers below read several likely name variants so the mapping keeps
@@ -139,10 +146,13 @@ const toSapDateTime = (dateStr) => {
  * the flat array of order objects from the response.
  */
 const fetchProcessOrdersFromSAP = async (dateStr) => {
+    // When a date is provided, filter SAP by that creation date.
+    // When it is empty/missing, omit MfgOrderCreationDate so SAP returns ALL orders.
+    const hasDate = dateStr !== undefined && dateStr !== null && String(dateStr).trim() !== "";
+
     const payload = {
         ProductionPlant: process.env.SAP_PROCESS_ORDER_PLANT || "1200",
-        MfgOrderCreationDate: toSapDateTime(dateStr),
-        //MfgOrderCreationDate:"2026-08-29T00:00:00"
+        ...(hasDate ? { MfgOrderCreationDate: toSapDateTime(dateStr) } : {}),
     };
 
     console.log("[Process Order Sync] POST URL:", SAP_URL);
@@ -162,7 +172,7 @@ const fetchProcessOrdersFromSAP = async (dateStr) => {
             http_status_code: httpError.response?.status,
             message: httpError.message,
             reference_type: "MFG_ORDER_CREATION_DATE",
-            reference_id: payload.MfgOrderCreationDate,
+            reference_id: payload.MfgOrderCreationDate || "ALL",
             request_payload: payload,
             response_payload: httpError.response?.data,
             error_detail: httpError.stack,
@@ -188,7 +198,7 @@ const fetchProcessOrdersFromSAP = async (dateStr) => {
         http_status_code: Number(body?.StatusCode) || null,
         message: body?.Message ?? `fetched ${rows.length} order(s)`,
         reference_type: "MFG_ORDER_CREATION_DATE",
-        reference_id: payload.MfgOrderCreationDate,
+        reference_id: payload.MfgOrderCreationDate || "ALL",
         request_payload: payload,
         response_payload: body,
         duration_ms: Date.now() - startedAt,
@@ -236,18 +246,22 @@ const postWithAuth = async (url, payload) => {
 };
 
 /**
- * Given a list of order numbers, return the set already present in order_hdr.
+ * Given a list of order numbers, return a Map of order_no -> is_active for the
+ * ones already present in order_hdr. Orders not in the map are new.
+ * is_active defaults to true when the column is null.
  */
-const getExistingOrderNos = async (orderNos) => {
-    const set = new Set();
-    if (orderNos.length === 0) return set;
+const getExistingOrders = async (orderNos) => {
+    const map = new Map();
+    if (orderNos.length === 0) return map;
 
     const result = await pool.query(
-        `SELECT order_no FROM order_hdr WHERE order_no = ANY($1::text[])`,
+        `SELECT order_no, COALESCE(is_active, true) AS is_active
+           FROM order_hdr
+          WHERE order_no = ANY($1::text[])`,
         [orderNos]
     );
-    for (const row of result.rows) set.add(String(row.order_no));
-    return set;
+    for (const row of result.rows) map.set(String(row.order_no), row.is_active === true);
+    return map;
 };
 
 /**
@@ -278,6 +292,7 @@ const normalizeOrder = (raw) => {
             pick(raw, ["MfgOrderCreationDate", "order_creation_date", "OrderCreationDate", "CreationDate"])
         ),
         storage_location: pick(raw, ["StorageLocation", "storage_location", "StorageLoc"]),
+        type: pick(raw, ["ManufacturingOrderType", "type", "OrderType", "ProcessOrderType"]),
     };
 
     const rawComponents = odataResults(
@@ -310,29 +325,8 @@ const normalizeOrder = (raw) => {
     return { header, components, operations };
 };
 
-// ─── Insert one normalized order (header + children) using a txn client ───
-const insertOrder = async (client, order) => {
-    const { header, components, operations } = order;
-    console.log("Header:", header)
-    const orderNo = header.order_no;
-
-    await client.query(
-        `INSERT INTO order_hdr (
-            order_no, material_code, order_qty, uom, gr_qty,
-            order_status, order_creation_date, storage_location, updated_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())`,
-        [
-            orderNo,
-            textOrNull(header.material_code),
-            numOrNull(header.order_qty),
-            textOrNull(header.uom),
-            numOrNull(header.gr_qty),
-            textOrNull(header.order_status),
-            textOrNull(header.order_creation_date),
-            textOrNull(header.storage_location),
-        ]
-    );
-
+// ─── Insert the child rows (components + operations) for an order ───
+const insertOrderChildren = async (client, orderNo, components, operations) => {
     for (const c of components) {
         await client.query(
             `INSERT INTO order_comp (order_no, material_code, mat_desc, qty, uom, movement_type, storage_location)
@@ -371,33 +365,107 @@ const insertOrder = async (client, order) => {
     }
 };
 
+// ─── Insert a brand-new order (header + children) using a txn client ───
+const insertOrder = async (client, order) => {
+    const { header, components, operations } = order;
+    const orderNo = header.order_no;
+
+    await client.query(
+        `INSERT INTO order_hdr (
+            order_no, material_code, order_qty, uom, gr_qty,
+            order_status, order_creation_date, storage_location, type, is_active, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, now())`,
+        [
+            orderNo,
+            textOrNull(header.material_code),
+            numOrNull(header.order_qty),
+            textOrNull(header.uom),
+            numOrNull(header.gr_qty),
+            textOrNull(header.order_status),
+            textOrNull(header.order_creation_date),
+            textOrNull(header.storage_location),
+            textOrNull(header.type),
+        ]
+    );
+
+    await insertOrderChildren(client, orderNo, components, operations);
+};
+
+// ─── Update an existing order (header in place + replace children) ───
+// The header is refreshed from SAP, including gr_qty and the order type
+// (ManufacturingOrderType, e.g. "ZSFG"). Children (order_comp / order_opr) are
+// replaced wholesale so removed/added lines in SAP are mirrored. order_conf is
+// never touched.
+const updateOrder = async (client, order) => {
+    const { header, components, operations } = order;
+    const orderNo = header.order_no;
+
+    await client.query(
+        `UPDATE order_hdr SET
+            material_code       = $2,
+            order_qty           = $3,
+            uom                 = $4,
+            gr_qty              = $5,
+            order_status        = $6,
+            order_creation_date = $7,
+            storage_location    = $8,
+            type                = $9,
+            updated_at          = now()
+         WHERE order_no = $1`,
+        [
+            orderNo,
+            textOrNull(header.material_code),
+            numOrNull(header.order_qty),
+            textOrNull(header.uom),
+            numOrNull(header.gr_qty),
+            textOrNull(header.order_status),
+            textOrNull(header.order_creation_date),
+            textOrNull(header.storage_location),
+            textOrNull(header.type),
+        ]
+    );
+
+    // Replace child rows so the DB mirrors the latest SAP payload.
+    await client.query(`DELETE FROM order_comp WHERE order_no = $1`, [orderNo]);
+    await client.query(`DELETE FROM order_opr WHERE order_no = $1`, [orderNo]);
+
+    await insertOrderChildren(client, orderNo, components, operations);
+};
+
 /**
  * Core sync:
  *  1. Fetch today's (or a given date's) process orders from SAP.
- *  2. Skip any order_no already present in order_hdr.
- *  3. Insert each new order (header + components + operations) — one
- *     transaction PER order so a bad order doesn't roll back good ones.
+ *  2. For each order already present in order_hdr -> UPDATE it (header in
+ *     place, components/operations replaced). gr_qty is preserved.
+ *  3. Insert each new order (header + components + operations).
+ *  One transaction PER order so a bad order doesn't roll back good ones.
  *
- * @param {string} [dateStr] optional YYYY-MM-DD; defaults to today.
+ * @param {string} [dateStr] optional YYYY-MM-DD. When provided, SAP is filtered
+ *   by that creation date. When empty/omitted, ALL orders are fetched (no date
+ *   filter is sent to SAP).
  * @returns {object} summary
  */
 export const syncProcessOrders = async (dateStr) => {
     const rawOrders = await fetchProcessOrdersFromSAP(dateStr);
     console.log("[Process Order Sync] Raw SAP response rows:", JSON.stringify(rawOrders, null, 2));
 
+    const hasDate = dateStr !== undefined && dateStr !== null && String(dateStr).trim() !== "";
+
     const summary = {
-        date: normalizeToYmd(dateStr),
+        date: hasDate ? normalizeToYmd(dateStr) : "ALL",
         fetched: rawOrders.length,
         inserted: 0,
-        skipped_existing: 0,
+        updated: 0,
+        skipped_disabled: 0,
         skipped_no_order_no: 0,
         skipped_duplicate_in_batch: 0,
         failed: 0,
         inserted_order_nos: [],
-        skipped_order_nos: [],
+        updated_order_nos: [],
+        skipped_disabled_order_nos: [],
         failed_order_nos: [],
         // Per-order breakdown for the frontend. Each entry:
-        //   { order_no, status: "inserted" | "skipped" | "failed", reason, message }
+        //   { order_no, status: "inserted" | "updated" | "skipped" | "failed", reason, message }
         details: [],
     };
 
@@ -414,7 +482,8 @@ export const syncProcessOrders = async (dateStr) => {
         ),
     ];
 
-    const existing = await getExistingOrderNos(orderNosInResponse);
+    // Map of order_no -> is_active for orders already in the DB.
+    const existing = await getExistingOrders(orderNosInResponse);
     const seenInThisRun = new Set();
 
     for (const order of normalized) {
@@ -431,20 +500,7 @@ export const syncProcessOrders = async (dateStr) => {
             continue;
         }
 
-        // Already in DB -> skip entirely (do not touch its rows).
-        if (existing.has(orderNo)) {
-            summary.skipped_existing += 1;
-            summary.skipped_order_nos.push(orderNo);
-            summary.details.push({
-                order_no: orderNo,
-                status: "skipped",
-                reason: "already_exists",
-                message: `Order ${orderNo} already exists`,
-            });
-            continue;
-        }
-
-        // Same order returned twice in one response -> insert once.
+        // Same order returned twice in one response -> process once.
         if (seenInThisRun.has(orderNo)) {
             summary.skipped_duplicate_in_batch += 1;
             summary.details.push({
@@ -456,21 +512,39 @@ export const syncProcessOrders = async (dateStr) => {
             continue;
         }
 
+        // Already in DB -> update in place; otherwise insert new.
+        const isExisting = existing.has(orderNo);
+
         const client = await pool.connect();
         try {
             await client.query("BEGIN");
-            await insertOrder(client, order);
+            if (isExisting) {
+                await updateOrder(client, order);
+            } else {
+                await insertOrder(client, order);
+            }
             await client.query("COMMIT");
 
             seenInThisRun.add(orderNo);
-            summary.inserted += 1;
-            summary.inserted_order_nos.push(orderNo);
-            summary.details.push({
-                order_no: orderNo,
-                status: "inserted",
-                reason: "new_order",
-                message: `Order ${orderNo} inserted`,
-            });
+            if (isExisting) {
+                summary.updated += 1;
+                summary.updated_order_nos.push(orderNo);
+                summary.details.push({
+                    order_no: orderNo,
+                    status: "updated",
+                    reason: "resynced_existing",
+                    message: `Order ${orderNo} updated`,
+                });
+            } else {
+                summary.inserted += 1;
+                summary.inserted_order_nos.push(orderNo);
+                summary.details.push({
+                    order_no: orderNo,
+                    status: "inserted",
+                    reason: "new_order",
+                    message: `Order ${orderNo} inserted`,
+                });
+            }
         } catch (error) {
             await client.query("ROLLBACK");
             summary.failed += 1;
@@ -478,10 +552,13 @@ export const syncProcessOrders = async (dateStr) => {
             summary.details.push({
                 order_no: orderNo,
                 status: "failed",
-                reason: "insert_error",
+                reason: isExisting ? "update_error" : "insert_error",
                 message: error.message,
             });
-            console.error(`[Process Order Sync] Failed to insert order ${orderNo}:`, error.message);
+            console.error(
+                `[Process Order Sync] Failed to ${isExisting ? "update" : "insert"} order ${orderNo}:`,
+                error.message
+            );
         } finally {
             client.release();
         }

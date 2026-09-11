@@ -105,11 +105,19 @@ const applyDca1Upgrade = async (client, bobbin_no, finalGrade, currentProductTyp
         [bobbin_no, upgradedProductType]
     );
 
-    // Record the product-type movement for later stock transfer.
+    // Queue the product-type movement as an MTM (309) transfer in the unified
+    // transactions table for the SAP posting scheduler:
+    //   comp_material_code    <- existing product_type (issuing)
+    //   issg_or_rcvg_material <- new product_type       (receiving)
+    //   comp_batch            <- bobbin_no              (Batch)
+    // No qty here: comp_quantity stays null and the poster falls back to the
+    // SAP_MATERIAL_MOVE_QTY env default.
     await client.query(
-        `INSERT INTO material_move (bobbin_no, existing_product_type, new_product_type)
-         VALUES ($1, $2, $3)`,
-        [bobbin_no, currentProductType ?? null, upgradedProductType]
+        `INSERT INTO transactions (
+            type, comp_material_code, issg_or_rcvg_material,
+            comp_batch, ud_required, status, created_at
+        ) VALUES ('MTM', $1, $2, $3, false, false, current_timestamp)`,
+        [currentProductType ?? null, upgradedProductType, bobbin_no]
     );
 
     return upgradedProductType;

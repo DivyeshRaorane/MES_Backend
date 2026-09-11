@@ -76,25 +76,26 @@ export const submitColorS = async (payload) => {
             );
             const material_code = `SMF${(beResult.rows[0]?.product_type || "").toString().trim()}`;
 
-            // Queue a stock_transfer row for this bobbin
+            // Queue a location-to-location (311) transfer in the unified
+            // transactions table for the SAP posting scheduler.
             await client.query(
                 `
-                INSERT INTO stock_transfer (
-                    material_code, plant, storage_location, batch,
-                    receiving_plant, receiving_storage_location, qty, uom, transfer
+                INSERT INTO transactions (
+                    type, comp_material_code, plant, s_location, comp_batch,
+                    receiving_plant, receiving_s_location, comp_quantity, uom,
+                    ud_required, status, created_at
                 )
-                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+                VALUES ('LTL',$1,$2,$3,$4,$5,$6,$7,$8,false,false,current_timestamp)
                 `,
                 [
-                    material_code,        // SMF + product_type
+                    material_code,        // SMF + product_type -> comp_material_code
                     1200,                 // plant
-                    1206,                 // storage_location
-                    bobbin.bobbin_no,     // batch
+                    1206,                 // s_location
+                    bobbin.bobbin_no,     // comp_batch
                     1200,                 // receiving_plant
-                    1207,               // receiving_storage_location
-                    bobbin.total_length,  // qty
+                    1207,                 // receiving_s_location
+                    bobbin.total_length,  // comp_quantity
                     "KM",                 // uom
-                    false                 // transfer
                 ]
             );
         }
