@@ -18,3 +18,11 @@ router.get('/qcentry/colored-bobbin-qc/:bobbin_no', authMiddleware, coloredBobbi
 router.get('/qcentry/mfd-cable-cutoff/:bobbin_no', authMiddleware, mfdCableCutoffCalcC);
 
 export default router;
+
+// ═══════════════════════════════════════════════════════════════════════════
+// BULK QC TEMP-GRADE ROUTES (append-only — does not modify existing code)
+// ═══════════════════════════════════════════════════════════════════════════
+import { gradeBulkTempC, getPendingTempGradeC } from '../../controller/postgres/qc_entry/qc_entry.controller.js';
+
+router.post('/qcentry/grade-bulk', authMiddleware, gradeBulkTempC);
+router.get('/qcentry/pending-temp-grade', authMiddleware, getPendingTempGradeC);

@@ -524,7 +524,7 @@ export const drawEntryS = async(payload)=>{
 
         };
 
-        await insertSapTransaction(sap_data, client);
+       // await insertSapTransaction(sap_data, client);
 
         await client.query("COMMIT");
         return {

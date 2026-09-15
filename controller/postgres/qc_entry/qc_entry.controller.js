@@ -184,3 +184,37 @@ export const mfdCableCutoffCalcC = async (req, res) => {
         return res.status(500).json({ success: false, message: "MFD/Cable Cutoff calculation failed", error: error.message });
     }
 };
+
+// ═══════════════════════════════════════════════════════════════════════════
+// BULK QC TEMP-GRADE CONTROLLERS (append-only — does not modify existing code)
+// ═══════════════════════════════════════════════════════════════════════════
+import { gradeBulkTempS, getPendingTempGradeS } from "../../../services/qc_entry/qc_entry.service.js";
+
+export const gradeBulkTempC = async (req, res) => {
+    try {
+        const { bobbin_nos } = req.body;
+
+        if (!Array.isArray(bobbin_nos) || bobbin_nos.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: "bobbin_nos must be a non-empty array.",
+            });
+        }
+
+        const result = await gradeBulkTempS(bobbin_nos);
+        return res.status(200).json(result);
+    } catch (error) {
+        console.error("[GradeBulkTemp] Controller Error:", error.message);
+        return res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+export const getPendingTempGradeC = async (req, res) => {
+    try {
+        const result = await getPendingTempGradeS();
+        return res.status(200).json(result);
+    } catch (error) {
+        console.error("[PendingTempGrade] Controller Error:", error.message);
+        return res.status(500).json({ success: false, message: error.message });
+    }
+};

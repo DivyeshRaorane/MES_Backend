@@ -18,21 +18,6 @@ const numOrNull = (v) => (v === undefined || v === null || v === "" ? null : v);
 // Coerce undefined to null for text fields.
 const textOrNull = (v) => (v === undefined || v === null ? null : v);
 
-// Allowed order type values. Nullable: null/empty stays null. Any other value is rejected.
-const ALLOWED_ORDER_TYPES = ["DRAW", "PT", "REW", "COLOR"];
-const orderTypeOrNull = (v) => {
-    if (v === undefined || v === null || v === "") return null;
-    const normalized = String(v).trim().toUpperCase();
-    if (!ALLOWED_ORDER_TYPES.includes(normalized)) {
-        const err = new Error(
-            `Invalid type. Allowed values: ${ALLOWED_ORDER_TYPES.join(", ")}`
-        );
-        err.code = "INVALID_ORDER_TYPE";
-        throw err;
-    }
-    return normalized;
-};
-
 // ─── LIST: one row per header + component/operation counts ───
 export const getAllOrdersS = async () => {
     const query = `
@@ -178,7 +163,7 @@ export const createOrderS = async (payload) => {
                 numOrNull(header.order_qty),
                 textOrNull(header.uom),
                 numOrNull(header.gr_qty),
-                orderTypeOrNull(header.type),
+                textOrNull(header.type),
                 textOrNull(header.order_status),
                 textOrNull(header.order_creation_date),
             ]
@@ -223,7 +208,7 @@ export const updateOrderS = async (orderNo, payload) => {
                 numOrNull(header.order_qty),
                 textOrNull(header.uom),
                 numOrNull(header.gr_qty),
-                orderTypeOrNull(header.type),
+                textOrNull(header.type),
                 textOrNull(header.order_status),
                 textOrNull(header.order_creation_date),
                 orderNo,

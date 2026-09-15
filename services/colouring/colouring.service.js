@@ -196,7 +196,7 @@ export const saveColouringS = async (payload) => {
             order_type:"ZSFG"
         };
 
-        await insertSapTransaction(sap_data, client);
+        //await insertSapTransaction(sap_data, client);
 
         await client.query("COMMIT");
 

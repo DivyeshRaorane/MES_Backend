@@ -816,3 +816,188 @@ export const flawRewindS = async (payload) => {
         client.release();
     }
 };
+
+// ═══════════════════════════════════════════════════════════════════════════
+// BULK QC TEMP-GRADE FLOW (append-only — does not modify existing code)
+// ═══════════════════════════════════════════════════════════════════════════
+
+// validateBobbinQC opens its OWN pg client per call. It only VALIDATES and does
+// NOT persist the grade — persistence is done by reusing submitQcEntryS's
+// action:'temp_grade' path. Imported here (ES import declarations are hoisted,
+// so appending at module end is valid and keeps this change append-only).
+import { validateBobbinQC } from "./qc_grade.service.js";
+
+/**
+ * Bulk temp-grade flow.
+ *
+ * For EACH bobbin_no, in its own try/catch so one failure NEVER aborts the batch:
+ *   1. Not in qc_entry_temp            -> SKIPPED_NO_TEST
+ *   2. qc_entry.final_grade present     -> SKIPPED_HAS_GRADE
+ *   3. Else validateBobbinQC(bobbin_no) and map the result. On PASSED, persist
+ *      temp_grade by REUSING submitQcEntryS's action:'temp_grade' path (no SQL
+ *      duplication).
+ *
+ * validateBobbinQC and submitQcEntryS each own their own pg client / transaction,
+ * so they are called SEQUENTIALLY in the loop — never wrapped in an outer
+ * transaction owned here (keeps within the pool size).
+ *
+ * @param {string[]} bobbin_nos
+ * @returns {Promise<{ summary: object, results: object[] }>}
+ */
+export const gradeBulkTempS = async (bobbin_nos) => {
+    const results = [];
+
+    for (const rawBobbinNo of bobbin_nos) {
+        // Normalize server-side so a stray space / lowercase doesn't cause a
+        // false SKIPPED_NO_TEST. Bobbin numbers are stored trimmed + uppercase.
+        const bobbin_no = String(rawBobbinNo).trim().toUpperCase();
+
+        try {
+            // Step 1: must exist in qc_entry_temp (testing done)
+            const tempCheck = await pool.query(
+                `SELECT bobbin_no FROM qc_entry_temp WHERE bobbin_no = $1 LIMIT 1`,
+                [bobbin_no]
+            );
+            if (tempCheck.rows.length === 0) {
+                results.push({
+                    bobbin_no,
+                    status: "SKIPPED_NO_TEST",
+                    message: "Testing not done for this bobbin",
+                });
+                continue;
+            }
+
+            // Step 2: must not already have a final_grade in qc_entry
+            const finalCheck = await pool.query(
+                `SELECT final_grade FROM qc_entry WHERE bobbin_no = $1 LIMIT 1`,
+                [bobbin_no]
+            );
+            const existingFinal = finalCheck.rows[0]?.final_grade;
+            const hasFinalGrade =
+                existingFinal !== null &&
+                existingFinal !== undefined &&
+                String(existingFinal).trim() !== "";
+            if (hasFinalGrade) {
+                results.push({
+                    bobbin_no,
+                    status: "SKIPPED_HAS_GRADE",
+                    message: "This bobbin already has a grade",
+                });
+                continue;
+            }
+
+            // Step 3: validate (own client — called sequentially)
+            const validation = await validateBobbinQC(bobbin_no);
+
+            switch (validation.status) {
+                case "PASSED": {
+                    // Reuse the existing action:'temp_grade' submit path — no SQL
+                    // duplication. For a bobbin already in qc_entry_temp this branch
+                    // throws on failure and returns { success:true, ... } on success,
+                    // but we still defensively check the return.
+                    const saveResult = await submitQcEntryS({
+                        bobbin_no,
+                        grade: validation.matched_grade,
+                        action: "temp_grade",
+                    });
+
+                    if (saveResult && saveResult.success === false) {
+                        results.push({
+                            bobbin_no,
+                            status: "ERROR",
+                            message: saveResult.message || "Failed to save temp grade",
+                        });
+                    } else {
+                        results.push({
+                            bobbin_no,
+                            status: "PASSED",
+                            matched_grade: validation.matched_grade,
+                        });
+                    }
+                    break;
+                }
+                case "FAILED": {
+                    results.push({
+                        bobbin_no,
+                        status: "FAILED",
+                        failed_parameter: validation.failure_details?.failed_parameter,
+                        failure_details: validation.failure_details,
+                    });
+                    break;
+                }
+                case "MISSING_DATA": {
+                    results.push({
+                        bobbin_no,
+                        status: "MISSING_DATA",
+                        missing_parameters: validation.missing_parameters,
+                    });
+                    break;
+                }
+                case "MBEND_REQUIRED": {
+                    results.push({
+                        bobbin_no,
+                        status: "MBEND_REQUIRED",
+                        message: validation.message,
+                    });
+                    break;
+                }
+                case "ERROR":
+                case "CRITICAL_ERROR":
+                default: {
+                    results.push({
+                        bobbin_no,
+                        status: "ERROR",
+                        message: validation.message || "Unknown validation error",
+                    });
+                    break;
+                }
+            }
+        } catch (error) {
+            // One failure must NEVER abort the batch.
+            results.push({
+                bobbin_no,
+                status: "ERROR",
+                message: error.message,
+            });
+        }
+    }
+
+    const summary = {
+        total: results.length,
+        passed: results.filter((r) => r.status === "PASSED").length,
+        failed: results.filter((r) => r.status === "FAILED").length,
+        missing: results.filter((r) => r.status === "MISSING_DATA").length,
+        mbend_required: results.filter((r) => r.status === "MBEND_REQUIRED").length,
+        skipped: results.filter(
+            (r) => r.status === "SKIPPED_NO_TEST" || r.status === "SKIPPED_HAS_GRADE"
+        ).length,
+        error: results.filter((r) => r.status === "ERROR").length,
+    };
+
+    return { summary, results };
+};
+
+/**
+ * List every bobbin present in bobbin_entries AND qc_entry_temp that has NO
+ * temp_grade yet (qc_entry_temp.temp_grade IS NULL or ''), excluding any bobbin
+ * that already has a final_grade in qc_entry.
+ *
+ * Note: qc_entry_temp has no matcode column in this DB, so only product_type is
+ * returned alongside bobbin_no (matcode was optional in the spec).
+ *
+ * @returns {Promise<{ success: true, data: Array<{ bobbin_no: string, product_type: string|null }> }>}
+ */
+export const getPendingTempGradeS = async () => {
+    const result = await pool.query(
+        `SELECT be.bobbin_no,
+                qt.product_type
+           FROM bobbin_entries be
+           JOIN qc_entry_temp qt ON qt.bobbin_no = be.bobbin_no
+           LEFT JOIN qc_entry qe ON qe.bobbin_no = be.bobbin_no
+          WHERE (qt.temp_grade IS NULL OR TRIM(qt.temp_grade::text) = '')
+            AND (qe.final_grade IS NULL OR TRIM(qe.final_grade::text) = '')
+          ORDER BY be.bobbin_no`
+    );
+
+    return { success: true, data: result.rows };
+};

@@ -54,9 +54,6 @@ export const createOrderC = async (req, res) => {
         if (error.code === "ORDER_EXISTS") {
             return res.status(409).json({ success: false, message: "Order already exists" });
         }
-        if (error.code === "INVALID_ORDER_TYPE") {
-            return res.status(400).json({ success: false, message: error.message });
-        }
         console.error(error);
         return res.status(500).json({ success: false, message: error.message });
     }
@@ -76,9 +73,6 @@ export const updateOrderC = async (req, res) => {
     } catch (error) {
         if (error.code === "ORDER_NOT_FOUND") {
             return res.status(404).json({ success: false, message: "Order not found" });
-        }
-        if (error.code === "INVALID_ORDER_TYPE") {
-            return res.status(400).json({ success: false, message: error.message });
         }
         console.error(error);
         return res.status(500).json({ success: false, message: error.message });

@@ -210,7 +210,7 @@ app.use("/dt4", test4Routes)
 //startMailSchedular();
 //startMaterialStockSchedular();
 //startProcessOrderSchedular();
-startTransactionPostSchedular();
+//startTransactionPostSchedular();
 //startInspectionLotUdSchedular();
 
 export default app
