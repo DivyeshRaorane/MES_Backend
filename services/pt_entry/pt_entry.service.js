@@ -673,7 +673,7 @@ export const ptEntryS = async (payload) => {
     order_type:"ZSFG"
 };
 
-        //await insertSapTransaction(sap_data, client);
+       // await insertSapTransaction(sap_data, client);
 
         //-------------------------
         // Commit
