@@ -19,6 +19,9 @@ let tokenExpiresAt = 0; // epoch ms; 0 means "unknown / not set"
 // Log in a little before the real expiry to avoid edge-of-expiry failures.
 const EXPIRY_SAFETY_MS = 60 * 1000; // 60s
 
+// How long to wait for SAP to respond before giving up (env-overridable).
+const SAP_REQUEST_TIMEOUT_MS = Number(process.env.SAP_REQUEST_TIMEOUT_MS) || 30000;
+
 /**
  * Extract the token string from the login response, tolerating a few
  * common response shapes (token / accessToken / access_token, optionally
@@ -72,6 +75,7 @@ const login = async () => {
             password: process.env.SAP_PASSWORD,
         },
         headers: { "Content-Type": "application/json" },
+        timeout: SAP_REQUEST_TIMEOUT_MS,
     });
 
     const token = extractToken(response.data);

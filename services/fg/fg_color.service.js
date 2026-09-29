@@ -55,13 +55,13 @@ export const submitColorS = async (payload) => {
     try {
         await client.query("BEGIN");
 
-        const { col_jcard_no, request_by, date, time, bobbins, logged_in_user } = payload;
+        const { col_jcard_no, request_by, date, time, bobbins, logged_in_user, customer_name } = payload;
 
         for (const bobbin of bobbins) {
             await client.query(
-                `INSERT INTO fg_color (bobbin_no, bobbin_fid, current_color, require_color, total_length, balance_length, request_by, col_jcard_no, "date", "time", last_child_fid, count, logged_in_user)
-                 VALUES ($1, $2, $3, $4, $5, $5, $6, $7, $8, $9, NULL, 0, $10)`,
-                [bobbin.bobbin_no, bobbin.bobbin_fid, bobbin.current_color, bobbin.require_color, bobbin.total_length, request_by, col_jcard_no, date, time, logged_in_user]
+                `INSERT INTO fg_color (bobbin_no, bobbin_fid, current_color, require_color, total_length, balance_length, request_by, col_jcard_no, "date", "time", last_child_fid, count, logged_in_user, customer_name)
+                 VALUES ($1, $2, $3, $4, $5, $5, $6, $7, $8, $9, NULL, 0, $10, $11)`,
+                [bobbin.bobbin_no, bobbin.bobbin_fid, bobbin.current_color, bobbin.require_color, bobbin.total_length, request_by, col_jcard_no, date, time, logged_in_user, customer_name]
             );
 
             await client.query(
@@ -83,9 +83,9 @@ export const submitColorS = async (payload) => {
                 INSERT INTO transactions (
                     type, comp_material_code, plant, s_location, comp_batch,
                     receiving_plant, receiving_s_location, comp_quantity, uom,
-                    ud_required, status, created_at
+                    ud_type, ud_required, status, created_at
                 )
-                VALUES ('LTL',$1,$2,$3,$4,$5,$6,$7,$8,false,false,current_timestamp)
+                VALUES ('LTL',$1,$2,$3,$4,$5,$6,$7,$8,$9,false,false,current_timestamp)
                 `,
                 [
                     material_code,        // SMF + product_type -> comp_material_code
@@ -93,9 +93,10 @@ export const submitColorS = async (payload) => {
                     1206,                 // s_location
                     bobbin.bobbin_no,     // comp_batch
                     1200,                 // receiving_plant
-                    1207,                 // receiving_s_location
+                    1204,                 // receiving_s_location
                     bobbin.total_length,  // comp_quantity
                     "KM",                 // uom
+                    "UD4",                // ud_type -> follow-up UD row uses UD4 (direct A1 post)
                 ]
             );
         }

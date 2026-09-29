@@ -298,6 +298,27 @@ export const ptEntryS = async (payload) => {
         // Flaw Booking & Missed Logic
         //-------------------------
 
+        // Step 0: PT Scrap overlap-booking — runs FIRST, before missed/booking steps,
+        // so any flaw physically covered by this scrap's range is locked in as BOOKED
+        // (is_done = TRUE) and can no longer be overwritten to MISSED by Step 1/Step 3.
+        if (payload.active_rejection_type === 'pt_scrap') {
+            const ptDoneBeforeScrap = await client.query(
+                `SELECT COALESCE(SUM(pt_length::numeric), 0) as total_done FROM pt_entry WHERE spool_id = $1 AND pt_entry_id != $2`,
+                [payload.spool_id, ptResult.rows[0].pt_entry_id]
+            );
+            const scrapStartLen = parseFloat(ptDoneBeforeScrap.rows[0].total_done) || 0;
+            const scrapEndLen = scrapStartLen + (Number(payload.pt_length) || 0);
+
+            // Book any not-done flaw whose window overlaps the scrapped range,
+            // instead of just marking it missed — the fiber containing it was scrapped.
+            await client.query(
+                `UPDATE pt_flaw_details SET status = 'BOOKED', is_done = TRUE
+                 WHERE spool_id = $1 AND is_done = FALSE
+                 AND pos1::numeric < $3::numeric AND pos2::numeric > $2::numeric`,
+                [payload.spool_id, scrapStartLen, scrapEndLen]
+            );
+        }
+
         // Step 1: Mark missed flaws (runs for ALL entry types)
         if (Array.isArray(payload.missed_flaws) && payload.missed_flaws.length > 0) {
             for (const mf of payload.missed_flaws) {
@@ -673,7 +694,7 @@ export const ptEntryS = async (payload) => {
     order_type:"ZSFG"
 };
 
-       // await insertSapTransaction(sap_data, client);
+        await insertSapTransaction(sap_data, client);
 
         //-------------------------
         // Commit

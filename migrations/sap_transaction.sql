@@ -10,6 +10,7 @@ CREATE TABLE transactions (
     conf_qty              NUMERIC(10, 2),       -- confirmed quantity
     fg_batch              VARCHAR(50),          -- finished-goods batch
     fg_material_code      VARCHAR(50),          -- finished-goods material code
+    fg_location           VARCHAR(10),          -- finished-goods storage location (FG_sloc)
 
     -- ── Component / issuing-material fields (FG comp, SCRAP, MTM, LTL) ──
     comp_material_code    VARCHAR(50),          -- Material  (issuing / component)
@@ -30,6 +31,19 @@ CREATE TABLE transactions (
     uom                   VARCHAR(10),          -- EntryUnit (KG, etc.)
     inspection_lot        BIGINT,               -- SAP inspection lot (FG / UD)
     ud_required           BOOLEAN NOT NULL DEFAULT false,  -- usage decision needed?
+
+    -- ── UD sub-type: UD1 | UD2 | UD3 | UD4 | UD5 | UD6 ──
+    -- Used directly on type = 'UD' rows to drive postUdRow's dispatch, and
+    -- also set on type = 'LTL' / 'MTM' rows as a tag so the follow-up UD row
+    -- queued after a successful LTL/MTM post inherits the correct ud_type.
+    --   UD1 -> resolve UD code from qc_entry.temp_grade  (fg_batch = qc_entry.bobbin_no); skip row if not available
+    --   UD2 -> resolve UD code from qc_entry.final_grade (fg_batch = qc_entry.bobbin_no); skip row if not available
+    --   UD3 -> post UD code "A1" directly, no DB lookup (QC-out lane)
+    --   UD4 -> post UD code "A1" directly, no DB lookup (coloring lane)
+    --   UD5 -> post UD code "A2" directly, no DB lookup (rewinding lane)
+    --   UD6 -> post UD code "A1" directly, no DB lookup (MTM 309 follow-up lane)
+    --   NULL -> legacy behavior (postInspectionLotUd resolves grade itself)
+    ud_type               VARCHAR(10),
 
     -- ── Posting state ──
     status                BOOLEAN NOT NULL DEFAULT false,  -- false = pending, true = posted

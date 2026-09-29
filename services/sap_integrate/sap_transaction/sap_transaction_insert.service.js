@@ -94,6 +94,7 @@ const insertTransactionRow = async (client, row) => {
         conf_qty,
         fg_batch,
         fg_material_code,
+        fg_location,
         comp_material_code,
         plant,
         s_location,
@@ -105,10 +106,10 @@ const insertTransactionRow = async (client, row) => {
 
     const result = await client.query(
         `INSERT INTO transactions (
-            prod_order, operation, conf_qty, fg_batch, fg_material_code,
+            prod_order, operation, conf_qty, fg_batch, fg_material_code, fg_location,
             comp_material_code, plant, s_location, comp_batch, comp_quantity,
             type, ud_required, status, created_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, false, current_timestamp)
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, false, current_timestamp)
         RETURNING *`,
         [
             textOrNull(prod_order),
@@ -116,6 +117,7 @@ const insertTransactionRow = async (client, row) => {
             numOrNull(conf_qty),
             textOrNull(fg_batch),
             textOrNull(fg_material_code),
+            textOrNull(fg_location),
             textOrNull(comp_material_code),
             numOrNull(plant),
             numOrNull(s_location),
@@ -139,6 +141,7 @@ const insertTransactionRow = async (client, row) => {
  *                        order_hdr.type (DRAW/PT/REW/COLOR). Omit for no filter.
  *   conf_qty           - confirmed quantity
  *   fg_batch           - finished-goods batch
+ *   fg_location        - (optional) finished-goods storage location
  *   operation          - (optional) operation number
  *   comp_material_code - (optional) component material code
  *   plant              - (optional)
@@ -222,6 +225,7 @@ export const insertSapTransaction = async (data, externalClient = null) => {
             conf_qty: data.conf_qty,
             fg_batch: data.fg_batch,
             fg_material_code: data.fg_material_code,
+            fg_location: data.fg_location,
             comp_material_code: compMaterialCode,
             plant: data.plant,
             s_location: data.s_location,

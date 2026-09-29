@@ -105,9 +105,16 @@ export const submitQcOutS = async (payload) => {
             const isObject = rawBobbin !== null && typeof rawBobbin === "object";
             const bobbin_no = isObject ? rawBobbin.bobbin_no : rawBobbin;
             const payloadOutTime = isObject ? rawBobbin.out_time : undefined;
-            // 1. Check bobbin exists in bobbin_entries
+            // 1. Check bobbin exists in bobbin_entries.
+            // FOR UPDATE locks this row for the rest of the transaction so two
+            // concurrent submitQcOutS calls for the SAME bobbin_no can't both
+            // read is_qc_out = false before either commits (which would let
+            // both proceed to insert duplicate qc_out / transactions rows).
+            // The second call blocks here until the first COMMIT/ROLLBACK,
+            // then re-reads the up-to-date is_qc_out and is correctly skipped
+            // by check #2 below if the first call already completed it.
             const bobbinResult = await client.query(
-                `SELECT bobbin_no, fid, product_type, is_qc_out FROM bobbin_entries WHERE bobbin_no = $1`,
+                `SELECT bobbin_no, fid, product_type, is_qc_out, d2_issue FROM bobbin_entries WHERE bobbin_no = $1 FOR UPDATE`,
                 [bobbin_no]
             );
 
@@ -183,6 +190,13 @@ export const submitQcOutS = async (payload) => {
             // 8. Queue a stock_transfer row for this bobbin
             const material_code = `SMF${(bobbin.product_type || "").toString().trim()}`;
 
+            // Issuing location depends on whether this bobbin actually went
+            // through D2: d2_issue = true -> issuing from D2N2 (normal QC-out
+            // lane); d2_issue = false/null -> bobbin never reached D2, so it's
+            // issued straight from 1207 instead. Everything else (destination,
+            // material, quantity, ud_type) stays the same either way.
+            const qcOutSLocation = bobbin.d2_issue === true ? "D2N2" : "1207";
+
             // Queue a location-to-location (311) transfer in the unified
             // transactions table for the SAP posting scheduler.
             await client.query(
@@ -190,19 +204,20 @@ export const submitQcOutS = async (payload) => {
                 INSERT INTO transactions (
                     type, comp_material_code, plant, s_location, comp_batch,
                     receiving_plant, receiving_s_location, comp_quantity, uom,
-                    ud_required, status, created_at
+                    ud_type, ud_required, status, created_at
                 )
-                VALUES ('LTL',$1,$2,$3,$4,$5,$6,$7,$8,false,false,current_timestamp)
+                VALUES ('LTL',$1,$2,$3,$4,$5,$6,$7,$8,$9,false,false,current_timestamp)
                 `,
                 [
-                    material_code,   // SMF + product_type -> comp_material_code
-                    1200,            // plant
-                    "D2N2",          // s_location
-                    bobbin_no,       // comp_batch
-                    1200,            // receiving_plant
-                    "1206",          // receiving_s_location
-                    fiber_length,    // comp_quantity (optical_length from qc_entry)
-                    "KM",            // uom
+                    material_code,     // SMF + product_type -> comp_material_code
+                    1200,               // plant
+                    qcOutSLocation,     // s_location (D2N2 or 1207, per d2_issue)
+                    bobbin_no,          // comp_batch
+                    1200,               // receiving_plant
+                    "1206",             // receiving_s_location
+                    fiber_length,       // comp_quantity (optical_length from qc_entry)
+                    "KM",               // uom
+                    "UD3",              // ud_type -> follow-up UD row uses UD3 (direct A1 post)
                 ]
             );
 

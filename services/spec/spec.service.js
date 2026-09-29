@@ -1,13 +1,24 @@
 import pool from "../../db/postgres.js";
 
+// preform_vendor_id on spec_master is a comma-separated varchar (e.g. "1,2") — same convention as pt_strain.
+// Join against preform_vendor by splitting the string into an int array and aggregate matching vendor names,
+// since a single spec can now reference multiple vendors.
 export const getSpecListS = async () => {
     try {
         const result = await pool.query(
             `SELECT sm.*, 
-                    pv.vendor_name AS preform_vendor_name,
+                    pv.preform_vendor_names AS preform_vendor_name,
                     bc.bobbin_color_name AS fiber_color_name
              FROM spec_master sm
-             LEFT JOIN preform_vendor pv ON sm.preform_vendor_id = pv.preform_vendor_id
+             LEFT JOIN LATERAL (
+                 SELECT string_agg(p.vendor_name, ', ') AS preform_vendor_names
+                 FROM preform_vendor p
+                 WHERE sm.preform_vendor_id IS NOT NULL
+                   AND sm.preform_vendor_id <> ''
+                   AND p.preform_vendor_id = ANY (
+                       string_to_array(sm.preform_vendor_id, ',')::int[]
+                   )
+             ) pv ON TRUE
              LEFT JOIN bobbin_color bc ON sm.fiber_color = bc.bobbin_color_id
              WHERE sm.is_active = TRUE 
              ORDER BY sm.spec_id DESC`
@@ -27,10 +38,18 @@ export const getSpecByIdS = async (id) => {
     try {
         const result = await pool.query(
             `SELECT sm.*, 
-                    pv.vendor_name AS preform_vendor_name,
+                    pv.preform_vendor_names AS preform_vendor_name,
                     bc.bobbin_color_name AS fiber_color_name
              FROM spec_master sm
-             LEFT JOIN preform_vendor pv ON sm.preform_vendor_id = pv.preform_vendor_id
+             LEFT JOIN LATERAL (
+                 SELECT string_agg(p.vendor_name, ', ') AS preform_vendor_names
+                 FROM preform_vendor p
+                 WHERE sm.preform_vendor_id IS NOT NULL
+                   AND sm.preform_vendor_id <> ''
+                   AND p.preform_vendor_id = ANY (
+                       string_to_array(sm.preform_vendor_id, ',')::int[]
+                   )
+             ) pv ON TRUE
              LEFT JOIN bobbin_color bc ON sm.fiber_color = bc.bobbin_color_id
              WHERE sm.spec_id = $1`, [id]
         );
@@ -56,6 +75,23 @@ export const getSpecByIdS = async (id) => {
     return spec;
 };
 
+// Normalize a multi-value field (pt_strain, preform_vendor_id) into a clean comma-separated string.
+// Accepts an array (e.g. [1, 2]), a comma-separated string (e.g. "1, 2"), or a single scalar value.
+// Trims whitespace, drops empty entries, and returns null if nothing remains.
+const normalizeCommaList = (value) => {
+    if (value === null || value === undefined || value === '') return null;
+
+    const parts = Array.isArray(value)
+        ? value
+        : String(value).split(',');
+
+    const cleaned = parts
+        .map(v => String(v).trim())
+        .filter(v => v.length > 0);
+
+    return cleaned.length > 0 ? cleaned.join(',') : null;
+};
+
 export const createSpecS = async (payload) => {
     const client = await pool.connect();
 
@@ -63,6 +99,17 @@ export const createSpecS = async (payload) => {
         await client.query('BEGIN');
 
         const { logged_in_user, mandatory_params, ...data } = payload;
+
+        // pt_strain, preform_vendor_id and coating_type support multiple values as a comma-separated string
+        if ('pt_strain' in data) {
+            data.pt_strain = normalizeCommaList(data.pt_strain);
+        }
+        if ('preform_vendor_id' in data) {
+            data.preform_vendor_id = normalizeCommaList(data.preform_vendor_id);
+        }
+        if ('coating_type' in data) {
+            data.coating_type = normalizeCommaList(data.coating_type);
+        }
 
         // Validate color_type + fiber_color relationship
         if ((!data.color_type || data.color_type === 'NATURAL') && data.fiber_color) {
@@ -72,6 +119,11 @@ export const createSpecS = async (payload) => {
         // Validate color_type enum
         if (data.color_type && !['NATURAL', 'COLORED', 'RM'].includes(data.color_type)) {
             throw new Error("color_type must be one of: NATURAL, COLORED, RM");
+        }
+
+        // Validate customer_type enum (single value, not multi-select)
+        if (data.customer_type && !['EXTERNAL', 'INTERNAL'].includes(data.customer_type)) {
+            throw new Error("customer_type must be one of: EXTERNAL, INTERNAL");
         }
 
         // Validate allocation_ratio and minimum_length
@@ -144,6 +196,17 @@ export const updateSpecS = async (id, payload) => {
 
         const { logged_in_user, mandatory_params, ...data } = payload;
 
+        // pt_strain, preform_vendor_id and coating_type support multiple values as a comma-separated string
+        if ('pt_strain' in data) {
+            data.pt_strain = normalizeCommaList(data.pt_strain);
+        }
+        if ('preform_vendor_id' in data) {
+            data.preform_vendor_id = normalizeCommaList(data.preform_vendor_id);
+        }
+        if ('coating_type' in data) {
+            data.coating_type = normalizeCommaList(data.coating_type);
+        }
+
         // Validate color_type + fiber_color relationship
         if ((!data.color_type || data.color_type === 'NATURAL') && data.fiber_color) {
             throw new Error("fiber_color must be null when color_type is 'NATURAL' or not specified");
@@ -152,6 +215,11 @@ export const updateSpecS = async (id, payload) => {
         // Validate color_type enum
         if (data.color_type && !['NATURAL', 'COLORED', 'RM'].includes(data.color_type)) {
             throw new Error("color_type must be one of: NATURAL, COLORED, RM");
+        }
+
+        // Validate customer_type enum (single value, not multi-select)
+        if (data.customer_type && !['EXTERNAL', 'INTERNAL'].includes(data.customer_type)) {
+            throw new Error("customer_type must be one of: EXTERNAL, INTERNAL");
         }
 
         // Validate allocation_ratio and minimum_length

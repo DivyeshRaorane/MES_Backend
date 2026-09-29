@@ -1546,7 +1546,9 @@ CREATE TABLE public.fg_color (
     logged_in_user character varying(50),
     created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
     remark text,
-    is_done boolean DEFAULT false
+    is_done boolean DEFAULT false,
+    col_jcard_no integer NOT NULL,
+    customer_name character varying(150)
 );
 
 
@@ -2989,7 +2991,7 @@ CREATE TABLE public.qc_entry (
     final_grade character varying(50),
     optical_length numeric(10,3),
     status character varying(20),
-    reason character varying(20),
+    reason character varying(300),
     remark character varying(300),
     is_rew_done boolean DEFAULT false,
     otdr_test_date character varying(100),
@@ -3142,7 +3144,7 @@ CREATE TABLE public.qc_entry_temp (
     final_grade character varying(50),
     optical_length numeric(10,3),
     status character varying(20),
-    reason character varying(20),
+    reason character varying(300),
     remark character varying(300),
     is_rew_done boolean DEFAULT false,
     otdr_test_date character varying(100),

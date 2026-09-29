@@ -57,6 +57,12 @@ export const validateBobbinForD2S = async (bobbin_no, restricted) => {
         if (temp_grade === 'FAIL') {
             return { success: false, message: "This bobbin cannot be issued because its temporary grade is FAIL." };
         }
+        if(final_grade === "REW"){
+            return { success: false, message: "This bobbin cannot be issued because its Final grade is REW." };
+        }
+        if(final_grade === "FAIL"){
+            return { success: false, message: "This bobbin cannot be issued because its Final grade is FAIL." };
+        }
 
         return {
             success: true,
@@ -129,9 +135,9 @@ export const submitD2IssueS = async (payload) => {
                 INSERT INTO transactions (
                     type, comp_material_code, plant, s_location, comp_batch,
                     receiving_plant, receiving_s_location, comp_quantity, uom,
-                    ud_required, status, created_at
+                    ud_type, ud_required, status, created_at
                 )
-                VALUES ('LTL',$1,$2,$3,$4,$5,$6,$7,$8,false,false,current_timestamp)
+                VALUES ('LTL',$1,$2,$3,$4,$5,$6,$7,$8,$9,false,false,current_timestamp)
                 `,
                 [
                     material_code,   // SMF + product_type -> comp_material_code
@@ -142,6 +148,7 @@ export const submitD2IssueS = async (payload) => {
                     "D2N2",          // receiving_s_location
                     fiber_length,    // comp_quantity
                     "KM",            // uom
+                    "UD2",           // ud_type -> follow-up UD row uses UD2 (final_grade lookup)
                 ]
             );
         }

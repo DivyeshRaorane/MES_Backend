@@ -3,6 +3,9 @@ import pool from "../../../db/postgres.js";
 import { sapAuthHeader, clearSapToken } from "../auth/sap_auth.service.js";
 import { logSapCall } from "../sap_log.service.js";
 import { postInspectionLotUd } from "../inspection_lot/inspection_lot_ud.service.js";
+import { resolveUdCode, udCodeDefault, udCodeForRew } from "../inspection_lot/ud_code.js";
+import { postInspectionLotMatDoc } from "../inspection_lot/inspection_lot_matdoc.service.js";
+import { postInspectionResultRecord } from "../inspection_lot/inspection_result_record.service.js";
 
 /**
  * Unified SAP Transaction Posting Service
@@ -51,9 +54,9 @@ const buildSapUrl = (endpoint) => {
 /* endpoint names (env-overridable) */
 const EP_FG = () => process.env.SAP_FG_CONFIRMATION_ENDPOINT || "prdorderconfirmation";
 const EP_SCRAP = () => process.env.SAP_SCRAP_GOODS_ISSUE_ENDPOINT || "goods-issue-cost-center";
-const EP_MTM = () => process.env.SAP_STOCK_TRANSFER_MTM_ENDPOINT || "stock-transfer-material-to-material";
+const EP_MTM = () => process.env.SAP_STOCK_TRANSFER_MTM_ENDPOINT || "stock-transfer-material-to-material-01";
 const EP_LTL = () =>
-    process.env.SAP_STOCK_TRANSFER_LTL_ENDPOINT || "stock-transfer-from-storageloc-to-storagelocation";
+    process.env.SAP_STOCK_TRANSFER_LTL_ENDPOINT || "stock-transfer-from-storageloc-to-storagelocation-01";
 
 /* full URLs */
 const FG_URL = () => buildSapUrl(EP_FG());
@@ -62,8 +65,10 @@ const MTM_URL = () => buildSapUrl(EP_MTM());
 const LTL_URL = () => buildSapUrl(EP_LTL());
 
 /* shared defaults */
+// How long to wait for SAP to respond before giving up (env-overridable).
+const SAP_REQUEST_TIMEOUT_MS = Number(process.env.SAP_REQUEST_TIMEOUT_MS) || 30000;
 const PLANT = () => process.env.SAP_TXN_PLANT || "1200";
-const STORAGE_LOCATION = () => process.env.SAP_TXN_STORAGE_LOCATION || "1201";
+const STORAGE_LOCATION = () => process.env.SAP_TXN_STORAGE_LOCATION || "1207";
 
 /* scrap defaults */
 const SCRAP_MOVEMENT_TYPE = () => process.env.SAP_SCRAP_MOVEMENT_TYPE || "551";
@@ -74,7 +79,7 @@ const SCRAP_COST_CENTER = () => process.env.SAP_SCRAP_COST_CENTER || "1200000101
 /* MTM (309) defaults */
 const MTM_MOVEMENT_TYPE = () => process.env.SAP_STOCK_TRANSFER_MTM_MOVEMENT_TYPE || "309";
 const MTM_GOODS_MOVEMENT_CODE = () => process.env.SAP_STOCK_TRANSFER_MTM_GOODS_MOVEMENT_CODE || "04";
-const MTM_ENTRY_UNIT = () => process.env.SAP_STOCK_TRANSFER_MTM_ENTRY_UNIT || "KG";
+const MTM_ENTRY_UNIT = () => process.env.SAP_STOCK_TRANSFER_MTM_ENTRY_UNIT || "KM";
 const MATERIAL_MOVE_QTY_FALLBACK = () => process.env.SAP_MATERIAL_MOVE_QTY || "1";
 
 /* LTL (311) defaults */
@@ -150,6 +155,7 @@ const postWithAuth = async (url, payload) => {
                 "Content-Type": "application/json",
                 ...(await sapAuthHeader()),
             },
+            timeout: SAP_REQUEST_TIMEOUT_MS,
         });
         return response.data ?? {};
     } catch (error) {
@@ -163,6 +169,7 @@ const postWithAuth = async (url, payload) => {
                     "Content-Type": "application/json",
                     ...(await sapAuthHeader(true)),
                 },
+                timeout: SAP_REQUEST_TIMEOUT_MS,
             });
             return response.data ?? {};
         }
@@ -257,9 +264,9 @@ const recordFgSuccess = async ({ ids, orderNo, operationNo, confirmedQty, fgBatc
         if (udRequired && inspLot !== null) {
             await client.query(
                 `INSERT INTO transactions (
-                    type, prod_order, fg_batch, inspection_lot, ud_required,
+                    type, ud_type, prod_order, fg_batch, inspection_lot, ud_required,
                     status, created_at
-                ) VALUES ('UD', $1, $2, $3, true, false, current_timestamp)`,
+                ) VALUES ('UD', 'UD1', $1, $2, $3, true, false, current_timestamp)`,
                 [orderNo, fgBatch, inspLot]
             );
         }
@@ -281,8 +288,8 @@ const recordFgSuccess = async ({ ids, orderNo, operationNo, confirmedQty, fgBatc
    payload builders (one per type)
    ══════════════════════════════════════════════════════════ */
 
-/** FG confirmation payload. Component data (if present) becomes one Toitem. */
-const buildFgPayload = (row) => {
+   const buildFgPayload = (row) => {
+    /** FG confirmation payload. Component data (if present) becomes one Toitem. */
     const toItems = [];
     if (row.comp_material_code || row.comp_batch || row.comp_quantity !== null) {
         toItems.push({
@@ -295,13 +302,20 @@ const buildFgPayload = (row) => {
         });
     }
 
-    return {
+    const payload = {
         Prod_Order: str(row.prod_order),
         Operation: padOperation(row.operation),
         Conf_Qty: str(row.conf_qty),
         FG_batch: str(row.fg_batch),
-        Toitem: toItems,
     };
+
+    if (row.fg_location) {
+        payload.FG_sloc = str(row.fg_location);
+    }
+
+    payload.Toitem = toItems;
+
+    return payload;
 };
 
 /** SCRAP goods-issue payload (551/201). The row becomes one to_MaterialDocumentItem. */
@@ -339,7 +353,7 @@ const buildMtmPayload = (row) => {
     const item = {
         Material: str(row.comp_material_code),
         Plant: str(row.plant) || PLANT(),
-        StorageLocation: str(row.s_location) || STORAGE_LOCATION(),
+        StorageLocation: str(row.s_location) || "D2N2",
         GoodsMovementType: MTM_MOVEMENT_TYPE(),
         Batch: str(row.comp_batch),
         QuantityInEntryUnit: str(qty),
@@ -356,9 +370,209 @@ const buildMtmPayload = (row) => {
         GoodsMovementCode: MTM_GOODS_MOVEMENT_CODE(),
         PostingDate: sapDate(now),
         DocumentDate: sapDate(now),
-        MaterialDocumentHeaderText: "MES material to material transfer",
+        MaterialDocumentHeaderText: "MTM",
         to_MaterialDocumentItem: [item],
     };
+};
+
+/**
+ * After a successful MTM (309) transfer, queue a follow-up UD row in the SAME
+ * transactions table. Unlike LTL (which fans out to UD2/UD3/UD4/UD5), MTM has
+ * exactly one follow-up lane, so ud_type is always 'UD6' — no row-level
+ * ud_type check or location-based inference needed.
+ *
+ * fg_batch on the follow-up row is the MTM row's comp_batch (the bobbin_no
+ * carried on the transfer). The inspection_lot is resolved in this order:
+ *
+ *   1. response.Data02.InspLot — SAP's MTM response (same Data01/Data02 shape
+ *      as LTL) echoes the inspection lot back directly.
+ *   2. order_conf, looked up by fg_batch — fallback for as long as SAP's MTM
+ *      response does not carry the lot.
+ *
+ * If neither source has a lot yet, the follow-up row is skipped (it can never
+ * be posted without one) and a warning is logged; nothing throws, so the MTM
+ * row itself still posts normally.
+ *
+ * @param {object} row       the MTM transactions row that was just posted
+ * @param {object} response  the raw SAP response for this MTM post
+ * @returns {Promise<void>}
+ */
+const MTM_FOLLOW_UP_UD_TYPE = "UD6";
+
+const queueMtmFollowUpUd = async (row, response) => {
+    const udType = MTM_FOLLOW_UP_UD_TYPE;
+
+    const fgBatch = str(row.comp_batch);
+    if (!fgBatch) {
+        console.warn(
+            `[SAP-POST][MTM] Skipping ${udType} follow-up for transaction ${row.transaction_id}: no comp_batch (bobbin_no) on the row`
+        );
+        return;
+    }
+
+    // 1. Prefer the inspection lot echoed back by SAP on the MTM response itself.
+    const responseData01 = response?.Data01 || response?.Data || {};
+    const responseData02 = response?.Data02 || {};
+    let inspLot = toInt(
+        responseData02.InspLot ??
+            responseData01.InspectionLot ??
+            responseData01.InspLot ??
+            responseData01.Insp_Lot
+    );
+
+    // 2. Fallback: order_conf, until SAP's MTM response reliably carries the lot.
+    if (inspLot === null) {
+        const lotResult = await pool.query(
+            `SELECT inspection_lot
+               FROM order_conf
+              WHERE fg_batch = $1
+                AND inspection_lot IS NOT NULL
+                AND inspection_lot <> 0
+              ORDER BY order_conf_id DESC
+              LIMIT 1`,
+            [fgBatch]
+        );
+        inspLot = toInt(lotResult.rows[0]?.inspection_lot);
+    }
+
+    if (inspLot === null) {
+        console.warn(
+            `[SAP-POST][MTM] Skipping ${udType} follow-up for transaction ${row.transaction_id}: no inspection_lot available (checked SAP response and order_conf) for bobbin "${fgBatch}"`
+        );
+        return;
+    }
+
+    await pool.query(
+        `INSERT INTO transactions (
+            type, ud_type, fg_batch, inspection_lot, ud_required,
+            status, created_at
+        ) VALUES ('UD', $1, $2, $3, true, false, current_timestamp)`,
+        [udType, fgBatch, inspLot]
+    );
+
+    console.log(
+        `[SAP-POST][MTM] Queued ${udType} follow-up for bobbin "${fgBatch}" (inspection_lot ${inspLot}) from transaction ${row.transaction_id}`
+    );
+};
+
+/**
+ * After a successful LTL (311) transfer, queue a follow-up UD row in the SAME
+ * transactions table. The follow-up's ud_type is resolved in this order:
+ *
+ *   1. row.ud_type on the LTL row itself, when it's one of UD2/UD3/UD4/UD5 —
+ *      this is the source of truth going forward: whoever inserts the LTL row
+ *      (e.g. d2_issue.service.js, qc_out.service.js, fg_color.service.js,
+ *      fg_rewind.service.js) tags it with the ud_type it expects, so the
+ *      follow-up always matches the LTL row's own intent even if the same
+ *      location pair is reused for something else later.
+ *        UD2 -> issue-to-D2 lane (d2_issue)
+ *        UD3 -> QC-out lane (qc_out)
+ *        UD4 -> coloring lane (fg_color)
+ *        UD5 -> rewinding lane (fg_rewind)
+ *   2. Fallback (legacy rows with no ud_type set): the from/to location pair —
+ *        from 1207 -> to D2N2   =>  ud_type = 'UD2'  (issue-to-D2 lane)
+ *        from D2N2 -> to 1206   =>  ud_type = 'UD3'  (QC-out lane)
+ *      Any other from/to combination is left alone — no follow-up row. Note
+ *      UD4/UD5 have no location-based fallback since fg_color/fg_rewind both
+ *      use the same 1206->1207 pair; those rows must set ud_type explicitly.
+ *
+ * fg_batch on the follow-up row is the LTL row's comp_batch (the bobbin_no
+ * carried on the transfer). The inspection_lot is resolved in this order:
+ *
+ *   1. response.Data.InspectionLot (or InspLot / Insp_Lot) — SAP's LTL
+ *      response is expected to start echoing the inspection lot back once
+ *      that field is added upstream.
+ *   2. order_conf, looked up by fg_batch — fallback for as long as SAP's LTL
+ *      response does not yet carry the lot (populated by the FG confirmation
+ *      flow).
+ *
+ * If neither source has a lot yet, the follow-up row is skipped (it can never
+ * be posted without one) and a warning is logged; nothing throws, so the LTL
+ * row itself still posts normally.
+ *
+ * @param {object} row       the LTL transactions row that was just posted
+ * @param {object} response  the raw SAP response for this LTL post
+ * @returns {Promise<void>}
+ */
+const LTL_FOLLOW_UP_UD_TYPES = new Set(["UD2", "UD3", "UD4", "UD5"]);
+
+const queueLtlFollowUpUd = async (row, response) => {
+    // 1. Trust the LTL row's own ud_type when it's already one we follow up on.
+    const rowUdType = String(row.ud_type || "").trim().toUpperCase() || null;
+
+    let udType = null;
+    if (rowUdType && LTL_FOLLOW_UP_UD_TYPES.has(rowUdType)) {
+        udType = rowUdType;
+    } else if (!rowUdType) {
+        // 2. Legacy fallback for LTL rows created before ud_type was set:
+        //    infer it from the from/to location pair.
+        const from = str(row.s_location);
+        const to = str(row.receiving_s_location);
+
+        if (from === "1207" && to === "D2N2") {
+            udType = "UD2";
+        } else if (from === "D2N2" && to === "1206") {
+            udType = "UD3";
+        }
+    }
+    // else: row.ud_type is set to something else (e.g. 'UD1' or an unknown
+    // value) — leave udType null so we don't misclassify it via location.
+
+    if (!udType) return; // not a lane we follow up on
+
+    const fgBatch = str(row.comp_batch);
+    if (!fgBatch) {
+        console.warn(
+            `[SAP-POST][LTL] Skipping ${udType} follow-up for transaction ${row.transaction_id}: no comp_batch (bobbin_no) on the row`
+        );
+        return;
+    }
+
+    // 1. Prefer the inspection lot echoed back by SAP on the LTL response itself.
+    //    SAP returns it on Data02.InspLot (Data01 carries the material document
+    //    header instead). Older/alternate shapes are still checked as fallbacks.
+    const responseData01 = response?.Data01 || response?.Data || {};
+    const responseData02 = response?.Data02 || {};
+    let inspLot = toInt(
+        responseData02.InspLot ??
+            responseData01.InspectionLot ??
+            responseData01.InspLot ??
+            responseData01.Insp_Lot
+    );
+
+    // 2. Fallback: order_conf, until SAP's LTL response reliably carries the lot.
+    if (inspLot === null) {
+        const lotResult = await pool.query(
+            `SELECT inspection_lot
+               FROM order_conf
+              WHERE fg_batch = $1
+                AND inspection_lot IS NOT NULL
+                AND inspection_lot <> 0
+              ORDER BY order_conf_id DESC
+              LIMIT 1`,
+            [fgBatch]
+        );
+        inspLot = toInt(lotResult.rows[0]?.inspection_lot);
+    }
+
+    if (inspLot === null) {
+        console.warn(
+            `[SAP-POST][LTL] Skipping ${udType} follow-up for transaction ${row.transaction_id}: no inspection_lot available (checked SAP response and order_conf) for bobbin "${fgBatch}"`
+        );
+        return;
+    }
+
+    await pool.query(
+        `INSERT INTO transactions (
+            type, ud_type, fg_batch, inspection_lot, ud_required,
+            status, created_at
+        ) VALUES ('UD', $1, $2, $3, true, false, current_timestamp)`,
+        [udType, fgBatch, inspLot]
+    );
+
+    console.log(
+        `[SAP-POST][LTL] Queued ${udType} follow-up for bobbin "${fgBatch}" (inspection_lot ${inspLot}) from transaction ${row.transaction_id}`
+    );
 };
 
 /** LTL (311) location-to-location payload. Requires receiving_s_location. */
@@ -630,11 +844,20 @@ const postMtmRow = async (row) => {
 
     const durationMs = Date.now() - startedAt;
     const statusCode = Number(response?.StatusCode);
-    const data = response?.Data || {};
-    const success = statusCode === 201 || statusCode === 200 || Boolean(data.MaterialDocument);
+    // SAP splits the MTM response into Data01 (material document header) and
+    // Data02 (Mblnr/Gjahr/InspLot/Type/Message), mirroring the LTL response
+    // shape. Older/alternate flat `Data` shape is kept as a fallback.
+    const data01 = response?.Data01 || response?.Data || {};
+    const data02 = response?.Data02 || {};
+    const materialDocument = data01.MaterialDocument ?? data02.Mblnr ?? null;
+    const success =
+        statusCode === 201 ||
+        statusCode === 200 ||
+        Boolean(materialDocument) ||
+        String(data02.Type || "").toUpperCase() === "S";
 
     if (!success) {
-        const detail = response?.Message || "no success status returned";
+        const detail = data02.Message || response?.Message || "no success status returned";
         await logSapCall({
             operation: "STOCK_TRANSFER_MTM",
             status: "FAILED",
@@ -664,8 +887,9 @@ const postMtmRow = async (row) => {
         sap_url: url,
         movement_type: MTM_MOVEMENT_TYPE(),
         http_status_code: statusCode || null,
-        message: response?.Message ?? null,
-        material_document: data.MaterialDocument ?? null,
+        message: data02.Message || response?.Message || null,
+        material_document: materialDocument,
+        inspection_lot: toInt(data02.InspLot),
         material_code: firstMaterial,
         batch: firstBatch,
         reference_type: "MATERIAL_MOVE",
@@ -675,6 +899,17 @@ const postMtmRow = async (row) => {
         response_payload: response,
         duration_ms: durationMs,
     });
+
+    // Additive: queue a follow-up UD6 row for this MTM transfer. Never
+    // affects the MTM row's own posted status above.
+    try {
+        await queueMtmFollowUpUd(row, response);
+    } catch (followUpError) {
+        console.error(
+            `[SAP-POST][MTM] Failed to queue UD6 follow-up for transaction ${row.transaction_id}:`,
+            followUpError.message
+        );
+    }
 
     return { ids, payload, response };
 };
@@ -702,7 +937,12 @@ const postLtlRow = async (row) => {
     let response;
     try {
         response = await postWithAuth(url, payload);
+        console.log("what is the LTL response:", response)
     } catch (httpError) {
+        console.error(
+            "[SAP-POST][LTL] Error response:",
+            JSON.stringify(httpError.response?.data)
+        );
         await logSapCall({
             operation: "STOCK_TRANSFER_LTL",
             status: "FAILED",
@@ -724,13 +964,24 @@ const postLtlRow = async (row) => {
         throw httpError;
     }
 
+    console.log("[SAP-POST][LTL] Response:", JSON.stringify(response));
+
     const durationMs = Date.now() - startedAt;
     const statusCode = Number(response?.StatusCode);
-    const data = response?.Data || {};
-    const success = statusCode === 201 || statusCode === 200 || Boolean(data.MaterialDocument);
+    // SAP now splits the LTL response into Data01 (material document header)
+    // and Data02 (Mblnr/Gjahr/InspLot/Type/Message). Older callers that used a
+    // flat `Data` are kept as a fallback for compatibility.
+    const data01 = response?.Data01 || response?.Data || {};
+    const data02 = response?.Data02 || {};
+    const materialDocument = data01.MaterialDocument ?? data02.Mblnr ?? null;
+    const success =
+        statusCode === 201 ||
+        statusCode === 200 ||
+        Boolean(materialDocument) ||
+        String(data02.Type || "").toUpperCase() === "S";
 
     if (!success) {
-        const detail = response?.Message || "no success status returned";
+        const detail = data02.Message || response?.Message || "no success status returned";
         await logSapCall({
             operation: "STOCK_TRANSFER_LTL",
             status: "FAILED",
@@ -760,8 +1011,9 @@ const postLtlRow = async (row) => {
         sap_url: url,
         movement_type: LTL_MOVEMENT_TYPE(),
         http_status_code: statusCode || null,
-        message: response?.Message ?? null,
-        material_document: data.MaterialDocument ?? null,
+        message: data02.Message || response?.Message || null,
+        material_document: materialDocument,
+        inspection_lot: toInt(data02.InspLot),
         material_code: firstMaterial,
         batch: firstBatch,
         reference_type: "STOCK_TRANSFER",
@@ -772,26 +1024,159 @@ const postLtlRow = async (row) => {
         duration_ms: durationMs,
     });
 
+    // Additive: queue a follow-up UD row for known LTL lanes (1207->D2N2,
+    // D2N2->1206). Never affects the LTL row's own posted status above.
+    try {
+        await queueLtlFollowUpUd(row, response);
+    } catch (followUpError) {
+        console.error(
+            `[SAP-POST][LTL] Failed to queue UD follow-up for transaction ${row.transaction_id}:`,
+            followUpError.message
+        );
+    }
+
     return { ids, payload, response };
 };
 
 /**
- * UD (inspection-lot usage decision). Delegates to the existing
- * postInspectionLotUd, which resolves the UD code from the bobbin's final_grade
- * and does its own SAP call + logging. On success the transactions row is
- * marked posted here.
+ * UD (inspection-lot usage decision).
+ *
+ * Sub-dispatches on row.ud_type when present:
+ *
+ *   UD1 -> resolve UD code from qc_entry.temp_grade  (WHERE bobbin_no = fg_batch).
+ *          If temp_grade is missing/blank, SKIP the row (leave it pending,
+ *          do not post, do not error).
+ *          Sequencing: the Inspection Result Record is posted FIRST. Only when
+ *          that succeeds is the UD itself posted:
+ *            - Result Record fails -> UD is NOT called; this row is treated as
+ *              a failure (stays pending, retried next run), same as any other
+ *              SAP failure in this dispatcher.
+ *            - Result Record succeeds, UD then fails -> that's a normal SAP
+ *              failure for the UD call itself; behaves exactly as it already
+ *              did before this change (row stays pending, retried next run).
+ *   UD2 -> same lookup as UD1 but reads qc_entry.final_grade instead of
+ *          temp_grade. No Result Record involved — calls UD directly.
+ *   UD3 -> post UD code "A1" directly — no DB lookup at all. No Result Record
+ *          involved — calls UD directly.
+ *   UD4 -> coloring lane follow-up (from fg_color LTL rows) — post UD code
+ *          "A1" directly, no DB lookup. No Result Record involved.
+ *   UD5 -> rewinding lane follow-up (from fg_rewind LTL rows) — post UD code
+ *          "A2" directly, no DB lookup.
+ *   UD6 -> MTM (309) follow-up lane — post UD code "A1" directly, no DB
+ *          lookup. No Result Record involved.
+ *   (no ud_type) -> legacy behavior: delegate to the existing
+ *          postInspectionLotUd, which resolves the UD code from the bobbin's
+ *          final_grade itself and does its own SAP call + logging. No Result
+ *          Record involved.
+ *
+ * Additionally, whenever the resolved UD_CODE is the rewind code (A2 by
+ * default — see ud_code.js udCodeForRew()), regardless of which ud_type
+ * produced it, the Inspection Lot Material Document Item (inspection-lot-01)
+ * is posted FIRST, same gating pattern as the UD1 Result Record above:
+ *   - MatlDocItem fails -> UD is NOT called; row stays pending, retried next
+ *     run.
+ *   - MatlDocItem succeeds, UD then fails -> normal SAP failure for the UD
+ *     call itself; row stays pending, retried next run.
+ * InspLotQtyPosted for that call is bobbin_entries.fiber_length looked up by
+ * bobbin_no (comp_batch/fg_batch on this row).
+ *
+ * In every branch, the actual UD SAP call is still done via
+ * postInspectionLotUd (passing an explicit UD_CODE for UD1/UD2/UD3/UD4/UD5 so
+ * it does not re-resolve the grade itself); that service also handles its own
+ * SAP logging. On success the transactions row is marked posted here.
  */
 const postUdRow = async (row) => {
     const ids = [row.transaction_id];
 
+    // comp_batch / fg_batch carry the bobbin_no for grade resolution.
+    const bobbinNo = row.comp_batch || row.fg_batch;
+    const udType = String(row.ud_type || "").trim().toUpperCase() || null;
+
     const lot = {
         InspectionLot: row.inspection_lot,
-        // comp_batch / fg_batch carry the bobbin_no for grade resolution.
-        bobbin_no: row.comp_batch || row.fg_batch,
+        bobbin_no: bobbinNo,
         type: row.ud_required ? "FTUD" : undefined,
     };
 
-    console.log("[SAP-POST][UD] transaction:", row.transaction_id, "lot:", row.inspection_lot);
+    console.log("[SAP-POST][UD] transaction:", row.transaction_id, "lot:", row.inspection_lot, "ud_type:", udType);
+
+    if (udType === "UD1" || udType === "UD2") {
+        const gradeColumn = udType === "UD1" ? "temp_grade" : "final_grade";
+
+        const qcResult = await pool.query(
+            `SELECT ${gradeColumn} AS grade FROM qc_entry WHERE bobbin_no = $1 LIMIT 1`,
+            [bobbinNo]
+        );
+
+        const grade = qcResult.rows[0]?.grade;
+        const hasGrade = grade !== null && grade !== undefined && String(grade).trim() !== "";
+
+        if (!hasGrade) {
+            console.log(
+                `[SAP-POST][UD][${udType}] Skipped transaction ${row.transaction_id}: ` +
+                    `qc_entry.${gradeColumn} not available for bobbin_no "${bobbinNo}"`
+            );
+            const skipError = new Error(
+                `skip: ${gradeColumn} not available in qc_entry for bobbin_no "${bobbinNo}"`
+            );
+            skipError.isSkip = true;
+            throw skipError;
+        }
+
+        lot.UD_CODE = resolveUdCode(grade);
+    } else if (udType === "UD3" || udType === "UD4" || udType === "UD6") {
+        // UD3 (QC-out lane), UD4 (coloring lane), and UD6 (MTM follow-up
+        // lane) all post the default "accept" code directly — no DB lookup.
+        lot.UD_CODE = udCodeDefault();
+    } else if (udType === "UD5") {
+        // UD5 (rewinding lane) always posts the "rewind" code directly.
+        lot.UD_CODE = udCodeForRew();
+    }
+    // else: no ud_type -> legacy behavior, UD_CODE left unset so
+    // postInspectionLotUd resolves it from the bobbin's final_grade itself.
+
+    // UD1 only: Result Record must succeed BEFORE the UD is attempted. A
+    // Result Record failure stops this row here — UD is not called at all,
+    // and the row is treated as a failure (stays pending, retried next run).
+    if (udType === "UD1") {
+        try {
+            await postInspectionResultRecord({ bobbinNo, inspectionLot: row.inspection_lot });
+        } catch (resultRecordError) {
+            console.error(
+                `[SAP-POST][UD1] Inspection Result Record failed for transaction ${row.transaction_id}, ` +
+                    `UD will NOT be posted:`,
+                resultRecordError.message
+            );
+            throw resultRecordError;
+        }
+    }
+
+    // Rewind code (A2) only: the Inspection Lot Material Document Item must
+    // succeed BEFORE the UD is attempted (mirrors the UD1 Result Record gate
+    // above). This applies whenever the resolved UD_CODE is the rewind code,
+    // regardless of which ud_type produced it (UD5 directly, or UD1/UD2 when
+    // the looked-up grade resolves to REW).
+    //   - MatlDocItem fails -> UD is NOT called; this row is treated as a
+    //     failure (stays pending, retried next run), same pattern as UD1.
+    //   - MatlDocItem succeeds, UD then fails -> normal SAP failure for the
+    //     UD call itself; row stays pending, retried next run.
+    console.log(
+        "[SAP-POST][UD] resolved UD_CODE:", lot.UD_CODE,
+        "rewind code:", udCodeForRew(),
+        "matdoc gate triggered:", lot.UD_CODE === udCodeForRew()
+    );
+    if (lot.UD_CODE === udCodeForRew()) {
+        try {
+            await postInspectionLotMatDoc({ bobbinNo, inspectionLot: row.inspection_lot });
+        } catch (matDocError) {
+            console.error(
+                `[SAP-POST][UD][${udType}] Inspection Lot MatlDocItem failed for transaction ${row.transaction_id}, ` +
+                    `UD will NOT be posted:`,
+                matDocError.message
+            );
+            throw matDocError;
+        }
+    }
 
     const result = await postInspectionLotUd(lot);
 
@@ -863,8 +1248,9 @@ export const postPendingTransactions = async () => {
             summary.posted += 1;
             if (summary.by_type[type] !== undefined) summary.by_type[type] += 1;
         } catch (error) {
-            // Unsupported type is a "skip", everything else is a failure.
-            if (/unsupported transaction type/i.test(error.message)) {
+            // Unsupported type, or an explicit isSkip (e.g. UD1/UD2 with no
+            // grade available yet), is a "skip" — everything else is a failure.
+            if (error.isSkip || /unsupported transaction type/i.test(error.message)) {
                 summary.skipped += 1;
             } else {
                 summary.failed += 1;
@@ -907,13 +1293,27 @@ export const postSingleTransaction = async (transactionId) => {
         return { posted: false, reason: "already_posted", transaction_id: id };
     }
 
-    const { ids, response } = await dispatchRow(row);
-    return {
-        posted: true,
-        type: String(row.type || "").trim().toUpperCase(),
-        transaction_ids: ids,
-        sap_response: response,
-    };
+    try {
+        const { ids, response } = await dispatchRow(row);
+        return {
+            posted: true,
+            type: String(row.type || "").trim().toUpperCase(),
+            transaction_ids: ids,
+            sap_response: response,
+        };
+    } catch (error) {
+        // A skip (e.g. UD1/UD2 with no grade available yet) is not a hard
+        // failure — the row stays pending and can be retried on a later run.
+        if (error.isSkip) {
+            return {
+                posted: false,
+                reason: "skipped",
+                message: error.message,
+                transaction_id: id,
+            };
+        }
+        throw error;
+    }
 };
 
 export default postPendingTransactions;

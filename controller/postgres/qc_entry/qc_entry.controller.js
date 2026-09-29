@@ -1,4 +1,4 @@
-import { fetchBobbinQcS, checkProcessCompletionS, submitQcEntryS, updateMissingValuesS, ptCheckByBobbinS, flawRewindS } from "../../../services/qc_entry/qc_entry.service.js";
+import { fetchBobbinQcS, checkProcessCompletionS, submitQcEntryS, updateMissingValuesS, ptCheckByBobbinS, flawRewindS, submitFinalQcS, submitFinalQcBulkS } from "../../../services/qc_entry/qc_entry.service.js";
 import { validateBobbinQC } from "../../../services/qc_entry/qc_grade.service.js";
 import { mbendCopyS } from "../../../services/qc_entry/mbend_copy.service.js";
 import { mbendReassignS } from "../../../services/qc_entry/mbend_reassign.service.js";
@@ -139,13 +139,13 @@ export const ptCheckByBobbinC = async (req, res) => {
 export const flawRewindC = async (req, res) => {
     try {
         const logged_in_user = req.user.emp_id;
-        const { bobbin_no, p1, p2, instruction } = req.body;
+        const { bobbin_no, p1, p2, instruction, reason } = req.body;
 
         if (!bobbin_no || !instruction) {
             return res.status(400).json({ success: false, message: "bobbin_no and instruction are required." });
         }
 
-        const result = await flawRewindS({ bobbin_no, p1, p2, instruction, logged_in_user });
+        const result = await flawRewindS({ bobbin_no, p1, p2, instruction, reason, logged_in_user });
         return res.status(201).json(result);
     } catch (error) {
         console.error("[FlawRewind] Error:", error.message);
@@ -215,6 +215,52 @@ export const getPendingTempGradeC = async (req, res) => {
         return res.status(200).json(result);
     } catch (error) {
         console.error("[PendingTempGrade] Controller Error:", error.message);
+        return res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FINAL QC SUBMIT (Submit button) — append-only, does not modify existing code
+// ═══════════════════════════════════════════════════════════════════════════
+export const submitFinalQcC = async (req, res) => {
+    try {
+        const { bobbin_no } = req.body;
+
+        if (!bobbin_no) {
+            return res.status(400).json({ success: false, message: "bobbin_no is required." });
+        }
+
+        const result = await submitFinalQcS(bobbin_no);
+
+        if (!result.success) {
+            return res.status(400).json(result);
+        }
+
+        return res.status(200).json(result);
+    } catch (error) {
+        console.error("[SubmitFinalQc] Controller Error:", error.message);
+        return res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// BULK FINAL QC SUBMIT (Submit button — multiple bobbins) — append-only
+// ═══════════════════════════════════════════════════════════════════════════
+export const submitFinalQcBulkC = async (req, res) => {
+    try {
+        const { bobbin_nos } = req.body;
+
+        if (!Array.isArray(bobbin_nos) || bobbin_nos.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: "bobbin_nos must be a non-empty array.",
+            });
+        }
+
+        const result = await submitFinalQcBulkS(bobbin_nos);
+        return res.status(200).json({ success: true, ...result });
+    } catch (error) {
+        console.error("[SubmitFinalQcBulk] Controller Error:", error.message);
         return res.status(500).json({ success: false, message: error.message });
     }
 };

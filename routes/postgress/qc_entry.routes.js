@@ -22,7 +22,17 @@ export default router;
 // ═══════════════════════════════════════════════════════════════════════════
 // BULK QC TEMP-GRADE ROUTES (append-only — does not modify existing code)
 // ═══════════════════════════════════════════════════════════════════════════
-import { gradeBulkTempC, getPendingTempGradeC } from '../../controller/postgres/qc_entry/qc_entry.controller.js';
+import { gradeBulkTempC, getPendingTempGradeC, submitFinalQcC, submitFinalQcBulkC } from '../../controller/postgres/qc_entry/qc_entry.controller.js';
 
 router.post('/qcentry/grade-bulk', authMiddleware, gradeBulkTempC);
 router.get('/qcentry/pending-temp-grade', authMiddleware, getPendingTempGradeC);
+router.post('/qcentry/submit-final', authMiddleware, submitFinalQcC);
+router.post('/qcentry/submit-final-bulk', authMiddleware, submitFinalQcBulkC);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FINAL GRADE PROMOTION ROUTES (temp_grade -> final_grade) — append-only
+// ═══════════════════════════════════════════════════════════════════════════
+import { submitQcFinalGradeC, submitQcFinalGradeBulkC } from '../../controller/postgres/qc_entry/qc_final_grade.controller.js';
+
+router.post('/qcentry/final-grade', authMiddleware, submitQcFinalGradeC);
+router.post('/qcentry/final-grade-bulk', authMiddleware, submitQcFinalGradeBulkC);

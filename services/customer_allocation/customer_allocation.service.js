@@ -86,20 +86,25 @@ export const runAllocationS = async (spec_ids) => {
     }
 
     // Step 2: Get all eligible bobbins
+    // pt_strain on spec_master is a comma-separated varchar (e.g. "1,2") — split and flatten across all specs
     const ptStrains = [
-    ...new Set(
-        specs
-            .map(s => parseInt(s.pt_strain, 10))
-            .filter(n => !isNaN(n))
-    )
-];
+        ...new Set(
+            specs
+                .flatMap(s => (s.pt_strain || '').split(',').map(v => parseInt(v.trim(), 10)))
+                .filter(n => !isNaN(n))
+        )
+    ];
     const productTypes = [...new Set(specs.map(s => s.product_type).filter(Boolean))];
 
+    // pt_entry.is_first / pt_entry.is_last are joined in so specs with customer_type = 'EXTERNAL'
+    // can skip first/last bobbins of a spool during eligibility filtering (Step 4)
     let bobbinQuery = `
         SELECT be.bobbin_no, be.fid, be.optical_length, be.pt_strain, be.product_type,
-               be.preform_vendor_id, be.fiber_color,
-               be.drawn_date, be.created_at
+               be.preform_vendor_id, be.fiber_color, be.coating_type,
+               be.drawn_date, be.created_at,
+               pe.is_first AS pt_is_first, pe.is_last AS pt_is_last
         FROM bobbin_entries be
+        LEFT JOIN pt_entry pe ON pe.bobbin_no = be.bobbin_no
         WHERE be.is_qc_out = TRUE
         AND (be.dispatch_status = 'NO' OR be.dispatch_status IS NULL)
     `;
@@ -163,12 +168,35 @@ export const runAllocationS = async (spec_ids) => {
             }
         }
 
+        // pt_strain, preform_vendor_id and coating_type on spec_master are comma-separated varchars
+        // (e.g. "1,2" or "UV,DUV") — split once per spec
+        const specStrains = (spec.pt_strain || '')
+            .split(',')
+            .map(v => v.trim())
+            .filter(v => v.length > 0);
+
+        const specVendorIds = (spec.preform_vendor_id || '')
+            .split(',')
+            .map(v => v.trim())
+            .filter(v => v.length > 0);
+
+        const specCoatingTypes = (spec.coating_type || '')
+            .split(',')
+            .map(v => v.trim().toUpperCase())
+            .filter(v => v.length > 0);
+
         // Filter bobbins for this spec
         const eligible = availableBobbins.filter(b => {
             if (allocatedPool.has(b.bobbin_no)) return false;
-            if (spec.pt_strain && String(b.pt_strain) !== String(spec.pt_strain)) return false;
+            if (specStrains.length > 0 && !specStrains.includes(String(b.pt_strain))) return false;
             if (spec.product_type && b.product_type !== spec.product_type) return false;
-            if (spec.preform_vendor_id && Number(b.preform_vendor_id) !== Number(spec.preform_vendor_id)) return false;
+            if (specVendorIds.length > 0 && !specVendorIds.includes(String(b.preform_vendor_id))) return false;
+            if (specCoatingTypes.length > 0 && !specCoatingTypes.includes((b.coating_type || '').trim().toUpperCase())) return false;
+
+            // For EXTERNAL customer specs, skip first/last bobbins of a spool (from pt_entry).
+            // NULL/INTERNAL customer_type is unaffected — all bobbins remain eligible as before.
+            if (spec.customer_type === 'EXTERNAL' && (b.pt_is_first || b.pt_is_last)) return false;
+
             const fiberValue = (b.fiber_color || '').trim().toUpperCase();
 
     let bobbinColorType = '';

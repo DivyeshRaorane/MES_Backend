@@ -139,6 +139,12 @@ import { insertSapTransaction } from "../sap_integrate/sap_transaction/sap_trans
 const toNum = (val) => (val === "" || val === null || val === undefined) ? null : Number(val);
 
 export const drawEntryS = async(payload)=>{
+    const drawnLength = Number(payload.drawn_length);
+
+    if (payload.drawn_length === undefined || payload.drawn_length === null || payload.drawn_length === "" || isNaN(drawnLength) || drawnLength < 100) {
+        throw new Error("Drawn length must be at least 100 km.");
+    }
+
     const client = await pool.connect();
 
     try{
@@ -524,7 +530,7 @@ export const drawEntryS = async(payload)=>{
 
         };
 
-        //await insertSapTransaction(sap_data, client);
+        await insertSapTransaction(sap_data, client);
 
         await client.query("COMMIT");
         return {

@@ -59,6 +59,12 @@ export const validateQcOutC = async (req, res) => {
 
 export const submitQcOutC = async (req, res) => {
     try {
+        const { user, shift, bobbins } = req.body;
+
+        if (!user || !shift || !bobbins || !Array.isArray(bobbins) || bobbins.length === 0) {
+            return res.status(400).json({ success: false, message: "user, shift, and bobbins array are required" });
+        }
+
         const emp_id = req.user.emp_id;
         const data = await submitQcOutS({ ...req.body, logged_in_user: emp_id });
         res.status(201).json({ success: true, data });

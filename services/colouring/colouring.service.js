@@ -100,7 +100,7 @@ export const saveColouringS = async (payload) => {
         if (hasNewFid) {
             const parentResult = await client.query(
                 `SELECT spool_id, tower_no, preform_id, fiber_type, spool_fid, preform_type,
-                        product_type, pt_machine_no, drawn_length, drawn_date, pt_date, preform_vendor_id
+                        product_type, pt_machine_no, drawn_length, drawn_date, pt_date, preform_vendor_id, is_d2
                  FROM bobbin_entries WHERE bobbin_no = $1 LIMIT 1`,
                 [parent_bobbin_no]
             );
@@ -111,8 +111,8 @@ export const saveColouringS = async (payload) => {
                     `INSERT INTO bobbin_entries (
                         bobbin_no, fid, fiber_length, fiber_color, operator, logged_in_user,
                         spool_id, tower_no, preform_id, fiber_type, spool_fid, preform_type,
-                        product_type, pt_machine_no, drawn_length, drawn_date, pt_date, preform_vendor_id
-                    ) VALUES ($1,$2,$3::numeric,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
+                        product_type, pt_machine_no, drawn_length, drawn_date, pt_date, preform_vendor_id, is_d2
+                    ) VALUES ($1,$2,$3::numeric,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
                     [
                         bobbin_no,
                         generated_fid,
@@ -131,17 +131,18 @@ export const saveColouringS = async (payload) => {
                         parent.drawn_length,
                         parent.drawn_date,
                         parent.pt_date,
-                        parent.preform_vendor_id
+                        parent.preform_vendor_id,
+                        parent.is_d2 || false
                     ]
                 );
             }
         }
 
         // Step 5: Update parent bobbin_entries fiber_color
-        await client.query(
-            `UPDATE bobbin_entries SET fiber_color = $1 WHERE bobbin_no = $2`,
-            [require_color, parent_bobbin_no]
-        );
+       // await client.query(
+       //     `UPDATE bobbin_entries SET fiber_color = $1 WHERE bobbin_no = $2`,
+       //     [require_color, parent_bobbin_no]
+       // );
 
         //-------------------------
         // SAP Transaction Insert (FG + component)
@@ -189,14 +190,16 @@ export const saveColouringS = async (payload) => {
             fg_material_code: sapFgMaterialCode,
             comp_material_code: sapCompMaterialCode,
             plant: 1200,
-            s_location: 1207,
+            s_location: 1204,
             comp_batch: parent_bobbin_no || null,
             comp_quantity: sapConfQty,
             comp_batch: parent_bobbin_no || null,
-            order_type:"ZSFG"
+            ud_required: true,
+            fg_location: 1207,
+            order_type:"ZFGC"
         };
 
-       // await insertSapTransaction(sap_data, client);
+        await insertSapTransaction(sap_data, client);
 
         await client.query("COMMIT");
 
