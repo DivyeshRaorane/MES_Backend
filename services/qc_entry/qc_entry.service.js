@@ -823,31 +823,31 @@ export const gradeBulkTempS = async (bobbin_nos) => {
         const bobbin_no = String(rawBobbinNo).trim().toUpperCase();
 
         try {
-            // Step 1: must exist in qc_entry_temp (testing done)
-            const tempCheck = await pool.query(
-                `SELECT bobbin_no FROM qc_entry_temp WHERE bobbin_no = $1 LIMIT 1`,
-                [bobbin_no]
-            );
-            if (tempCheck.rows.length === 0) {
+            // Step 1: Run the FULL single-bobbin fetch prep before validating, so bulk
+            // grading is self-sufficient and behaves EXACTLY like the single-bobbin flow.
+            // fetchBobbinQcS performs (per bobbin, sequentially — each helper owns its
+            // own pg client): temp->final auto-insert, grade sync into bobbin_entries,
+            // optical_length sync, MBend copy + MAC calc, and MFD/cable-cutoff calc.
+            // These populate mac_value + MBend columns in qc_entry_temp that
+            // validateBobbinQC then reads (e.g. D->A1 conversion, MBend tiers).
+            const fetchResult = await fetchBobbinQcS(bobbin_no);
+
+            // Map fetch outcome onto the existing skip statuses (no behavior change):
+            //  - not in bobbin_entries          -> SKIPPED_NO_TEST (bobbin not available)
+            //  - already finalized (source final)-> SKIPPED_HAS_GRADE
+            //  - in bobbin_entries but no usable QC row -> SKIPPED_NO_TEST
+            if (fetchResult.success === false) {
                 results.push({
                     bobbin_no,
                     status: "SKIPPED_NO_TEST",
-                    message: "Testing not done for this bobbin",
+                    message: fetchResult.in_bobbin_entries === false
+                        ? "Bobbin not available"
+                        : "Testing not done for this bobbin",
                 });
                 continue;
             }
 
-            // Step 2: must not already have a final_grade in qc_entry
-            const finalCheck = await pool.query(
-                `SELECT final_grade FROM qc_entry WHERE bobbin_no = $1 LIMIT 1`,
-                [bobbin_no]
-            );
-            const existingFinal = finalCheck.rows[0]?.final_grade;
-            const hasFinalGrade =
-                existingFinal !== null &&
-                existingFinal !== undefined &&
-                String(existingFinal).trim() !== "";
-            if (hasFinalGrade) {
+            if (fetchResult.source === "final") {
                 results.push({
                     bobbin_no,
                     status: "SKIPPED_HAS_GRADE",
@@ -856,7 +856,8 @@ export const gradeBulkTempS = async (bobbin_nos) => {
                 continue;
             }
 
-            // Step 3: validate (own client — called sequentially)
+            // Step 2: validate (own client — called sequentially). qc_entry_temp is now
+            // fully prepped (mac_value + MBend copied) by fetchBobbinQcS above.
             const validation = await validateBobbinQC(bobbin_no);
 
             switch (validation.status) {
