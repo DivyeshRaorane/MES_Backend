@@ -114,7 +114,7 @@ export const submitQcOutS = async (payload) => {
             // then re-reads the up-to-date is_qc_out and is correctly skipped
             // by check #2 below if the first call already completed it.
             const bobbinResult = await client.query(
-                `SELECT bobbin_no, fid, product_type, is_qc_out, d2_issue FROM bobbin_entries WHERE bobbin_no = $1 FOR UPDATE`,
+                `SELECT bobbin_no, fid, product_type, is_qc_out, d2_issue, fiber_length FROM bobbin_entries WHERE bobbin_no = $1 FOR UPDATE`,
                 [bobbin_no]
             );
 
@@ -154,7 +154,7 @@ export const submitQcOutS = async (payload) => {
             }
 
             const final_grade = qcResult.rows[0].final_grade;
-            const fiber_length = qcResult.rows[0].optical_length;
+            const fiber_length = bobbinResult.rows[0].fiber_length;
 
             // 5. Check final_grade is not null / empty
             if (!final_grade || final_grade.trim() === '') {
