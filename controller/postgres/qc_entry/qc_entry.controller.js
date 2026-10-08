@@ -188,7 +188,7 @@ export const mfdCableCutoffCalcC = async (req, res) => {
 // ═══════════════════════════════════════════════════════════════════════════
 // BULK QC TEMP-GRADE CONTROLLERS (append-only — does not modify existing code)
 // ═══════════════════════════════════════════════════════════════════════════
-import { gradeBulkTempS, getPendingTempGradeS } from "../../../services/qc_entry/qc_entry.service.js";
+import { gradeBulkTempS, getPendingTempGradeS, getPendingFinalSubmitS } from "../../../services/qc_entry/qc_entry.service.js";
 
 export const gradeBulkTempC = async (req, res) => {
     try {
@@ -215,6 +215,17 @@ export const getPendingTempGradeC = async (req, res) => {
         return res.status(200).json(result);
     } catch (error) {
         console.error("[PendingTempGrade] Controller Error:", error.message);
+        return res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// Bulk Submit → Automatic: candidate bobbins ready to be finalized but not yet moved.
+export const getPendingFinalSubmitC = async (req, res) => {
+    try {
+        const result = await getPendingFinalSubmitS();
+        return res.status(200).json(result);
+    } catch (error) {
+        console.error("[PendingFinalSubmit] Controller Error:", error.message);
         return res.status(500).json({ success: false, message: error.message });
     }
 };

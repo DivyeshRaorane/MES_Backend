@@ -38,7 +38,9 @@ export const completeReceivingS = async (payload) => {
         await client.query("BEGIN");
 
         const { d2_batch_id, d2_chamber, d2_end_date, d2_end_time,
-                process_hours, end_operator, logged_in_user } = payload;
+                process_hours, end_operator, logged_in_user, user_role } = payload;
+
+        const isAdmin = user_role === "admin";
 
         // Validate batch exists and is still running
         const batchCheck = await client.query(
@@ -50,14 +52,17 @@ export const completeReceivingS = async (payload) => {
             throw new Error("D2 batch not found or already completed.");
         }
 
-        // Validate minimum hours elapsed since start
-        const { d2_start_date, d2_start_time } = batchCheck.rows[0];
-        const startDateTime = new Date(`${d2_start_date}T${d2_start_time}`);
-        const now = new Date();
-        const elapsedHours = (now - startDateTime) / (1000 * 60 * 60);
+        // Validate minimum hours elapsed since start.
+        // Admins are allowed to receive before the minimum has elapsed.
+        if (!isAdmin) {
+            const { d2_start_date, d2_start_time } = batchCheck.rows[0];
+            const startDateTime = new Date(`${d2_start_date}T${d2_start_time}`);
+            const now = new Date();
+            const elapsedHours = (now - startDateTime) / (1000 * 60 * 60);
 
-        if (elapsedHours < MINIMUM_HOURS) {
-            throw new Error(`Cannot receive yet. Minimum ${MINIMUM_HOURS}h required. Only ${elapsedHours.toFixed(1)}h elapsed since start.`);
+            if (elapsedHours < MINIMUM_HOURS) {
+                throw new Error(`Cannot receive yet. Minimum ${MINIMUM_HOURS}h required. Only ${elapsedHours.toFixed(1)}h elapsed since start.`);
+            }
         }
 
         // Step 1: Update all d2_issue records for this batch

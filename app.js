@@ -94,6 +94,7 @@ import materialStockRoutes from "./routes/postgress/material_stock.routes.js"
 import adminOrderRoutes from "./routes/postgress/admin_order.routes.js"
 import processOrderSyncRoutes from "./routes/postgress/process_order_sync.routes.js"
 import sapTransactionPostRoutes from "./routes/postgress/sap_transaction_post.routes.js"
+import releasedProdOrderRoutes from "./routes/postgress/released_prod_order.routes.js"
 import inspectionLotUdRoutes from "./routes/postgress/inspection_lot_ud.routes.js"
 import userDecisionRoutes from "./routes/postgress/user_decision.routes.js"
 import { startMaterialStockSchedular } from "./schedulars/material_stock.schedular.js";
@@ -194,6 +195,7 @@ app.use("/api", materialStockRoutes)
 app.use("/api/admin", adminOrderRoutes)
 app.use("/api", processOrderSyncRoutes)
 app.use("/api", sapTransactionPostRoutes)
+app.use("/api", releasedProdOrderRoutes)
 app.use("/api", inspectionLotUdRoutes)
 app.use("/api", userDecisionRoutes)
 

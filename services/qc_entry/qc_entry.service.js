@@ -973,6 +973,40 @@ export const getPendingTempGradeS = async () => {
     return { success: true, data: result.rows };
 };
 
+/**
+ * List candidate bobbins for the QC Entry "Bulk Submit → Automatic" mode.
+ *
+ * A bobbin qualifies ONLY when ALL hold:
+ *   1. It exists in qc_entry_temp.
+ *   2. Its temp_grade is set (NOT NULL and not an empty string).
+ *   3. Its final_grade is empty (NULL or empty string) in qc_entry_temp.
+ *   4. It does NOT exist in qc_entry (not already finalized/moved).
+ *
+ * Note: qc_entry_temp has no matcode column in this DB, so only product_type is
+ * returned alongside bobbin_no / temp_grade (matcode was optional in the spec).
+ * Results are deduped by bobbin_no.
+ *
+ * @returns {Promise<{ success: true, data: Array<{ bobbin_no: string, temp_grade: string, product_type: string|null }> }>}
+ */
+export const getPendingFinalSubmitS = async () => {
+    const result = await pool.query(
+        `SELECT DISTINCT ON (t.bobbin_no)
+                t.bobbin_no,
+                t.temp_grade,
+                t.product_type
+           FROM qc_entry_temp t
+          WHERE t.temp_grade IS NOT NULL
+            AND TRIM(t.temp_grade::text) <> ''
+            AND (t.final_grade IS NULL OR TRIM(t.final_grade::text) = '')
+            AND NOT EXISTS (
+                SELECT 1 FROM qc_entry q WHERE q.bobbin_no = t.bobbin_no
+            )
+          ORDER BY t.bobbin_no`
+    );
+
+    return { success: true, data: result.rows };
+};
+
 
 // ═══════════════════════════════════════════════════════════════════════════
 // FINAL QC SUBMIT (Submit button) — append-only, does not modify existing code

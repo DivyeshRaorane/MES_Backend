@@ -27,7 +27,8 @@ export const getRunningBatchC = async (req, res) => {
 export const completeReceivingC = async (req, res) => {
     try {
         const emp_id = req.user.emp_id;
-        const result = await completeReceivingS({ ...req.body, logged_in_user: emp_id });
+        const user_role = req.user.role;
+        const result = await completeReceivingS({ ...req.body, logged_in_user: emp_id, user_role });
 
         res.status(200).json(result);
     } catch (error) {

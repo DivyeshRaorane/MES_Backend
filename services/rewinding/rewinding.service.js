@@ -118,6 +118,10 @@ console.log("this:", bobbin_no)
     };
 };
 
+// If the leftover balance after a real rewinding entry is <= this value (in KM),
+// the remaining length is automatically scrapped so the bobbin is fully closed.
+const AUTO_SCRAP_THRESHOLD = 2.1;
+
 export const saveRewindingS = async (payload) => {
     console.log("what is the payload", payload)
     const client = await pool.connect();
@@ -154,7 +158,7 @@ export const saveRewindingS = async (payload) => {
             throw new Error("Balance length is already 0. No further rewinding allowed.");
         }
 
-        const remaining = available - Number(fiber_length || 0);
+        let remaining = available - Number(fiber_length || 0);
 
         if (remaining < 0) {
             throw new Error("Entered length exceeds available balance length.");
@@ -308,6 +312,70 @@ export const saveRewindingS = async (payload) => {
         };
 
         await insertSapTransaction(sap_data, client);
+
+        //-------------------------
+        // Auto-scrap leftover balance
+        //   After the real entry above, if a positive balance remains that is
+        //   <= AUTO_SCRAP_THRESHOLD (2.1 KM), scrap it automatically so the
+        //   bobbin is fully closed. This runs on the SAME client / transaction.
+        //   Mirrors the manual scrap path: rewinding_entry (is_scrap = true),
+        //   zero out fg_rewind, mark is_rew_done, cascade to qc tables, and a
+        //   SCRAP SAP transaction.
+        //-------------------------
+        if (remaining > 0 && remaining <= AUTO_SCRAP_THRESHOLD) {
+            const autoScrapLength = remaining;
+
+            // rewinding_entry (scrap, no FID generated)
+            await client.query(
+                `INSERT INTO rewinding_entry (
+                    parent_bobbin_no, bobbin_no, fiber_length, is_scrap, fid,
+                    machine_no, rew_reason, rew_type, bobbin_type, operator,
+                    bobbin_colour, remark, logged_in_user
+                ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+                [trackBobbin, bobbin_no, autoScrapLength, true,
+                 null, machine_no, rew_reason, rew_type,
+                 bobbin_type, operator, bobbin_color,
+                 `Auto scrap of leftover balance (<= ${AUTO_SCRAP_THRESHOLD} KM)`,
+                 logged_in_user]
+            );
+
+            // Zero out balance and close the rewind
+            await client.query(
+                `UPDATE fg_rewind SET balance_length = balance_length - $2, is_rew_done = true WHERE bobbin_no = $1`,
+                [trackBobbin, autoScrapLength]
+            );
+
+            // Cascade completion to qc tables
+            await client.query(
+                `UPDATE qc_entry SET is_rew_done = true WHERE bobbin_no = $1`,
+                [trackBobbin]
+            );
+            await client.query(
+                `UPDATE qc_entry_temp SET is_rew_done = true WHERE bobbin_no = $1`,
+                [trackBobbin]
+            );
+
+            // SCRAP SAP transaction for the auto-scrapped leftover length
+            const autoScrapSapData = {
+                fg: "scrap",
+                operation: 10,
+                conf_qty: autoScrapLength,
+                fg_batch: trackBobbin || null,
+                fg_material_code: sapFgMaterialCode,
+                comp_material_code: sapCompMaterialCode,
+                plant: 1200,
+                s_location: 1207,
+                comp_batch: trackBobbin || null,
+                comp_quantity: autoScrapLength,
+                ud_required: true,
+                order_type: "ZOFR"
+            };
+
+            await insertSapTransaction(autoScrapSapData, client);
+
+            // Reflect that the leftover was consumed by the auto-scrap
+            remaining = 0;
+        }
 
         await client.query("COMMIT");
 

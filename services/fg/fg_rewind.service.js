@@ -54,16 +54,15 @@ export const submitRewindS = async (payload) => {
         const { bobbins, from } = payload;
 
         for (const bobbin of bobbins) {
-            let formattedRemark;
-
-            if (bobbin.rewinding_type === 'CUT' && bobbin.cuts && bobbin.cuts.length > 0) {
-                const remarkParts = bobbin.cuts.map(cut => {
-                    return `Cut from ${cut.p1} km to ${cut.p2} (${cut.c_remark || ''}:)`;
-                });
-                formattedRemark = remarkParts.join(', ');
-            } else {
-                formattedRemark = 'Whole Length';
-            }
+            // Persist the incoming remark as-is. The frontend now sends the full
+            // text in `remark` for BOTH rewinding_type = CUT and REWINDING:
+            //   - CUT        -> cutting-instruction text (e.g. "Cut from 10 km to
+            //                   20 km (h1310), Cut from 30 km to 35 km") OR a
+            //                   free-text operator remark.
+            //   - REWINDING  -> free-text operator remark.
+            // The legacy `cuts[]` array is now always empty and must NOT be used
+            // to reconstruct the remark. We no longer touch cut.p1 / p2 / c_remark.
+            const remarkText = bobbin.remark ?? null;
 
             // Get fid / product_type / fiber_length from bobbin_entries.
             // fid + product_type are needed so we can INSERT a QC row when the
@@ -83,8 +82,10 @@ export const submitRewindS = async (payload) => {
                 throw new Error(`Cannot resolve bobbin_fid for ${bobbin.bobbin_no}.`);
             }
 
-            // Operator-typed reason (Whole Length rewind). CUT sends null.
-            const rewReason = bobbin.reason ?? null;
+            // Operator-typed reason — only meaningful for REWINDING (Whole
+            // Length). For CUT the frontend sends reason = null, so guard it
+            // explicitly: reason is persisted only for REWINDING, null otherwise.
+            const rewReason = bobbin.rewinding_type === 'REWINDING' ? (bobbin.reason ?? null) : null;
 
             // Upsert qc_entry with remark + reason + grades = REW.
             // Upsert (not plain UPDATE) so a Manual REW on a bobbin that has no
@@ -98,7 +99,7 @@ export const submitRewindS = async (payload) => {
                        reason      = $5,
                        temp_grade  = 'REW',
                        final_grade = 'REW'`,
-                [bobbin.bobbin_no, bobbinFid, productType, formattedRemark, rewReason]
+                [bobbin.bobbin_no, bobbinFid, productType, remarkText, rewReason]
             );
 
             // Upsert qc_entry_temp — same
@@ -110,7 +111,7 @@ export const submitRewindS = async (payload) => {
                        reason      = $5,
                        temp_grade  = 'REW',
                        final_grade = 'REW'`,
-                [bobbin.bobbin_no, bobbinFid, productType, formattedRemark, rewReason]
+                [bobbin.bobbin_no, bobbinFid, productType, remarkText, rewReason]
             );
 
             // Update bobbin_entries grades + dispatch_status

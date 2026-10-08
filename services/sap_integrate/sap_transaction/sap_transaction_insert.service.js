@@ -31,7 +31,7 @@ const textOrNull = (v) => (v === undefined || v === null || v === "" ? null : v)
  * @returns {{order_no: string, order_qty: number|null, gr_qty: number|null}|null}
  *          the released order row, or null when none is REL
  */
-const findReleasedProdOrder = async (fgMaterialCode, client, orderType = null) => {
+export const findReleasedProdOrder = async (fgMaterialCode, client, orderType = null) => {
     // Base params: material_code is always $1.
     const params = [fgMaterialCode];
     let typeFilter = "";

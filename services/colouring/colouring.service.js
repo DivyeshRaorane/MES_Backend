@@ -27,6 +27,10 @@ export const scanForColouringS = async (bobbin_no) => {
     };
 };
 
+// If the leftover balance after a real colouring entry is <= this value (in KM),
+// the remaining length is automatically scrapped so the bobbin is fully closed.
+const AUTO_SCRAP_THRESHOLD = 2.1;
+
 export const saveColouringS = async (payload) => {
     const client = await pool.connect();
 
@@ -53,7 +57,7 @@ export const saveColouringS = async (payload) => {
 
         const fg = fgResult.rows[0];
         const available = fg.balance_length !== null ? Number(fg.balance_length) : Number(fg.total_length);
-        const remaining = available - Number(fiber_length || 0);
+        let remaining = available - Number(fiber_length || 0);
 
         if (remaining < 0) {
             throw new Error("Entered length exceeds available balance length.");
@@ -200,6 +204,60 @@ export const saveColouringS = async (payload) => {
         };
 
         await insertSapTransaction(sap_data, client);
+
+        //-------------------------
+        // Auto-scrap leftover balance
+        //   After the real entry above, if a positive balance remains that is
+        //   <= AUTO_SCRAP_THRESHOLD (2.1 KM), scrap it automatically so the
+        //   bobbin is fully closed. This runs on the SAME client / transaction.
+        //   Mirrors the manual scrap path: coloring_entry (is_scrap = true),
+        //   zero out fg_color + mark is_done, and a SCRAP SAP transaction.
+        //-------------------------
+        if (remaining > 0 && remaining <= AUTO_SCRAP_THRESHOLD) {
+            const autoScrapLength = remaining;
+
+            // coloring_entry (scrap, no FID generated)
+            await client.query(
+                `INSERT INTO coloring_entry (
+                    bobbin_no, parent_bobbin_no, original_color, current_color, color_batch_code,
+                    fiber_length, is_scrap, machine_no, fid,
+                    bobbin_type, operator, bobbin_color, remark, logged_in_user
+                ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+                [bobbin_no, parent_bobbin_no, original_color, require_color, color_batch_code,
+                 autoScrapLength, true, machine_no, null,
+                 bobbin_type, operator, bobbin_color,
+                 `Auto scrap of leftover balance (<= ${AUTO_SCRAP_THRESHOLD} KM)`,
+                 logged_in_user]
+            );
+
+            // Zero out balance and close the colouring request
+            await client.query(
+                `UPDATE fg_color SET balance_length = balance_length - $1, is_done = true WHERE fg_color_id = $2`,
+                [autoScrapLength, fg_color_id]
+            );
+
+            // SCRAP SAP transaction for the auto-scrapped leftover length
+            const autoScrapSapData = {
+                fg: "scrap",
+                operation: 10,
+                conf_qty: autoScrapLength,
+                fg_batch: parent_bobbin_no || null,
+                fg_material_code: sapFgMaterialCode,
+                comp_material_code: sapCompMaterialCode,
+                plant: 1200,
+                s_location: 1204,
+                comp_batch: parent_bobbin_no || null,
+                comp_quantity: autoScrapLength,
+                ud_required: true,
+                fg_location: 1207,
+                order_type: "ZFGC"
+            };
+
+            await insertSapTransaction(autoScrapSapData, client);
+
+            // Reflect that the leftover was consumed by the auto-scrap
+            remaining = 0;
+        }
 
         await client.query("COMMIT");
 

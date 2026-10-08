@@ -31,6 +31,20 @@ export const ptEntryS = async (payload) => {
         const rejection = !!payload.active_rejection_type;
 
         //-------------------------
+        // PT Scrap Reason Validation
+        //-------------------------
+
+        if (payload.active_rejection_type === 'pt_scrap') {
+            const validReasons = ['NO GOOD LENGTH', 'BREAK', 'WEAK FIBER'];
+            if (!payload.pt_scrap_reason || payload.pt_scrap_reason === 'Select') {
+                throw new Error('PT Scrap reason is required when PT Scrap is selected');
+            }
+            if (!validReasons.includes(payload.pt_scrap_reason)) {
+                throw new Error('Invalid PT Scrap reason. Must be one of: NO GOOD LENGTH, BREAK, WEAK FIBER');
+            }
+        }
+
+        //-------------------------
         // Insert into pt_entry
         //-------------------------
 
@@ -61,6 +75,7 @@ export const ptEntryS = async (payload) => {
                 multiple_end,
                 scratch,
                 pt_scrap,
+                pt_scrap_reason,
                 ztmd,
                 ztmd_id,
                 doc,
@@ -78,7 +93,7 @@ export const ptEntryS = async (payload) => {
             VALUES (
                 $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,
                 $11,$12,$13,$14,$15,$16,$17,$18,$19,$20,
-                $21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38
+                $21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39
             )
             RETURNING *;
         `;
@@ -112,6 +127,7 @@ export const ptEntryS = async (payload) => {
             rejectionFlags.multiple_end,
             rejectionFlags.scratch,
             rejectionFlags.pt_scrap,
+            payload.active_rejection_type === 'pt_scrap' ? (payload.pt_scrap_reason || null) : null,
             rejectionFlags.ztmd,
             payload.ztmd_id || null,
             rejectionFlags.doc,
@@ -537,7 +553,7 @@ export const ptEntryS = async (payload) => {
                         operator_name, shift_incharge, bobbin_color, bobbin_type,
                         pt_length, status, payoff_vibration, dancer_vibration,
                         rejection, rejection_reason, bal_draw_rejection, bal_draw_rejection_reason,
-                        multiple_end, scratch, pt_scrap, ztmd, ztmd_id, doc, doc_id,
+                        multiple_end, scratch, pt_scrap, pt_scrap_reason, ztmd, ztmd_id, doc, doc_id,
                         is_break, logged_in_user, pt_flaw_remark, a_cut_flaw,
                         no, full_check, is_sample, full_mbend
                     ) VALUES (
@@ -546,7 +562,7 @@ export const ptEntryS = async (payload) => {
                         $9, $10, NULL, NULL,
                         $11, $12, $13, $14,
                         TRUE, NULL, FALSE, NULL,
-                        FALSE, FALSE, TRUE, FALSE, NULL, FALSE, NULL,
+                        FALSE, FALSE, TRUE, 'BREAK', FALSE, NULL, FALSE, NULL,
                         TRUE, $15, NULL, NULL,
                         $16, FALSE, FALSE, FALSE
                     )

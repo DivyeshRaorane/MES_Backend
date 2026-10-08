@@ -77,12 +77,30 @@ export const saveDraftBobbinS = async ({ d2_batch_id, bobbin_fid, bobbin_no, cha
         };
     }
 
-    // Insert
-    await pool.query(
-        `INSERT INTO d2_issue_draft (d2_batch_id, bobbin_fid, bobbin_no, chamber, d2_type)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [d2_batch_id, bobbin_fid, bobbin_no, chamber, d2_type]
-    );
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+
+        // Insert
+        await client.query(
+            `INSERT INTO d2_issue_draft (d2_batch_id, bobbin_fid, bobbin_no, chamber, d2_type)
+             VALUES ($1, $2, $3, $4, $5)`,
+            [d2_batch_id, bobbin_fid, bobbin_no, chamber, d2_type]
+        );
+
+        // Mark the chamber as occupied (inactive) while this draft is in progress
+        await client.query(
+            `UPDATE d2_chamber SET is_active = false WHERE d2_chamber_no = $1`,
+            [chamber]
+        );
+
+        await client.query('COMMIT');
+    } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+    } finally {
+        client.release();
+    }
 
     return { success: true, message: 'Bobbin saved to draft' };
 };
@@ -99,9 +117,39 @@ export const removeDraftBobbinS = async (d2_batch_id, bobbin_no) => {
 };
 
 export const deleteDraftS = async (d2_batch_id) => {
-    await pool.query(
-        `DELETE FROM d2_issue_draft WHERE d2_batch_id = $1`,
-        [d2_batch_id]
-    );
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+
+        // Get the chamber(s) tied to this draft before deleting
+        const chamberResult = await client.query(
+            `SELECT DISTINCT chamber FROM d2_issue_draft WHERE d2_batch_id = $1`,
+            [d2_batch_id]
+        );
+
+        // Delete the draft rows
+        await client.query(
+            `DELETE FROM d2_issue_draft WHERE d2_batch_id = $1`,
+            [d2_batch_id]
+        );
+
+        // Release the chamber(s) back to active
+        for (const row of chamberResult.rows) {
+            if (row.chamber !== null && row.chamber !== undefined) {
+                await client.query(
+                    `UPDATE d2_chamber SET is_active = true WHERE d2_chamber_no = $1`,
+                    [row.chamber]
+                );
+            }
+        }
+
+        await client.query('COMMIT');
+    } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+    } finally {
+        client.release();
+    }
+
     return { success: true, message: 'Draft deleted' };
 };

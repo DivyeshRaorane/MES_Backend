@@ -29,21 +29,35 @@ const normalizeMaterialCode = (material) => {
 };
 
 /**
- * Build the list of Materials to request from SAP.
- * Accepts an explicit list (from an API caller) or falls back to .env.
+ * Load all active PREFORM material codes from material_master.
+ * These are the Materials we request stock for from SAP.
  */
-const buildMaterialPayload = (materials) => {
-    let list = materials;
+const getPreformMaterialCodes = async () => {
+    const result = await pool.query(
+        `SELECT material_code
+         FROM material_master
+         WHERE material_category = 'PREFORM'
+           AND is_active = true`
+    );
+    return result.rows
+        .map((r) => (r.material_code === null || r.material_code === undefined ? "" : String(r.material_code).trim()))
+        .filter(Boolean);
+};
 
-    if (!list || (Array.isArray(list) && list.length === 0)) {
-        list = (process.env.SAP_MATERIAL_STOCK_MATERIALS || "")
-            .split(",")
-            .map((m) => m.trim())
-            .filter(Boolean);
-    }
+/**
+ * Build the list of Materials to request from SAP.
+ * Accepts an explicit list (from an API caller) or falls back to the
+ * active PREFORM material codes in material_master.
+ */
+const buildMaterialPayload = async (materials) => {
+    let list = materials;
 
     if (typeof list === "string") {
         list = list.split(",").map((m) => m.trim()).filter(Boolean);
+    }
+
+    if (!list || (Array.isArray(list) && list.length === 0)) {
+        list = await getPreformMaterialCodes();
     }
 
     const plant = process.env.SAP_MATERIAL_STOCK_PLANT || "1200";
@@ -63,10 +77,10 @@ const buildMaterialPayload = (materials) => {
  * SAP is called once per Material entry in the payload; results are merged.
  */
 const fetchMaterialStockFromSAP = async (materials) => {
-    const payloads = buildMaterialPayload(materials);
+    const payloads = await buildMaterialPayload(materials);
 
     if (payloads.length === 0) {
-        throw new Error("No Material provided and none configured in SAP_MATERIAL_STOCK_MATERIALS");
+        throw new Error("No Material provided and no active PREFORM materials found in material_master");
     }
 
     const allRows = [];

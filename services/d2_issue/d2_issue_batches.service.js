@@ -2,12 +2,21 @@ import pool from "../../db/postgres.js";
 
 export const getD2BatchGradeExportS = async (d2_batch_id) => {
     try {
+        // Determine whether this batch is an H2 batch.
+        const batchResult = await pool.query(
+            `SELECT is_h2 FROM d2_issue WHERE d2_batch_id = $1 LIMIT 1`,
+            [d2_batch_id]
+        );
+        const isH2Batch = batchResult.rows[0]?.is_h2 === true;
+
+        // Return all bobbins for the batch (regardless of final_grade),
+        // keeping the scope filters: is_d2, and is_h2_after for H2 batches.
         const query = `
-            SELECT bobbin_no, fid, product_type, temp_grade
+            SELECT bobbin_no, fid, product_type, temp_grade, final_grade
             FROM bobbin_entries
             WHERE d2_batch_id = $1
-              AND (final_grade IS NULL OR final_grade = '')
               AND is_d2 = true
+              ${isH2Batch ? 'AND is_h2_after = true' : ''}
         `;
 
         const result = await pool.query(query, [d2_batch_id]);
