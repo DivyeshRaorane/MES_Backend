@@ -1,4 +1,5 @@
 import pool from "../../db/postgres.js";
+import { generateNextFinalBatchId, parseDateOrNow } from "./d2_batch_id.service.js";
 
 export const validateBobbinForD2S = async (bobbin_no, restricted) => {
     // Step 1: Check bobbin exists
@@ -81,16 +82,32 @@ export const validateBobbinForD2S = async (bobbin_no, restricted) => {
 };
 
 export const submitD2IssueS = async (payload) => {
+    const { d2_batch_id: draft_batch_id, start_operator, d2_start_date, d2_start_time,
+            chamber, process_hours = null, bobbins, logged_in_user } = payload;
+
+    if (!draft_batch_id) {
+        throw new Error("d2_batch_id (draft id) is required.");
+    }
+    if (!Array.isArray(bobbins) || bobbins.length === 0) {
+        throw new Error("At least one bobbin is required to submit a D2 Issue.");
+    }
+
+    // Mint the final batch id up front. The generator reserves it in its own
+    // retry-protected transaction against d2_batch_id_seq, so the number is
+    // unique across concurrent submits for the same chamber + submit date.
+    // The id is also protected by the UNIQUE constraint on d2_issue.d2_batch_id.
+    const final_batch_id = await generateNextFinalBatchId(
+        chamber,
+        parseDateOrNow(d2_start_date)
+    );
+
     const client = await pool.connect();
 
     try {
         await client.query("BEGIN");
 
-        const { d2_batch_id, start_operator, d2_start_date, d2_start_time,
-                chamber, process_hours, bobbins, logged_in_user } = payload;
-
         for (const bobbin of bobbins) {
-            // Insert into d2_issue
+            // Insert into d2_issue under the generated FINAL batch id
             await client.query(
                 `
                 INSERT INTO d2_issue (
@@ -100,7 +117,7 @@ export const submitD2IssueS = async (payload) => {
                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
                 `,
                 [
-                    d2_batch_id,
+                    final_batch_id,
                     start_operator,
                     d2_start_date,
                     d2_start_time,
@@ -113,10 +130,10 @@ export const submitD2IssueS = async (payload) => {
                 ]
             );
 
-            // Update bobbin_entries
+            // Update bobbin_entries with the FINAL batch id
             await client.query(
                 `UPDATE bobbin_entries SET d2_issue = true, d2_batch_id = $1 WHERE bobbin_no = $2`,
-                [d2_batch_id, bobbin.bobbin_no]
+                [final_batch_id, bobbin.bobbin_no]
             );
 
             // Fetch product_type and fiber_length for the stock_transfer row
@@ -153,15 +170,25 @@ export const submitD2IssueS = async (payload) => {
             );
         }
 
-        // Mark D2 chamber as occupied
+        // Mark D2 chamber as occupied (the fiber is now physically processing)
         await client.query(
             `UPDATE d2_chamber SET is_active = false WHERE d2_chamber_no = $1`,
             [chamber]
         );
 
+        // Clear the draft now that it has been promoted to a finished batch.
+        await client.query(
+            `DELETE FROM d2_issue_draft WHERE d2_batch_id = $1`,
+            [draft_batch_id]
+        );
+
         await client.query("COMMIT");
 
-        return { success: true, message: "D2 Issue submitted successfully." };
+        return {
+            success: true,
+            d2_batch_id: final_batch_id,
+            message: "D2 Issue submitted successfully."
+        };
 
     } catch (error) {
         await client.query("ROLLBACK");

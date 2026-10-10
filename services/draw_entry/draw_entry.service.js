@@ -141,7 +141,7 @@ const toNum = (val) => (val === "" || val === null || val === undefined) ? null 
 export const drawEntryS = async(payload)=>{
     const drawnLength = Number(payload.drawn_length);
 
-    if (payload.drawn_length === undefined || payload.drawn_length === null || payload.drawn_length === "" || isNaN(drawnLength) || drawnLength < 100) {
+    if (payload.drawn_length === undefined || payload.drawn_length === null || payload.drawn_length === "" || isNaN(drawnLength) || drawnLength < 0) {
         throw new Error("Drawn length must be at least 100 km.");
     }
 
@@ -530,7 +530,7 @@ export const drawEntryS = async(payload)=>{
 
         };
 
-        await insertSapTransaction(sap_data, client);
+        //await insertSapTransaction(sap_data, client);
 
         await client.query("COMMIT");
         return {

@@ -16,17 +16,19 @@ export const fetchBobbinQcS = async (bobbin_no) => {
         return { success: false, in_bobbin_entries: false, message: "Bobbin not available." };
     }
 
-    // Additive: fetch fiber_length from bobbin_entries (keyed by bobbin_no) so it can be
-    // surfaced as a top-level field in the response data object, alongside optical_length.
+    // Additive: fetch fiber_length and fiber_color from bobbin_entries (keyed by bobbin_no)
+    // so they can be surfaced as top-level fields in the response data object, alongside optical_length.
     let fiberLengthVal = null;
+    let fiberColorVal = null;
     try {
         const fiberLengthRes = await pool.query(
-            `SELECT fiber_length FROM bobbin_entries WHERE bobbin_no = $1 LIMIT 1`,
+            `SELECT fiber_length, fiber_color FROM bobbin_entries WHERE bobbin_no = $1 LIMIT 1`,
             [bobbin_no]
         );
         fiberLengthVal = fiberLengthRes.rows[0]?.fiber_length ?? null;
+        fiberColorVal = fiberLengthRes.rows[0]?.fiber_color ?? null;
     } catch (fiberLenErr) {
-        console.error(`[fetchBobbinQcS] fiber_length fetch error for ${bobbin_no}:`, fiberLenErr.message);
+        console.error(`[fetchBobbinQcS] fiber_length/fiber_color fetch error for ${bobbin_no}:`, fiberLenErr.message);
     }
 
     // Step 1: If final_grade in qc_entry_temp is set (any value, excluding null/empty), auto-insert into qc_entry if not already done
@@ -90,7 +92,7 @@ export const fetchBobbinQcS = async (bobbin_no) => {
             source: "final",
             editable: false,
             rew_enabled: !qcHasFinalGrade,
-            data: { ...qcEntry.rows[0], fiber_length: fiberLengthVal }
+            data: { ...qcEntry.rows[0], fiber_length: fiberLengthVal, fiber_color: fiberColorVal }
         };
     }
 
@@ -153,7 +155,7 @@ export const fetchBobbinQcS = async (bobbin_no) => {
         success: true,
         source: "temp",
         editable: true,
-        data: { ...qcTempFinal.rows[0], fiber_length: fiberLengthVal }
+        data: { ...qcTempFinal.rows[0], fiber_length: fiberLengthVal, fiber_color: fiberColorVal }
     };
 };
 

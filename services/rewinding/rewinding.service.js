@@ -311,7 +311,7 @@ export const saveRewindingS = async (payload) => {
             order_type: "ZOFR"
         };
 
-        await insertSapTransaction(sap_data, client);
+      //  await insertSapTransaction(sap_data, client);
 
         //-------------------------
         // Auto-scrap leftover balance
@@ -371,7 +371,7 @@ export const saveRewindingS = async (payload) => {
                 order_type: "ZOFR"
             };
 
-            await insertSapTransaction(autoScrapSapData, client);
+          //  await insertSapTransaction(autoScrapSapData, client);
 
             // Reflect that the leftover was consumed by the auto-scrap
             remaining = 0;

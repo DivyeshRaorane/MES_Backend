@@ -9,6 +9,7 @@ const pool = new Pool({
   port: Number(process.env.DB_PORT) || 5432,
   max:20,
   idleTimeoutMillis:30000,
+  keepAlive:true,
   connectionTimeoutMillis:3000,
 });
 

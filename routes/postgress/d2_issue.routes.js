@@ -1,7 +1,7 @@
 import express from 'express';
 import { validateBobbinForD2C, submitD2IssueC } from '../../controller/postgres/d2_issue/d2_issue.controller.js';
 import {
-    getDraftListC, getDraftDetailsC, saveDraftBobbinC,
+    createDraftC, getDraftListC, getDraftDetailsC, saveDraftBobbinC,
     removeDraftBobbinC, deleteDraftC
 } from '../../controller/postgres/d2_issue/d2_issue_draft.controller.js';
 import { getD2IssueBatchesC, getD2BatchGradeExportC } from '../../controller/postgres/d2_issue/d2_issue_batches.controller.js';
@@ -15,6 +15,7 @@ router.get('/d2issue/validate/:bobbin_no', authMiddleware, validateBobbinForD2C)
 router.post('/d2issue', authMiddleware, submitD2IssueC);
 
 // Draft Management
+router.post('/d2issue/drafts/create', authMiddleware, createDraftC);
 router.get('/d2issue/drafts', authMiddleware, getDraftListC);
 router.get('/d2issue/drafts/:d2_batch_id', authMiddleware, getDraftDetailsC);
 router.post('/d2issue/drafts', authMiddleware, saveDraftBobbinC);

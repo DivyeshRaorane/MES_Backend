@@ -1,8 +1,23 @@
 import pool from "../../db/postgres.js";
+import { generateNextDraftId } from "./d2_batch_id.service.js";
 
 // ═══════════════════════════════════════════════════════════════
 // D2 ISSUE DRAFT MANAGEMENT
 // ═══════════════════════════════════════════════════════════════
+
+// Create (reserve) the next draft id for a chamber on the server's local
+// date. Called once when the operator selects a chamber. The reservation
+// itself is concurrency-safe (see d2_batch_id.service.js); no draft rows are
+// written here — bobbins are added later via saveDraftBobbinS.
+export const createDraftS = async ({ chamber, d2_type, created_by }) => {
+    if (chamber === undefined || chamber === null || chamber === "") {
+        return { success: false, message: "chamber is required" };
+    }
+
+    const d2_batch_id = await generateNextDraftId(chamber);
+
+    return { success: true, d2_batch_id, chamber, d2_type, created_by };
+};
 
 export const getDraftListS = async () => {
     const result = await pool.query(`
@@ -55,7 +70,7 @@ export const getDraftDetailsS = async (d2_batch_id) => {
     };
 };
 
-export const saveDraftBobbinS = async ({ d2_batch_id, bobbin_fid, bobbin_no, chamber, d2_type }) => {
+export const saveDraftBobbinS = async ({ d2_batch_id, bobbin_fid, bobbin_no, chamber, d2_type, created_by }) => {
     // Check duplicate in SAME draft
     const sameDraft = await pool.query(
         `SELECT 1 FROM d2_issue_draft WHERE d2_batch_id = $1 AND bobbin_no = $2`,
@@ -83,9 +98,9 @@ export const saveDraftBobbinS = async ({ d2_batch_id, bobbin_fid, bobbin_no, cha
 
         // Insert
         await client.query(
-            `INSERT INTO d2_issue_draft (d2_batch_id, bobbin_fid, bobbin_no, chamber, d2_type)
-             VALUES ($1, $2, $3, $4, $5)`,
-            [d2_batch_id, bobbin_fid, bobbin_no, chamber, d2_type]
+            `INSERT INTO d2_issue_draft (d2_batch_id, bobbin_fid, bobbin_no, chamber, d2_type, created_by)
+             VALUES ($1, $2, $3, $4, $5, $6)`,
+            [d2_batch_id, bobbin_fid, bobbin_no, chamber, d2_type, created_by ?? null]
         );
 
         // Mark the chamber as occupied (inactive) while this draft is in progress

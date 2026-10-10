@@ -203,7 +203,7 @@ export const saveColouringS = async (payload) => {
             order_type:"ZFGC"
         };
 
-        await insertSapTransaction(sap_data, client);
+       // await insertSapTransaction(sap_data, client);
 
         //-------------------------
         // Auto-scrap leftover balance
@@ -253,7 +253,7 @@ export const saveColouringS = async (payload) => {
                 order_type: "ZFGC"
             };
 
-            await insertSapTransaction(autoScrapSapData, client);
+          //  await insertSapTransaction(autoScrapSapData, client);
 
             // Reflect that the leftover was consumed by the auto-scrap
             remaining = 0;

@@ -82,6 +82,104 @@ export const submitRewindS = async (payload) => {
                 throw new Error(`Cannot resolve bobbin_fid for ${bobbin.bobbin_no}.`);
             }
 
+            // ═══════════════════════════════════════════════════════════════
+            // Backfill qc_entry from qc_entry_temp.
+            // If a temp row already exists for this bobbin but no finalized
+            // qc_entry row does, copy the whole temp row into qc_entry before
+            // we apply the rewind/fail changes below. This mirrors the
+            // auto-promote behaviour in fetchBobbinQcS (qc_entry.service.js) so
+            // the finalized record is never left behind.
+            // ═══════════════════════════════════════════════════════════════
+            const tempCheck = await client.query(
+                `SELECT * FROM qc_entry_temp WHERE bobbin_no = $1 LIMIT 1`,
+                [bobbin.bobbin_no]
+            );
+            if (tempCheck.rows.length > 0) {
+                const existsInFinal = await client.query(
+                    `SELECT bobbin_no FROM qc_entry WHERE bobbin_no = $1 LIMIT 1`,
+                    [bobbin.bobbin_no]
+                );
+                if (existsInFinal.rows.length === 0) {
+                    const tempRow = tempCheck.rows[0];
+                    const excludeFields = ['created_at', 'updated_at', 'logged_in_user'];
+                    const columns = Object.keys(tempRow).filter(k => !excludeFields.includes(k));
+                    const values = columns.map(k => tempRow[k] === '' ? null : tempRow[k]);
+                    const placeholders = values.map((_, i) => `$${i + 1}`).join(',');
+                    const updateSet = columns
+                        .filter(k => k !== 'bobbin_no')
+                        .map(k => `${k} = EXCLUDED.${k}`)
+                        .join(',');
+
+                    await client.query(
+                        `INSERT INTO qc_entry (${columns.join(',')}) VALUES (${placeholders})
+                         ON CONFLICT (bobbin_no) DO UPDATE SET ${updateSet}`,
+                        values
+                    );
+                }
+            }
+
+            // ═══════════════════════════════════════════════════════════════
+            // rewinding_type === 'FAIL'
+            // The operator rejected the bobbin from the manual REW popup. This
+            // is NOT a rewind/rework — the bobbin is failed in QC and no cut
+            // instruction / rework-queue / stock-transfer row must be created.
+            //
+            // Behaviour mirrors submitQcEntryS({ grade:'FAIL',
+            // action:'immediate_final' }): temp_grade = final_grade = 'FAIL' on
+            // both qc_entry_temp and qc_entry, remark persisted, and
+            // bobbin_entries updated to FAIL. For FAIL the frontend always sends
+            // cuts = [] and reason = null, so neither is used here.
+            //
+            // Idempotency: an already-finalized bobbin (final_grade = 'FAIL')
+            // returns a clean message instead of erroring, and we skip straight
+            // to the next bobbin without touching the rework/transfer logic.
+            // ═══════════════════════════════════════════════════════════════
+            if (bobbin.rewinding_type === 'FAIL') {
+                // Guard: if the bobbin is already finalized as FAIL, treat the
+                // re-submit as a no-op success rather than erroring out.
+                const alreadyFailed = await client.query(
+                    `SELECT final_grade FROM qc_entry WHERE bobbin_no = $1 LIMIT 1`,
+                    [bobbin.bobbin_no]
+                );
+                if (alreadyFailed.rows[0]?.final_grade === 'FAIL') {
+                    continue;
+                }
+
+                // Upsert qc_entry_temp with FAIL grades + remark.
+                await client.query(
+                    `INSERT INTO qc_entry_temp (bobbin_no, bobbin_fid, product_type, temp_grade, final_grade, remark)
+                     VALUES ($1, $2, $3, 'FAIL', 'FAIL', $4)
+                     ON CONFLICT (bobbin_no) DO UPDATE
+                       SET remark      = $4,
+                           temp_grade  = 'FAIL',
+                           final_grade = 'FAIL'`,
+                    [bobbin.bobbin_no, bobbinFid, productType, remarkText]
+                );
+
+                // Upsert qc_entry (final record) with FAIL grades + remark.
+                await client.query(
+                    `INSERT INTO qc_entry (bobbin_no, bobbin_fid, product_type, temp_grade, final_grade, remark)
+                     VALUES ($1, $2, $3, 'FAIL', 'FAIL', $4)
+                     ON CONFLICT (bobbin_no) DO UPDATE
+                       SET remark      = $4,
+                           temp_grade  = 'FAIL',
+                           final_grade = 'FAIL'`,
+                    [bobbin.bobbin_no, bobbinFid, productType, remarkText]
+                );
+
+                // Propagate FAIL grade to bobbin_entries (mirror REW flow, but
+                // do NOT set dispatch_status = 'REW' — this bobbin is rejected,
+                // not rewound). Stamp final_grade_date (timestamp without time
+                // zone) since we are setting a final_grade.
+                await client.query(
+                    `UPDATE bobbin_entries SET temp_grade = 'FAIL', final_grade = 'FAIL',dispatch_status = 'FAIL', final_grade_date = NOW() WHERE bobbin_no = $1`,
+                    [bobbin.bobbin_no]
+                );
+
+                // Rejected: no rewinding/rework instruction, no stock transfer.
+                continue;
+            }
+
             // Operator-typed reason — only meaningful for REWINDING (Whole
             // Length). For CUT the frontend sends reason = null, so guard it
             // explicitly: reason is persisted only for REWINDING, null otherwise.
@@ -114,9 +212,11 @@ export const submitRewindS = async (payload) => {
                 [bobbin.bobbin_no, bobbinFid, productType, remarkText, rewReason]
             );
 
-            // Update bobbin_entries grades + dispatch_status
+            // Update bobbin_entries grades + dispatch_status. Stamp
+            // final_grade_date (timestamp without time zone) since we are
+            // setting a final_grade.
             await client.query(
-                `UPDATE bobbin_entries SET temp_grade = 'REW', final_grade = 'REW', dispatch_status = 'REW' WHERE bobbin_no = $1`,
+                `UPDATE bobbin_entries SET temp_grade = 'REW', final_grade = 'REW', dispatch_status = 'REW', final_grade_date = NOW() WHERE bobbin_no = $1`,
                 [bobbin.bobbin_no]
             );
 
@@ -193,6 +293,16 @@ export const submitRewindS = async (payload) => {
         }
 
         await client.query("COMMIT");
+
+        // Shape the response to match the submitted operation. The manual REW
+        // popup submits a single bobbin at a time; when that bobbin is a FAIL,
+        // return the FAIL-specific success shape the frontend expects
+        // (success / message / grade). Otherwise keep the existing REW/CUT
+        // response unchanged.
+        if (bobbins.length > 0 && bobbins.every(b => b.rewinding_type === 'FAIL')) {
+            return { success: true, message: "Bobbin marked as FAIL. Final QC completed.", grade: "FAIL" };
+        }
+
         return { success: true, message: "Rewind request submitted successfully." };
 
     } catch (error) {
