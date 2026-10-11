@@ -97,6 +97,8 @@ import sapTransactionPostRoutes from "./routes/postgress/sap_transaction_post.ro
 import releasedProdOrderRoutes from "./routes/postgress/released_prod_order.routes.js"
 import inspectionLotUdRoutes from "./routes/postgress/inspection_lot_ud.routes.js"
 import userDecisionRoutes from "./routes/postgress/user_decision.routes.js"
+import preformTraceabilityRoutes from "./routes/postgress/preform_traceability.routes.js"
+import bobbinStatusRoutes from "./routes/postgress/bobbin_status.routes.js"
 import { startMaterialStockSchedular } from "./schedulars/material_stock.schedular.js";
 import { startProcessOrderSchedular } from "./schedulars/process_order.schedular.js";
 import { startTransactionPostSchedular } from "./schedulars/transaction_post.schedular.js";
@@ -198,6 +200,8 @@ app.use("/api", sapTransactionPostRoutes)
 app.use("/api", releasedProdOrderRoutes)
 app.use("/api", inspectionLotUdRoutes)
 app.use("/api", userDecisionRoutes)
+app.use("/api", preformTraceabilityRoutes)
+app.use("/api", bobbinStatusRoutes)
 
 app.use("/api", towerDataRoutes)
 

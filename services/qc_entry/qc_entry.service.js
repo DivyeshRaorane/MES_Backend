@@ -2,6 +2,19 @@ import pool from "../../db/postgres.js";
 import { mbendCopyS } from "./mbend_copy.service.js";
 import { mfdCableCutoffCalcS } from "./mfd_cable_cutoff.service.js";
 import { handleColoredBobbinQcS } from "./colored_bobbin_qc.service.js";
+import { getBobbinStatusS } from "../bobbin_status/bobbin_status.service.js";
+
+// Safe, side-effect-free wrapper around getBobbinStatusS.
+// Never throws and never alters the existing fetch flow — on any error it
+// simply resolves to null so callers can attach it as `data1` without risk.
+const safeGetBobbinStatus = async (bobbin_no) => {
+    try {
+        return await getBobbinStatusS(bobbin_no);
+    } catch (statusErr) {
+        console.error(`[fetchBobbinQcS] safeGetBobbinStatus error for ${bobbin_no}:`, statusErr.message);
+        return null;
+    }
+};
 
 // API 1: Fetch bobbin QC data
 
@@ -87,12 +100,15 @@ export const fetchBobbinQcS = async (bobbin_no) => {
         const qcFinalGrade = qcEntry.rows[0].final_grade;
         const qcHasFinalGrade = qcFinalGrade !== null && qcFinalGrade !== undefined && String(qcFinalGrade).trim() !== '';
 
+        const data1 = await safeGetBobbinStatus(bobbin_no);
+
         return {
             success: true,
             source: "final",
             editable: false,
             rew_enabled: !qcHasFinalGrade,
-            data: { ...qcEntry.rows[0], fiber_length: fiberLengthVal, fiber_color: fiberColorVal }
+            data: { ...qcEntry.rows[0], fiber_length: fiberLengthVal, fiber_color: fiberColorVal },
+            data1
         };
     }
 
@@ -151,11 +167,14 @@ export const fetchBobbinQcS = async (bobbin_no) => {
     // Re-fetch qc_entry_temp so the returned data reflects any values just calculated above
     const qcTempFinal = await pool.query(`SELECT * FROM qc_entry_temp WHERE bobbin_no = $1`, [bobbin_no]);
 
+    const data1 = await safeGetBobbinStatus(bobbin_no);
+
     return {
         success: true,
         source: "temp",
         editable: true,
-        data: { ...qcTempFinal.rows[0], fiber_length: fiberLengthVal, fiber_color: fiberColorVal }
+        data: { ...qcTempFinal.rows[0], fiber_length: fiberLengthVal, fiber_color: fiberColorVal },
+        data1
     };
 };
 
