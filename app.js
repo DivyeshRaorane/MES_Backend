@@ -52,6 +52,8 @@ import adminCustomerRoutes from "./routes/postgress/admin_customer.routes.js"
 import orderRoutes from "./routes/postgress/order.routes.js"
 import packingRoutes from "./routes/postgress/packing.routes.js"
 import drawShiftPlanRoutes from "./routes/postgress/draw_shift_plan.routes.js"
+import drawTimelossEntryRoutes from "./routes/postgress/draw_timeloss_entry.routes.js"
+import drawShiftReportRoutes from "./routes/postgress/draw_shift_report.routes.js"
 import colouringRoutes from "./routes/postgress/colouring.routes.js"
 import rewindingRoutes from "./routes/postgress/rewinding.routes.js"
 import breakAnalysisRoutes from "./routes/postgress/break_analysis.routes.js"
@@ -99,6 +101,7 @@ import inspectionLotUdRoutes from "./routes/postgress/inspection_lot_ud.routes.j
 import userDecisionRoutes from "./routes/postgress/user_decision.routes.js"
 import preformTraceabilityRoutes from "./routes/postgress/preform_traceability.routes.js"
 import bobbinStatusRoutes from "./routes/postgress/bobbin_status.routes.js"
+import bobbinLabelRoutes from "./routes/postgress/bobbin_label.routes.js"
 import { startMaterialStockSchedular } from "./schedulars/material_stock.schedular.js";
 import { startProcessOrderSchedular } from "./schedulars/process_order.schedular.js";
 import { startTransactionPostSchedular } from "./schedulars/transaction_post.schedular.js";
@@ -155,6 +158,8 @@ app.use("/api", adminCustomerRoutes)
 app.use("/api", orderRoutes)
 app.use("/api", packingRoutes)
 app.use("/api", drawShiftPlanRoutes)
+app.use("/api", drawTimelossEntryRoutes)
+app.use("/api", drawShiftReportRoutes)
 app.use("/api", colouringRoutes)
 app.use("/api", rewindingRoutes)
 app.use("/api", breakAnalysisRoutes)
@@ -202,6 +207,7 @@ app.use("/api", inspectionLotUdRoutes)
 app.use("/api", userDecisionRoutes)
 app.use("/api", preformTraceabilityRoutes)
 app.use("/api", bobbinStatusRoutes)
+app.use("/api", bobbinLabelRoutes)
 
 app.use("/api", towerDataRoutes)
 
