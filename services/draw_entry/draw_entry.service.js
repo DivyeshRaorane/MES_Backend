@@ -515,6 +515,17 @@ export const drawEntryS = async(payload)=>{
         // Reuses the SAME client so it participates in this transaction.
         // comp_material_code is omitted on purpose — it is resolved from
         // comp_batch (preform_id) via preform_data inside the SAP service.
+
+        // On preform end, do not confirm more component qty than the preform's
+        // remaining balance. balanceWeight = stock.balance_qty captured before
+        // any mat_stock update above. Only cap when balance < drawn_weight.
+        const drawnWeight = toNum(payload.drawn_weight);
+        let compQuantity = drawnWeight;
+
+        if (payload.preform_end === true && balanceWeight < Number(payload.drawn_weight)) {
+            compQuantity = balanceWeight;
+        }
+
         const sap_data = {
             fg: "good",
             conf_qty: toNum(payload.drawn_length),
@@ -524,7 +535,7 @@ export const drawEntryS = async(payload)=>{
             plant: 1200,
             s_location: 1204,
             comp_batch: payload.preform_id,
-            comp_quantity: toNum(payload.drawn_weight),
+            comp_quantity: compQuantity,
             ud_required: false,
             order_type : "ZSFG"
 
