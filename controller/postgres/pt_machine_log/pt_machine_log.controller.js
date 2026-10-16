@@ -2,7 +2,7 @@ import { getByBobbinNoS } from "../../../services/pt_machine_log/pt_machine_log.
 
 export const getByBobbinNoC = async (req, res) => {
     try {
-        const { bobbin_no, pt_machine_no,k } = req.params;
+        const { bobbin_no, pt_machine_no } = req.params;
         const result = await getByBobbinNoS(bobbin_no, pt_machine_no);
 
         if (!result) {

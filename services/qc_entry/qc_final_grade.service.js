@@ -144,7 +144,7 @@ const processFinalGradePromotion = async (client, bobbin_no) => {
 
         await client.query(
             `UPDATE bobbin_entries SET product_type = $2 WHERE bobbin_no = $1`,
-            [bobbin_no, upgradedProductType]
+            [bobbin_no, 'G657A1250']
         );
 
         // ud_type 'UD6' tags this MTM row so it's clear which follow-up lane

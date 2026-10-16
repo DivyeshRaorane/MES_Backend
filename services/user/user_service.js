@@ -58,10 +58,10 @@ export const loginService = async({emp_id,password})=>{
         WHERE emp_id = $1`,
         [emp_id]
     );
- 
     const user = result.rows[0];
 
     if(!user){
+      
         throw new Error('Invalid Emp ID or password')
     };
 
