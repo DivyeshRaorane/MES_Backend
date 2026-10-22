@@ -95,9 +95,12 @@ const LTL_ENTRY_UNIT = () => process.env.SAP_STOCK_TRANSFER_LTL_ENTRY_UNIT || "K
 const str = (v) => (v === undefined || v === null ? null : String(v));
 
 // SAP OData date: /Date(<epoch ms>)/ for a given JS Date (defaults now).
+// The timestamp is shifted back by SAP_DATE_OFFSET_SECONDS (default 10s) so the
+// value sent to SAP is slightly earlier than the actual send time.
+const SAP_DATE_OFFSET_SECONDS = Number(process.env.SAP_DATE_OFFSET_SECONDS) || 10;
 const sapDate = (d = new Date()) => {
     const date = d instanceof Date ? d : new Date(d);
-    return `/Date(${date.getTime()})/`;
+    return `/Date(${date.getTime() - SAP_DATE_OFFSET_SECONDS * 1000})/`;
 };
 
 // Pad the operation to 4 digits as SAP expects (10 -> "0010").
@@ -181,19 +184,98 @@ const postWithAuth = async (url, payload) => {
    row fetching + status updates
    ══════════════════════════════════════════════════════════ */
 
-/** Fetch all pending rows (status = false) in strict FIFO order (oldest first). */
-const fetchPendingRows = async (type = null) => {
+/**
+ * How long a claimed-but-unfinished row may stay `processing = true` before a
+ * later run considers the claim abandoned (e.g. the process crashed mid-batch)
+ * and releases it back into the queue. Env-overridable.
+ */
+const CLAIM_STALE_MINUTES = Number(process.env.SAP_TXN_CLAIM_STALE_MINUTES) || 10;
+
+/**
+ * Release claims that were taken but never finished (crash recovery). Any row
+ * still `processing = true` and not yet posted, whose claim is older than
+ * CLAIM_STALE_MINUTES, is put back into the queue (processing = false). Without
+ * this a crash mid-batch would strand rows as claimed forever.
+ */
+const resetStaleClaims = async () => {
+    const result = await pool.query(
+        `UPDATE transactions
+            SET processing = false
+          WHERE processing = true
+            AND COALESCE(status, false) = false
+            AND processing_started_at < now() - ($1 || ' minutes')::interval`,
+        [String(CLAIM_STALE_MINUTES)]
+    );
+    if (result.rowCount > 0) {
+        console.log(
+            `[SAP-POST] Released ${result.rowCount} stale claim(s) older than ${CLAIM_STALE_MINUTES} min`
+        );
+    }
+    return result.rowCount;
+};
+
+/**
+ * Atomically CLAIM all pending rows and return them.
+ *
+ * In one statement this marks EVERY pending, unclaimed row as `processing =
+ * true` (stamping processing_started_at) and RETURNs them in strict FIFO
+ * order. The inner SELECT uses FOR UPDATE SKIP LOCKED so two runs firing at the
+ * same instant each grab a DIFFERENT set of rows — a row can never be claimed
+ * by two runs, which is what stops the duplicate SAP posting.
+ *
+ * There is no LIMIT on purpose: a single run claims the whole backlog. While it
+ * works through those (possibly slow) SAP calls, any overlapping scheduler tick
+ * finds nothing left unclaimed and no-ops — so a long run can't overlap itself,
+ * and permanently-failing rows can never "fill a window" and starve the healthy
+ * rows behind them (every pending row is attempted every run).
+ *
+ * The claim commits immediately (short transaction); the slow per-row SAP calls
+ * then happen with NO lock held. Rows that fail/skip are released back with
+ * releaseRowClaim so they retry on a later run; rows that post successfully are
+ * marked status = true by the per-type posters.
+ *
+ * Because the whole backlog is claimed at once, a crash mid-run would leave the
+ * entire set stuck at processing = true — resetStaleClaims() is what rescues
+ * them on a later run, so that sweep is essential here.
+ */
+const claimPendingRows = async (type = null) => {
     const params = [];
-    let where = "COALESCE(status, false) = false";
+    let innerWhere = "COALESCE(status, false) = false AND COALESCE(processing, false) = false";
     if (type) {
         params.push(type);
-        where += ` AND type = $${params.length}`;
+        innerWhere += ` AND type = $${params.length}`;
     }
+
     const result = await pool.query(
-        `SELECT * FROM transactions WHERE ${where} ORDER BY transaction_id ASC`,
+        `UPDATE transactions
+            SET processing = true,
+                processing_started_at = now()
+          WHERE transaction_id IN (
+                SELECT transaction_id
+                  FROM transactions
+                 WHERE ${innerWhere}
+                 ORDER BY transaction_id ASC
+                 FOR UPDATE SKIP LOCKED
+          )
+        RETURNING *`,
         params
     );
     return result.rows;
+};
+
+/**
+ * Release a single row's claim (processing = false) so it re-enters the queue
+ * and is retried on a later run. Used when a row fails or is skipped — a
+ * successfully posted row is left alone (its status is already true).
+ */
+const releaseRowClaim = async (transactionId) => {
+    await pool.query(
+        `UPDATE transactions
+            SET processing = false
+          WHERE transaction_id = $1
+            AND COALESCE(status, false) = false`,
+        [transactionId]
+    );
 };
 
 /** Fetch one row by id (any status). */
@@ -1244,15 +1326,31 @@ const dispatchRow = async (row) => {
    ══════════════════════════════════════════════════════════ */
 
 /**
- * Post all pending `transactions` rows, ONE ROW AT A TIME in FIFO order
- * (oldest transaction_id first). Each row is a separate SAP call, so one
- * failure never blocks the rows behind it. Failed rows stay pending
- * (status = false) for the next run.
+ * Post pending `transactions` rows, ONE ROW AT A TIME in FIFO order (oldest
+ * transaction_id first). Each row is a separate SAP call, so one failure never
+ * blocks the rows behind it.
+ *
+ * Concurrency (claim-flag pattern): the run first releases any stale claims
+ * (crash recovery), then atomically CLAIMS a batch of pending rows by marking
+ * them processing = true. Because the claim uses FOR UPDATE SKIP LOCKED and
+ * filters on processing = false, a second scheduler run firing while this one
+ * is still working claims a DIFFERENT set of rows — the same row can never be
+ * posted twice. The slow SAP calls then run with no lock held.
+ *
+ * Per row:
+ *   - success -> the per-type poster already set status = true (claim becomes
+ *                irrelevant; the row drops out of the queue).
+ *   - failure/skip -> the row's claim is released (processing = false) so it
+ *                is retried on a later run.
  *
  * @returns {Promise<object>} summary of what was posted / what failed
  */
 export const postPendingTransactions = async () => {
-    const rows = await fetchPendingRows();
+    // Crash recovery: free rows whose claim was abandoned by a dead run.
+    await resetStaleClaims();
+
+    // Claim a bounded batch; concurrent runs get non-overlapping batches.
+    const rows = await claimPendingRows();
 
     const summary = {
         total_pending: rows.length,
@@ -1291,6 +1389,18 @@ export const postPendingTransactions = async () => {
                 `[SAP-POST][${row.type}] Failed for transaction ${row.transaction_id}:`,
                 error.message
             );
+
+            // Release the claim so this not-yet-posted row re-enters the queue
+            // and is retried on a later run. (A successful row was already
+            // marked status = true, so we only release here.)
+            try {
+                await releaseRowClaim(row.transaction_id);
+            } catch (releaseError) {
+                console.error(
+                    `[SAP-POST][${row.type}] Failed to release claim for transaction ${row.transaction_id}:`,
+                    releaseError.message
+                );
+            }
         }
     }
 
