@@ -102,7 +102,9 @@ import userDecisionRoutes from "./routes/postgress/user_decision.routes.js"
 import preformTraceabilityRoutes from "./routes/postgress/preform_traceability.routes.js"
 import bobbinStatusRoutes from "./routes/postgress/bobbin_status.routes.js"
 import bobbinLabelRoutes from "./routes/postgress/bobbin_label.routes.js"
+import boxLabelRoutes from "./routes/postgress/box_label.routes.js"
 import sapTransactionLogRoutes from "./routes/postgress/sap_transaction_log.routes.js"
+import preformStockAddRoutes from "./routes/postgress/preform_stock_add.routes.js"
 import { startMaterialStockSchedular } from "./schedulars/material_stock.schedular.js";
 import { startProcessOrderSchedular } from "./schedulars/process_order.schedular.js";
 import { startTransactionPostSchedular } from "./schedulars/transaction_post.schedular.js";
@@ -209,7 +211,9 @@ app.use("/api", userDecisionRoutes)
 app.use("/api", preformTraceabilityRoutes)
 app.use("/api", bobbinStatusRoutes)
 app.use("/api", bobbinLabelRoutes)
+app.use("/api", boxLabelRoutes)
 app.use("/api", sapTransactionLogRoutes)
+app.use("/api", preformStockAddRoutes)
 
 app.use("/api", towerDataRoutes)
 
