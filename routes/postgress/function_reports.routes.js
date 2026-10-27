@@ -13,7 +13,8 @@ import {
     executeReportC,
     exportExcelC,
     exportCsvC,
-    getSectionsC
+    getSectionsC,
+    getCompatibleFunctionsC
 } from '../../controller/postgres/function_reports/function_reports.controller.js';
 
 const router = express.Router();
@@ -21,6 +22,7 @@ const router = express.Router();
 // ─── Discovery (READ-ONLY from pg_proc) ─────────────────────────────────────
 router.get('/available-functions', authMiddleware, getAvailableFunctionsC);
 router.get('/function-params/:schemaName/:functionName', authMiddleware, getFunctionParamsC);
+router.get('/compatible-functions', authMiddleware, getCompatibleFunctionsC);
 
 // ─── Sections ────────────────────────────────────────────────────────────────
 router.get('/sections', authMiddleware, getSectionsC);
