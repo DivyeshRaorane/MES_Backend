@@ -218,6 +218,7 @@ const getExistingPreformIds = async (batches) => {
  *  4. Insert the new rows into preform_data (one transaction).
  */
 export const syncMaterialStock = async (materials) => {
+    console.log("WHat is the material:", materials)
     const stockRows = await fetchMaterialStockFromSAP(materials);
     
 

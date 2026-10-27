@@ -9,7 +9,8 @@ import pool from "../../db/postgres.js";
 //   data = [
 //     {
 //       customer_name,   -> packing_order.customer_name (order_no = packing_order)
-//       product,         -> preform_accept.material_description (via any one bobbin of the box)
+//       product,         -> bobbin_entries.product_type + " " + preform_accept.material_description
+//                           (via any one bobbin of the box)
 //       box_no,
 //       packing_order, stack_no,
 //       bobbin_details: [ { fid, color, length } ]   // fid = bobbin_no, length in metres
@@ -64,7 +65,8 @@ export const getBoxLabelsS = async (boxNos) => {
             pob.length_km,
             po.customer_name,
             be.fiber_color,
-            be.preform_id
+            be.preform_id,
+            be.product_type
         FROM packing_order_bobbin pob
         LEFT JOIN packing_order po  ON po.order_no  = pob.packing_order
         LEFT JOIN bobbin_entries be ON be.bobbin_no = pob.bobbin_no
@@ -93,6 +95,7 @@ export const getBoxLabelsS = async (boxNos) => {
                 stack_no: row.stack_no,
                 bobbin_details: [],
                 _preform_id: null, // internal: preform of any one bobbin in this box
+                _product_type: "", // internal: bobbin_entries.product_type of any one bobbin
             };
             boxes.set(key, box);
         }
@@ -100,6 +103,9 @@ export const getBoxLabelsS = async (boxNos) => {
         // Any one bobbin is enough to find the product; take the first with a preform_id.
         if (!box._preform_id && row.preform_id) {
             box._preform_id = row.preform_id;
+        }
+        if (!box._product_type && row.product_type) {
+            box._product_type = toText(row.product_type).trim();
         }
 
         box.bobbin_details.push({
@@ -125,9 +131,12 @@ export const getBoxLabelsS = async (boxNos) => {
         }
     }
 
-    const data = [...boxes.values()].map(({ _preform_id, ...box }) => ({
+    // product = "<product_type> <material_description>" (space separated, blanks skipped)
+    const data = [...boxes.values()].map(({ _preform_id, _product_type, ...box }) => ({
         ...box,
-        product: toText(productByPreform.get(_preform_id)),
+        product: [_product_type, toText(productByPreform.get(_preform_id)).trim()]
+            .filter(Boolean)
+            .join(" "),
     }));
 
     // Tell the caller if some requested boxes had no packing data.

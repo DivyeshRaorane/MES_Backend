@@ -94,3 +94,48 @@ BEGIN
 
 END;
 $$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION fn_dt_production_report(
+    p_start_date DATE DEFAULT CURRENT_DATE,
+    p_end_date DATE DEFAULT CURRENT_DATE,
+    p_default_plan NUMERIC DEFAULT 10000
+)
+RETURNS TABLE (
+    Dt_Machine VARCHAR,
+    Total_Dt NUMERIC,
+    Dt_Ok NUMERIC,
+    Dt_Break BIGINT,
+    Draw_Scrap NUMERIC
+) AS $$
+BEGIN
+    RETURN QUERY
+    -- 1. Machine-wise breakdown rows
+    SELECT 
+        de.tower_no::VARCHAR AS Dt_Machine,
+        SUM(COALESCE(de.drawn_length, 0)) AS Total_Dt,
+        -- DT OK = Total DT minus (Top Scrap + Bottom Scrap)
+        (SUM(COALESCE(de.drawn_length, 0)) - SUM(COALESCE(de.top_end_scrap, 0) + COALESCE(de.bottom_end_scrap, 0))) AS Dt_Ok,
+        -- DT Break = Count of rows where indication_fiber_cut = 'Draw Break'
+        SUM(CASE WHEN de.indication_fiber_cut = 'Draw Break' THEN 1 ELSE 0 END) AS Dt_Break,
+        -- Draw Scrap = Sum of top_end_scrap + bottom_end_scrap
+        SUM(COALESCE(de.top_end_scrap, 0) + COALESCE(de.bottom_end_scrap, 0)) AS Draw_Scrap
+    FROM draw_entry de
+    WHERE de.entry_date = p_end_date
+    GROUP BY de.tower_no
+    
+    UNION ALL
+    
+    -- 2. Total Row at the bottom
+    SELECT 
+        'Total' AS Dt_Machine,
+        SUM(COALESCE(de.drawn_length, 0)) AS Total_Dt,
+        SUM(COALESCE(de.drawn_length, 0) - (COALESCE(de.top_end_scrap, 0) + COALESCE(de.bottom_end_scrap, 0))) AS Dt_Ok,
+        SUM(CASE WHEN de.indication_fiber_cut = 'Draw Break' THEN 1 ELSE 0 END) AS Dt_Break,
+        SUM(COALESCE(de.top_end_scrap, 0) + COALESCE(de.bottom_end_scrap, 0)) AS Draw_Scrap
+    FROM draw_entry de
+    WHERE de.entry_date = p_end_date;
+
+END;
+$$ LANGUAGE plpgsql;
+
+SELECT * FROM fn_dt_production_report();
