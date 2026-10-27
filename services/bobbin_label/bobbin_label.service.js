@@ -18,7 +18,7 @@ import pool from "../../db/postgres.js";
 //   qc_entry.avg_lsa_atn_1383               -> attn1383
 //   qc_entry.cut_off_top / cut_off_bottom   -> cutoff   (prefer top, else bottom)
 //   qc_entry.mfd_1310_top                   -> mfd
-//   qc_entry.final_grade_date               -> mfg      (formatted YYYY-MM)
+//   bobbin_entries.final_grade_date         -> mfg      (formatted YYYY-MM)
 // ═══════════════════════════════════════════════════════════════════════════
 
 // Valid pattern IDs — keep in sync with the frontend's bobbinPatterns.js
@@ -71,7 +71,7 @@ export const getBobbinLabelsS = async (bobbinNos, pattern) => {
             qc.avg_lsa_atn_1383          AS attn1383,
             COALESCE(qc.cut_off_top, qc.cut_off_bottom) AS cutoff,
             qc.mfd_1310_top              AS mfd,
-            qc.final_grade_date          AS mfg_date
+            be.final_grade_date          AS mfg_date
         FROM bobbin_entries be
         LEFT JOIN packing_order_bobbin pob ON pob.bobbin_no = be.bobbin_no
         LEFT JOIN preform_accept pa        ON pa.preform_id = be.preform_id
