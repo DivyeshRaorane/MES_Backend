@@ -134,7 +134,7 @@ export const getBoxLabelsS = async (boxNos) => {
     // product = "<product_type> <material_description>" (space separated, blanks skipped)
     const data = [...boxes.values()].map(({ _preform_id, _product_type, ...box }) => ({
         ...box,
-        product: [_product_type, toText(productByPreform.get(_preform_id)).trim()]
+        product: [_product_type, "Single Mode Optical Fiber"]
             .filter(Boolean)
             .join(" "),
     }));

@@ -1,5 +1,4 @@
 import express from 'express';
-import { authMiddleware } from '../../middleware/aut_middleware.js';
 import {
     getAllProcessOrdersC, getProcessOrderByNoC, createProcessOrderC,
     updateProcessOrderC, toggleProcessOrderStatusC, getProcessOrderMaterialsC
@@ -7,11 +6,11 @@ import {
 
 const router = express.Router();
 
-router.get('/', authMiddleware, getAllProcessOrdersC);
-router.get('/:processONo', authMiddleware, getProcessOrderByNoC);
-router.get('/:processONo/materials', authMiddleware, getProcessOrderMaterialsC);
-router.post('/', authMiddleware, createProcessOrderC);
-router.put('/:processONo', authMiddleware, updateProcessOrderC);
-router.patch('/:processONo/status', authMiddleware, toggleProcessOrderStatusC);
+router.get('/', getAllProcessOrdersC);
+router.get('/:processONo', getProcessOrderByNoC);
+router.get('/:processONo/materials', getProcessOrderMaterialsC);
+router.post('/', createProcessOrderC);
+router.put('/:processONo', updateProcessOrderC);
+router.patch('/:processONo/status', toggleProcessOrderStatusC);
 
 export default router;

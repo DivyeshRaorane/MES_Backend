@@ -1,5 +1,4 @@
 import express from 'express';
-import { authMiddleware } from '../../middleware/aut_middleware.js';
 import {
     getAvailableFunctionsC,
     getFunctionParamsC,
@@ -20,27 +19,27 @@ import {
 const router = express.Router();
 
 // ─── Discovery (READ-ONLY from pg_proc) ─────────────────────────────────────
-router.get('/available-functions', authMiddleware, getAvailableFunctionsC);
-router.get('/function-params/:schemaName/:functionName', authMiddleware, getFunctionParamsC);
-router.get('/compatible-functions', authMiddleware, getCompatibleFunctionsC);
+router.get('/available-functions', getAvailableFunctionsC);
+router.get('/function-params/:schemaName/:functionName', getFunctionParamsC);
+router.get('/compatible-functions', getCompatibleFunctionsC);
 
 // ─── Sections ────────────────────────────────────────────────────────────────
-router.get('/sections', authMiddleware, getSectionsC);
+router.get('/sections', getSectionsC);
 
 // ─── User-facing reports ─────────────────────────────────────────────────────
-router.get('/user/reports', authMiddleware, getUserReportsC);
+router.get('/user/reports', getUserReportsC);
 
 // ─── Execution & Export ──────────────────────────────────────────────────────
-router.post('/:id/execute', authMiddleware, executeReportC);
-router.post('/:id/export/excel', authMiddleware, exportExcelC);
-router.post('/:id/export/csv', authMiddleware, exportCsvC);
+router.post('/:id/execute', executeReportC);
+router.post('/:id/export/excel', exportExcelC);
+router.post('/:id/export/csv', exportCsvC);
 
 // ─── Admin CRUD ──────────────────────────────────────────────────────────────
-router.get('/', authMiddleware, getAllReportsC);
-router.post('/', authMiddleware, createReportC);
-router.get('/:id', authMiddleware, getReportByIdC);
-router.put('/:id', authMiddleware, updateReportC);
-router.patch('/:id/toggle-status', authMiddleware, toggleReportStatusC);
-router.delete('/:id', authMiddleware, deleteReportC);
+router.get('/', getAllReportsC);
+router.post('/', createReportC);
+router.get('/:id', getReportByIdC);
+router.put('/:id', updateReportC);
+router.patch('/:id/toggle-status', toggleReportStatusC);
+router.delete('/:id', deleteReportC);
 
 export default router;

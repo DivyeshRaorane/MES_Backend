@@ -1,5 +1,4 @@
 import express from 'express';
-import { authMiddleware } from '../../middleware/aut_middleware.js';
 import {
     getUserReportsC, executeUserReportC,
     exportExcelC, exportCsvC, exportPdfC,
@@ -10,18 +9,18 @@ import {
 const router = express.Router();
 
 // User-facing reports
-router.get('/', authMiddleware, getUserReportsC);
-router.post('/:id/execute', authMiddleware, executeUserReportC);
+router.get('/', getUserReportsC);
+router.post('/:id/execute', executeUserReportC);
 
 // Export
-router.post('/:id/export/excel', authMiddleware, exportExcelC);
-router.post('/:id/export/csv', authMiddleware, exportCsvC);
-router.post('/:id/export/pdf', authMiddleware, exportPdfC);
-router.post('/:id/export/multi-excel', authMiddleware, exportMultiExcelC);
+router.post('/:id/export/excel', exportExcelC);
+router.post('/:id/export/csv', exportCsvC);
+router.post('/:id/export/pdf', exportPdfC);
+router.post('/:id/export/multi-excel', exportMultiExcelC);
 
 // Saved Filters
-router.get('/:id/saved-filters', authMiddleware, getSavedFiltersC);
-router.post('/:id/saved-filters', authMiddleware, createSavedFilterC);
-router.delete('/:id/saved-filters/:filterId', authMiddleware, deleteSavedFilterC);
+router.get('/:id/saved-filters', getSavedFiltersC);
+router.post('/:id/saved-filters', createSavedFilterC);
+router.delete('/:id/saved-filters/:filterId', deleteSavedFilterC);
 
 export default router;

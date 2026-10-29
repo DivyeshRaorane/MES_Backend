@@ -1,5 +1,4 @@
 import express from 'express';
-import { authMiddleware } from '../../middleware/aut_middleware.js';
 import {
     getTablesC, getTableColumnsC, getTableRelationshipsC,
     getAllReportsC, getReportByIdC, createReportC, updateReportC, deleteReportC, duplicateReportC,
@@ -10,30 +9,30 @@ import {
 const router = express.Router();
 
 // Database Discovery
-router.get('/tables', authMiddleware, getTablesC);
-router.get('/tables/:tableName/columns', authMiddleware, getTableColumnsC);
-router.get('/tables/:tableName/relationships', authMiddleware, getTableRelationshipsC);
+router.get('/tables', getTablesC);
+router.get('/tables/:tableName/columns', getTableColumnsC);
+router.get('/tables/:tableName/relationships', getTableRelationshipsC);
 
 // Roles & Users (for permissions UI)
-router.get('/roles', authMiddleware, getRolesC);
-router.get('/users', authMiddleware, getUsersC);
+router.get('/roles', getRolesC);
+router.get('/users', getUsersC);
 
 // Preview & SQL Generation (MUST be before /reports/:id to avoid :id matching "preview"/"sql")
-router.post('/reports/preview', authMiddleware, previewReportC);
-router.post('/reports/sql', authMiddleware, generateSqlC);
-router.post('/reports/preview-table', authMiddleware, previewTableC);
+router.post('/reports/preview', previewReportC);
+router.post('/reports/sql', generateSqlC);
+router.post('/reports/preview-table', previewTableC);
 
 // Report CRUD
-router.get('/reports', authMiddleware, getAllReportsC);
-router.post('/reports', authMiddleware, createReportC);
-router.get('/reports/:id', authMiddleware, getReportByIdC);
-router.put('/reports/:id', authMiddleware, updateReportC);
-router.delete('/reports/:id', authMiddleware, deleteReportC);
-router.post('/reports/:id/duplicate', authMiddleware, duplicateReportC);
-router.post('/reports/:id/execute', authMiddleware, executeReportC);
+router.get('/reports', getAllReportsC);
+router.post('/reports', createReportC);
+router.get('/reports/:id', getReportByIdC);
+router.put('/reports/:id', updateReportC);
+router.delete('/reports/:id', deleteReportC);
+router.post('/reports/:id/duplicate', duplicateReportC);
+router.post('/reports/:id/execute', executeReportC);
 
 // Permissions
-router.get('/reports/:id/permissions', authMiddleware, getReportPermissionsC);
-router.put('/reports/:id/permissions', authMiddleware, updateReportPermissionsC);
+router.get('/reports/:id/permissions', getReportPermissionsC);
+router.put('/reports/:id/permissions', updateReportPermissionsC);
 
 export default router;

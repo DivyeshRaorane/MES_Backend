@@ -5,6 +5,6 @@ const router = express.Router();
 
 router.post('/syncpreform',syncNow);
 router.post('/createpreform', createPreform)
-router.get('/getpreform',getPreform)
+router.get('/getpreform', getPreform)
 
 export default router;

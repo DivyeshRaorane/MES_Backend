@@ -5,21 +5,20 @@ import {
     removeDraftBobbinC, deleteDraftC
 } from '../../controller/postgres/d2_issue/d2_issue_draft.controller.js';
 import { getD2IssueBatchesC, getD2BatchGradeExportC } from '../../controller/postgres/d2_issue/d2_issue_batches.controller.js';
-import { authMiddleware } from '../../middleware/aut_middleware.js';
 
 const router = express.Router();
 
 router.get('/d2issue/batches', getD2IssueBatchesC);
 router.get('/d2issue/batches/:d2_batch_id/grade-export', getD2BatchGradeExportC);
-router.get('/d2issue/validate/:bobbin_no', authMiddleware, validateBobbinForD2C);
-router.post('/d2issue', authMiddleware, submitD2IssueC);
+router.get('/d2issue/validate/:bobbin_no', validateBobbinForD2C);
+router.post('/d2issue', submitD2IssueC);
 
 // Draft Management
-router.post('/d2issue/drafts/create', authMiddleware, createDraftC);
-router.get('/d2issue/drafts', authMiddleware, getDraftListC);
-router.get('/d2issue/drafts/:d2_batch_id', authMiddleware, getDraftDetailsC);
-router.post('/d2issue/drafts', authMiddleware, saveDraftBobbinC);
-router.delete('/d2issue/drafts/:d2_batch_id/bobbin/:bobbin_no', authMiddleware, removeDraftBobbinC);
-router.delete('/d2issue/drafts/:d2_batch_id', authMiddleware, deleteDraftC);
+router.post('/d2issue/drafts/create', createDraftC);
+router.get('/d2issue/drafts', getDraftListC);
+router.get('/d2issue/drafts/:d2_batch_id', getDraftDetailsC);
+router.post('/d2issue/drafts', saveDraftBobbinC);
+router.delete('/d2issue/drafts/:d2_batch_id/bobbin/:bobbin_no', removeDraftBobbinC);
+router.delete('/d2issue/drafts/:d2_batch_id', deleteDraftC);
 
 export default router;

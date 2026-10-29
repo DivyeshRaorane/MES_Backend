@@ -467,30 +467,6 @@ else {
       }
       // --------------------------------------------------------------------------
 
-      // --- Upgrade to G657A1250 if either:
-      //     (a) bobbin's original product_type was already G657A1250C and it passed, OR
-      //     (b) bobbin qualified via the D-to-A1 conversion path (G652D250 -> G657A1250C spec) and passed ---
-      const qualifiedViaDtoA1Conversion =
-        useDualProductTypeSpecs &&
-        finalMatchedTier.product_type === SECONDARY_PRODUCT_TYPE_FOR_LOW_MAC;
-
-      if (product_type === 'G657A1250C' || qualifiedViaDtoA1Conversion) {
-        const upgradedProductType = 'G657A1250';
-
-        // Update product_type in qc_entry_temp
-        await client.query(
-          `UPDATE qc_entry_temp SET product_type = $1 WHERE bobbin_no = $2;`,
-          [upgradedProductType, bobbinNo]
-        );
-
-        // Update product_type in bobbin_entries
-        await client.query(
-          `UPDATE bobbin_entries SET product_type = $1 WHERE bobbin_no = $2;`,
-          [upgradedProductType, bobbinNo]
-        );
-      }
-      // --------------------------------------------------------------------------
-
       return {
         status: 'PASSED',
         matched_grade: finalMatchedTier.grade,
