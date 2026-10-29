@@ -1,5 +1,4 @@
 import express from 'express';
-import { authMiddleware } from '../../middleware/aut_middleware.js';
 import {
     getAllSectionsC,
     getReportSectionsC,
@@ -9,12 +8,12 @@ import {
 const router = express.Router();
 
 // GET all active sections (for admin UI multi-select dropdown)
-router.get('/sections', authMiddleware, getAllSectionsC);
+router.get('/sections', getAllSectionsC);
 
 // GET sections mapped to a specific report
-router.get('/reports/:reportId/sections', authMiddleware, getReportSectionsC);
+router.get('/reports/:reportId/sections', getReportSectionsC);
 
 // UPDATE section mappings for a report
-router.put('/reports/:reportId/sections', authMiddleware, updateReportSectionsC);
+router.put('/reports/:reportId/sections', updateReportSectionsC);
 
 export default router;

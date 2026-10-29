@@ -11,8 +11,7 @@ import pool from "../../db/postgres.js";
 // Data sources (all keyed by bobbin_no unless noted):
 //   packing_order_bobbin.length_km          -> length   (billed length)
 //   bobbin_entries.fiber_color              -> fiber_color
-//   bobbin_entries.preform_id               -> join key to preform_accept
-//   preform_accept.material_description      -> fiber_info (heading text)
+//   "Single Mode Optical Fiber" + bobbin_entries.product_type -> fiber_info (heading text)
 //   qc_entry.avg_lsa_atn_1310               -> attn1310
 //   qc_entry.avg_lsa_atn_1550               -> attn1550
 //   qc_entry.avg_lsa_atn_1383               -> attn1383
@@ -23,6 +22,9 @@ import pool from "../../db/postgres.js";
 
 // Valid pattern IDs — keep in sync with the frontend's bobbinPatterns.js
 export const VALID_PATTERNS = [1, 2, 3];
+
+// Fixed heading text; product_type from bobbin_entries is appended to it.
+const FIBER_INFO_PREFIX = "Single Mode Optical Fiber";
 
 // Fields each pattern needs populated on the sticker. The query always returns
 // every field; this map is documentation + lets us trim per pattern if desired.
@@ -63,7 +65,7 @@ export const getBobbinLabelsS = async (bobbinNos, pattern) => {
         `
         SELECT
             be.bobbin_no,
-            pa.material_description      AS fiber_info,
+            be.product_type              AS product_type,
             be.fiber_color               AS fiber_color,
             pob.length_km                AS length,
             qc.avg_lsa_atn_1310          AS attn1310,
@@ -74,7 +76,6 @@ export const getBobbinLabelsS = async (bobbinNos, pattern) => {
             be.final_grade_date          AS mfg_date
         FROM bobbin_entries be
         LEFT JOIN packing_order_bobbin pob ON pob.bobbin_no = be.bobbin_no
-        LEFT JOIN preform_accept pa        ON pa.preform_id = be.preform_id
         LEFT JOIN qc_entry qc              ON qc.bobbin_no = be.bobbin_no
         WHERE be.bobbin_no = ANY($1::text[])
         `,
@@ -87,7 +88,7 @@ export const getBobbinLabelsS = async (bobbinNos, pattern) => {
         // Always return identity/heading fields.
         const record = {
             bobbin_no: row.bobbin_no,
-            fiber_info: toLabelValue(row.fiber_info),
+            fiber_info: `${FIBER_INFO_PREFIX} ${toLabelValue(row.product_type).trim()}`.trim(),
             fiber_color: toLabelValue(row.fiber_color),
             length: row.length ?? "",
             mfg: toMfg(row.mfg_date),

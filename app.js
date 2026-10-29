@@ -110,12 +110,41 @@ import { startMaterialStockSchedular } from "./schedulars/material_stock.schedul
 import { startProcessOrderSchedular } from "./schedulars/process_order.schedular.js";
 import { startTransactionPostSchedular } from "./schedulars/transaction_post.schedular.js";
 import { startInspectionLotUdSchedular } from "./schedulars/inspection_lot_ud.schedular.js";
+import { authMiddleware } from "./middleware/aut_middleware.js";
+
+// Routes under /api that do NOT require a JWT. Everything else under /api does.
+// Paths are relative to /api. ":param" matches one path segment.
+const PUBLIC_API_ROUTES = [
+  { method: "POST", path: "/login" },
+  // Auto / SAP sync endpoints (also run by the schedulers in ./schedulars)
+  { method: "POST", path: "/syncpreform" },
+  { method: "POST", path: "/material-stock/sync" },
+  { method: "POST", path: "/process-order/sync" },
+  { method: "POST", path: "/sap-transaction/post" },
+  { method: "POST", path: "/sap-transaction/post/:transactionId" },
+  { method: "POST", path: "/sap/inspection-lot/ud" },
+];
+
+const toRouteRegex = (path) =>
+  new RegExp("^" + path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/:[A-Za-z_]+/g, "[^/]+") + "/?$", "i");
+
+const PUBLIC_API_MATCHERS = PUBLIC_API_ROUTES.map((r) => ({ method: r.method, regex: toRouteRegex(r.path) }));
+
+const requireAuthForApi = (req, res, next) => {
+  if (req.method === "OPTIONS") return next();
+  const isPublic = PUBLIC_API_MATCHERS.some((r) => r.method === req.method && r.regex.test(req.path));
+  if (isPublic) return next();
+  return authMiddleware(req, res, next);
+};
 
 
 const app = express();
 
 app.use(cors())
 app.use(express.json());
+
+// Require a JWT on every /api route except PUBLIC_API_ROUTES.
+app.use("/api", requireAuthForApi);
 
 app.use("/api", departmetRoutes)
 app.use("/api",userRoutes)
