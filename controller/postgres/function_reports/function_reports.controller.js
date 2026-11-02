@@ -33,6 +33,34 @@ const excelCell = (value) => {
     return JSON.stringify(value);
 };
 
+// Excel-only header text: "spool_no" / "SPOOL NO" -> "Spool No"
+const toTitleCase = (text) =>
+    String(text ?? "")
+        .replace(/_/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .toLowerCase()
+        .replace(/\b\w/g, c => c.toUpperCase());
+
+const HEADER_BORDER_SIDE = { style: "thin", color: { argb: "FFBFBFBF" } };
+
+// Dark blue header style on cells 1..columnCount only (not the whole row width)
+const styleHeaderRow = (row, columnCount) => {
+    for (let i = 1; i <= columnCount; i++) {
+        const cell = row.getCell(i);
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1F3864" } };
+        cell.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 11 };
+        cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+        cell.border = {
+            top: HEADER_BORDER_SIDE,
+            left: HEADER_BORDER_SIDE,
+            bottom: HEADER_BORDER_SIDE,
+            right: HEADER_BORDER_SIDE
+        };
+    }
+    row.height = 22;
+};
+
 // â”€â”€â”€ 1. GET /available-functions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export const getAvailableFunctionsC = async (req, res) => {
@@ -184,7 +212,9 @@ export const exportExcelC = async (req, res) => {
                     sheet.addRow([`Error: ${item.error}`]);
                     continue;
                 }
-                sheet.addRow(item.columns.map(col => col.header)).font = { bold: true };
+                const headerRow = sheet.addRow(item.columns.map(col => toTitleCase(col.header)));
+                styleHeaderRow(headerRow, item.columns.length);
+                sheet.views = [{ state: "frozen", ySplit: 1 }];
                 item.data.forEach(row => {
                     sheet.addRow(item.columns.map(col => excelCell(row[col.field])));
                 });
@@ -199,7 +229,8 @@ export const exportExcelC = async (req, res) => {
                 if (item.error) {
                     sheet.addRow([`Error: ${item.error}`]);
                 } else {
-                    sheet.addRow(item.columns.map(col => col.header)).font = { bold: true };
+                    const headerRow = sheet.addRow(item.columns.map(col => toTitleCase(col.header)));
+                    styleHeaderRow(headerRow, item.columns.length);
                     item.data.forEach(row => {
                         sheet.addRow(item.columns.map(col => excelCell(row[col.field])));
                     });
@@ -214,19 +245,20 @@ export const exportExcelC = async (req, res) => {
             // Add header row
             if (result.columns && result.columns.length > 0) {
                 worksheet.columns = result.columns.map(col => ({
-                    header: col.header,
+                    header: toTitleCase(col.header),
                     key: col.field,
                     width: 20
                 }));
+
+                // Style and freeze header
+                styleHeaderRow(worksheet.getRow(1), result.columns.length);
+                worksheet.views = [{ state: "frozen", ySplit: 1 }];
             }
 
             // Add data rows
             result.data.forEach(row => {
                 worksheet.addRow(row);
             });
-
-            // Style header
-            worksheet.getRow(1).font = { bold: true };
         }
 
         // Get report name for filename

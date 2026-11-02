@@ -142,6 +142,18 @@ function isTopBottomParameter(paramName) {
   return topBottomPairs.some(pair => pair.top === paramName || pair.bottom === paramName);
 }
 
+// Helper: returns true if qc_entry_temp.status for this bobbin is 'RETEST' (OTDR retest pending)
+async function isRetestRequired(client, bobbinNo) {
+  const statusRes = await client.query(
+    `SELECT status FROM qc_entry_temp WHERE bobbin_no = $1`,
+    [bobbinNo]
+  );
+
+  const status = (statusRes.rows[0]?.status || '').toString().trim().toUpperCase();
+
+  return status === 'RETEST';
+}
+
 // 3. Core Validation Engine Function
 export async function validateBobbinQC(bobbinNo) {
   const client = await pool.connect();
@@ -153,6 +165,11 @@ export async function validateBobbinQC(bobbinNo) {
 
     if (measurementRes.rows.length === 0) {
       return { status: 'ERROR', message: `Bobbin ${bobbinNo} not found.` };
+    }
+
+    // Stop here if this bobbin is marked for OTDR retest
+    if (await isRetestRequired(client, bobbinNo)) {
+      return { status: 'ERROR', message: 'This bobbin Need To Retest on OTDR' };
     }
 
 

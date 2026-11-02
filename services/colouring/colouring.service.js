@@ -259,6 +259,32 @@ export const saveColouringS = async (payload) => {
             remaining = 0;
         }
 
+        //-------------------------
+        // Inherit parent bobbin lock
+        //   If a child bobbin was created (generated_fid present) and its parent
+        //   bobbin (parent_bobbin_no) is locked in bobbin_entries, lock the child
+        //   (by bobbin_no) with the parent's lock_reason.
+        //   No match (no FID / no bobbin_no / parent unlocked / lock NULL) -> nothing changes.
+        //-------------------------
+        let bobbinLock = { rows: [] };
+        if (hasNewFid && bobbin_no && parent_bobbin_no) {
+            bobbinLock = await client.query(
+                `
+                UPDATE bobbin_entries child
+                SET lock = TRUE,
+                    lock_reason = parent.lock_reason
+                FROM bobbin_entries parent
+                WHERE child.bobbin_no = $1
+                  AND parent.bobbin_no = $2
+                  AND child.bobbin_no <> parent.bobbin_no
+                  AND parent.lock = TRUE
+                RETURNING child.lock_reason
+                `,
+                [bobbin_no, parent_bobbin_no]
+            );
+        }
+        const bobbinLocked = bobbinLock.rows.length > 0;
+
         await client.query("COMMIT");
 
         // Get updated history
@@ -271,7 +297,15 @@ export const saveColouringS = async (payload) => {
             ? `Colour Entry saved. ${remaining.toFixed(3)} KM still pending.`
             : `Colour Entry saved. Colouring complete.`;
 
-        return { success: true, message: msg, data: { history: historyResult.rows } };
+        return {
+            success: true,
+            message: msg,
+            data: {
+                history: historyResult.rows,
+                bobbin_locked: bobbinLocked,
+                lock_reason: bobbinLocked ? bobbinLock.rows[0].lock_reason : null
+            }
+        };
 
     } catch (error) {
         await client.query("ROLLBACK");
