@@ -377,6 +377,32 @@ export const saveRewindingS = async (payload) => {
             remaining = 0;
         }
 
+        //-------------------------
+        // Inherit parent bobbin lock
+        //   If a child bobbin was created (generated_fid present) and its parent
+        //   bobbin (trackBobbin) is locked in bobbin_entries, lock the child
+        //   (by bobbin_no) with the parent's lock_reason.
+        //   No match (no FID / no bobbin_no / parent unlocked / lock NULL) -> nothing changes.
+        //-------------------------
+        let bobbinLock = { rows: [] };
+        if (hasNewFid && bobbin_no) {
+            bobbinLock = await client.query(
+                `
+                UPDATE bobbin_entries child
+                SET lock = TRUE,
+                    lock_reason = parent.lock_reason
+                FROM bobbin_entries parent
+                WHERE child.bobbin_no = $1
+                  AND parent.bobbin_no = $2
+                  AND child.bobbin_no <> parent.bobbin_no
+                  AND parent.lock = TRUE
+                RETURNING child.lock_reason
+                `,
+                [bobbin_no, trackBobbin]
+            );
+        }
+        const bobbinLocked = bobbinLock.rows.length > 0;
+
         await client.query("COMMIT");
 
         // Get updated data
@@ -400,7 +426,9 @@ export const saveRewindingS = async (payload) => {
             data: {
                 balance_length: updatedFg?.balance_length,
                 instructions: updatedInstructions,
-                history: updatedHistory
+                history: updatedHistory,
+                bobbin_locked: bobbinLocked,
+                lock_reason: bobbinLocked ? bobbinLock.rows[0].lock_reason : null
             }
         };
 

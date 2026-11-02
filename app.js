@@ -106,6 +106,7 @@ import boxLabelRoutes from "./routes/postgress/box_label.routes.js"
 import stackLabelRoutes from "./routes/postgress/stack_label.routes.js"
 import sapTransactionLogRoutes from "./routes/postgress/sap_transaction_log.routes.js"
 import preformStockAddRoutes from "./routes/postgress/preform_stock_add.routes.js"
+import fiberLockRoutes from "./routes/postgress/fiber_lock.routes.js"
 import { startMaterialStockSchedular } from "./schedulars/material_stock.schedular.js";
 import { startProcessOrderSchedular } from "./schedulars/process_order.schedular.js";
 import { startTransactionPostSchedular } from "./schedulars/transaction_post.schedular.js";
@@ -245,6 +246,7 @@ app.use("/api", boxLabelRoutes)
 app.use("/api", stackLabelRoutes)
 app.use("/api", sapTransactionLogRoutes)
 app.use("/api", preformStockAddRoutes)
+app.use("/api", fiberLockRoutes)
 
 app.use("/api", towerDataRoutes)
 

@@ -16,7 +16,7 @@ export const getOrderForPackingS = async (order_no) => {
 export const validateBobbinForPackingS = async (bobbin_no, order_no) => {
     // Check bobbin exists
     const bobbinResult = await pool.query(
-        `SELECT bobbin_no, fiber_length, is_qc_out, dispatch_status
+        `SELECT bobbin_no, fiber_length, is_qc_out, dispatch_status, lock, lock_reason
          FROM bobbin_entries WHERE bobbin_no = $1`,
         [bobbin_no]
     );
@@ -26,6 +26,11 @@ export const validateBobbinForPackingS = async (bobbin_no, order_no) => {
     }
 
     const bobbin = bobbinResult.rows[0];
+
+    // Locked bobbins cannot be packed
+    if (bobbin.lock === true) {
+        return { success: false, message: `Bobbin is locked${bobbin.lock_reason ? `: ${bobbin.lock_reason}` : "."}` };
+    }
 
     if (bobbin.is_qc_out !== true) {
         return { success: false, message: "Bobbin is not QC Out." };
@@ -74,6 +79,19 @@ export const submitPackingS = async (payload) => {
 
         if (orderCheck.rows[0].is_packed === true) {
             throw new Error("This packing order is already completed. Cannot pack again.");
+        }
+
+        // Validation: locked bobbins cannot be packed (rolls back the whole submit)
+        const bobbinNos = (bobbins || []).map((b) => b.bobbin_no);
+        if (bobbinNos.length > 0) {
+            const lockedCheck = await client.query(
+                `SELECT bobbin_no FROM bobbin_entries WHERE bobbin_no = ANY($1) AND lock = TRUE`,
+                [bobbinNos]
+            );
+            if (lockedCheck.rows.length > 0) {
+                const lockedNos = lockedCheck.rows.map((r) => r.bobbin_no).join(", ");
+                throw new Error(`Bobbin(s) locked: ${lockedNos}. Cannot pack.`);
+            }
         }
 
         for (const bobbin of bobbins) {
@@ -264,6 +282,12 @@ export const addBobbinToPackingS = async (order_no, bobbin_no, stack_no, box_no)
 
     if (bobbinData.rowCount === 0) {
         return { success: false, status: 404, message: "Bobbin not found in system" };
+    }
+
+    // Locked bobbins cannot be packed
+    if (bobbinData.rows[0].lock === true) {
+        const reason = bobbinData.rows[0].lock_reason;
+        return { success: false, status: 400, message: `Bobbin ${bobbin_no} is locked${reason ? `: ${reason}` : "."}` };
     }
 
     // Validate dispatch_status is NO before adding

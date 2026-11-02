@@ -543,6 +543,24 @@ export const drawEntryS = async(payload)=>{
 
         await insertSapTransaction(sap_data, client);
 
+        // ── Inherit preform lock ──
+        // If the preform is locked, lock this new spool with the preform's lock_reason.
+        // No match (preform unlocked / lock NULL) -> nothing changes, spool stays unlocked.
+        const lockResult = await client.query(
+            `
+            UPDATE draw_entry de
+            SET lock = TRUE,
+                lock_reason = pa.lock_reason
+            FROM preform_accept pa
+            WHERE de.spool_id = $1
+              AND pa.preform_id = de.preform_id
+              AND pa.lock = TRUE
+            RETURNING de.lock_reason
+            `,
+            [spoolId]
+        );
+        const spoolLocked = lockResult.rows.length > 0;
+
         await client.query("COMMIT");
         return {
             success: true,
@@ -551,7 +569,9 @@ export const drawEntryS = async(payload)=>{
             remaining_weight: remainingWeight,
             warning: remainingWeight <= 2,
             tower_no: payload.tower_no,
-            preform_id: payload.preform_id
+            preform_id: payload.preform_id,
+            spool_locked: spoolLocked,
+            lock_reason: spoolLocked ? lockResult.rows[0].lock_reason : null
         }
 
          

@@ -713,6 +713,31 @@ export const ptEntryS = async (payload) => {
         await insertSapTransaction(sap_data, client);
 
         //-------------------------
+        // Inherit spool lock
+        // If a bobbin was created (fid present) and its spool is locked in draw_entry,
+        // lock this bobbin (by bobbin_no) with the spool's lock_reason.
+        // No match (no fid / no bobbin_no / spool unlocked / lock NULL) -> nothing changes.
+        //-------------------------
+
+        let bobbinLock = { rows: [] };
+        if (payload.fid && payload.bobbin_no) {
+            bobbinLock = await client.query(
+                `
+                UPDATE bobbin_entries be
+                SET lock = TRUE,
+                    lock_reason = de.lock_reason
+                FROM draw_entry de
+                WHERE be.bobbin_no = $1
+                  AND de.spool_id = be.spool_id
+                  AND de.lock = TRUE
+                RETURNING be.lock_reason
+                `,
+                [payload.bobbin_no]
+            );
+        }
+        const bobbinLocked = bobbinLock.rows.length > 0;
+
+        //-------------------------
         // Commit
         //-------------------------
 
@@ -722,6 +747,8 @@ export const ptEntryS = async (payload) => {
         if (autoScrapBooked) {
             result.auto_scrap_booked = true;
         }
+        result.bobbin_locked = bobbinLocked;
+        result.lock_reason = bobbinLocked ? bobbinLock.rows[0].lock_reason : null;
 
         return result;
 

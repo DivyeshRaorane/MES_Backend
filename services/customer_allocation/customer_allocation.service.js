@@ -107,6 +107,7 @@ export const runAllocationS = async (spec_ids) => {
         LEFT JOIN pt_entry pe ON pe.bobbin_no = be.bobbin_no
         WHERE be.is_qc_out = TRUE
         AND (be.dispatch_status = 'NO' OR be.dispatch_status IS NULL)
+        AND be.lock IS NOT TRUE
     `;
     const queryParams = [];
 

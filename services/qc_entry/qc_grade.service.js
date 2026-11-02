@@ -154,6 +154,39 @@ async function isRetestRequired(client, bobbinNo) {
   return status === 'RETEST';
 }
 
+// Find which bobbin MBend must be tested on (same rule as mbend_copy.service.js)
+async function findMbendSampleBobbin(client, bobbinNo) {
+  const ptRes = await client.query(
+    `SELECT spool_id, start_length, is_sample, full_mbend
+     FROM pt_entry WHERE bobbin_no = $1 LIMIT 1`,
+    [bobbinNo]
+  );
+
+  if (ptRes.rows.length === 0) return { sample_bobbin_no: null, sample_fid: null, is_self: false };
+
+  const current = ptRes.rows[0];
+
+  // This bobbin itself must be MBend tested
+  if (current.is_sample === true || current.full_mbend === true) {
+    return { sample_bobbin_no: bobbinNo, sample_fid: null, is_self: true };
+  }
+
+  const sampleRes = await client.query(
+    `SELECT bobbin_no, fid FROM pt_entry
+     WHERE spool_id = $1 AND is_sample = true AND start_length < $2
+     ORDER BY start_length DESC LIMIT 1`,
+    [current.spool_id, parseFloat(current.start_length) || 0]
+  );
+
+  if (sampleRes.rows.length === 0) return { sample_bobbin_no: null, sample_fid: null, is_self: false };
+
+  return {
+    sample_bobbin_no: sampleRes.rows[0].bobbin_no,
+    sample_fid: sampleRes.rows[0].fid,
+    is_self: false
+  };
+}
+
 // 3. Core Validation Engine Function
 export async function validateBobbinQC(bobbinNo) {
   const client = await pool.connect();
@@ -430,6 +463,8 @@ else {
           // MBend not entered
           if (!hasMbendValues(measurement)) {
 
+            const sample = await findMbendSampleBobbin(client, bobbinNo);
+
             return {
               status: "MBEND_REQUIRED",
               matched_grade: null,
@@ -437,7 +472,7 @@ else {
               metrics: {
                 total_checks_performed: totalChecksPerformed
               },
-              message: "Bobbin qualifies for G657A1250. Please complete MBend testing."
+              message: `Bobbin qualifies for G657A1250. Please complete MBend testing(${sample.sample_bobbin_no || bobbinNo}).`
             };
 
           }
