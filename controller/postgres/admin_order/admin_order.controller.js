@@ -1,7 +1,6 @@
 import {
     getAllOrdersS,
     getOrderByNoS,
-    createOrderS,
     updateOrderS,
     setOrderActiveS,
 } from "../../../services/admin_order/admin_order.service.js";
@@ -29,31 +28,6 @@ export const getOrderByNoC = async (req, res) => {
 
         return res.status(200).json({ success: true, data });
     } catch (error) {
-        console.error(error);
-        return res.status(500).json({ success: false, message: error.message });
-    }
-};
-
-// POST /api/admin/orders
-export const createOrderC = async (req, res) => {
-    try {
-        const header = req.body?.header;
-
-        // Validate order_no: present and <= 10 chars.
-        const orderNo = header?.order_no;
-        if (!orderNo || String(orderNo).trim() === "") {
-            return res.status(400).json({ success: false, message: "header.order_no is required" });
-        }
-        if (String(orderNo).length > 10) {
-            return res.status(400).json({ success: false, message: "header.order_no must be 10 characters or fewer" });
-        }
-
-        const data = await createOrderS(req.body);
-        return res.status(201).json({ success: true, message: "Order created successfully.", data });
-    } catch (error) {
-        if (error.code === "ORDER_EXISTS") {
-            return res.status(409).json({ success: false, message: "Order already exists" });
-        }
         console.error(error);
         return res.status(500).json({ success: false, message: error.message });
     }
