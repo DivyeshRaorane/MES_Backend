@@ -12,6 +12,7 @@ export const createProcessOrderC = async (req, res) => {
         let message = `${data.message} (Order ${data.order_no})`;
         if (!data.release.released) message += `. Release issue: ${data.release.text || "not released"}`;
         if (data.db_error) message += `. Warning: could not save in MES table (${data.db_error})`;
+        if (data.sync?.message) message += `. ${data.sync.message}`;
 
         return res.status(200).json({ success: true, message, data });
     } catch (error) {

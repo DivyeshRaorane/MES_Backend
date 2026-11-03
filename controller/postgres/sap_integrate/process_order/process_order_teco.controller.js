@@ -10,7 +10,7 @@ export const tecoProcessOrderC = async (req, res) => {
 
         let message = `${data.message} (Order ${data.order_no})`;
         if (data.db_error) message += `. Warning: could not update MES table (${data.db_error})`;
-        else if (!data.in_mes_table) message += ". Note: order was not created from MES, so no MES record was updated";
+        if (data.sync?.message) message += `. ${data.sync.message}`;
 
         return res.status(200).json({ success: true, message, data });
     } catch (error) {

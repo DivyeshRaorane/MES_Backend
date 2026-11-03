@@ -2,6 +2,7 @@ import axios from "axios";
 import pool from "../../../db/postgres.js";
 import { sapAuthHeader, clearSapToken } from "../auth/sap_auth.service.js";
 import { logSapCall } from "../sap_log.service.js";
+import { resyncOrderFromSAP, todayYmd } from "./process_order_resync.service.js";
 
 /**
  * SAP Process Order create + release.
@@ -217,6 +218,10 @@ export const createProcessOrderInSAP = async (body, createdBy) => {
         dbError = e.message;
     }
 
+    // Bring the new order into order_hdr / order_comp / order_opr via the
+    // standard SAP sync. The order was created just now, so sync today's date.
+    const sync = await resyncOrderFromSAP(orderNo.replace(/^0+/, ""), todayYmd());
+
     return {
         order_no: orderNo,
         message: response?.Message || "Production Order created",
@@ -227,6 +232,7 @@ export const createProcessOrderInSAP = async (body, createdBy) => {
         },
         saved,
         db_error: dbError,
+        sync,
         sap_response: response,
     };
 };

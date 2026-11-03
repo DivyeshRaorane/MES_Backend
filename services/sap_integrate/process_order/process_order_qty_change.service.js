@@ -2,6 +2,7 @@ import axios from "axios";
 import pool from "../../../db/postgres.js";
 import { sapAuthHeader, clearSapToken } from "../auth/sap_auth.service.js";
 import { logSapCall } from "../sap_log.service.js";
+import { resyncOrderFromSAP } from "./process_order_resync.service.js";
 
 /**
  * SAP Process Order quantity change.
@@ -197,6 +198,9 @@ export const changeProcessOrderQtyInSAP = async (rawOrderNo, rawQty, updatedBy) 
         dbError = e.message;
     }
 
+    // Pull the new quantity into order_hdr via the standard SAP sync.
+    const sync = await resyncOrderFromSAP(orderNo);
+
     return {
         order_no: data.ManufacturingOrder ? String(data.ManufacturingOrder) : orderNo,
         message: response?.Message || "Production Order quantity updated",
@@ -205,6 +209,7 @@ export const changeProcessOrderQtyInSAP = async (rawOrderNo, rawQty, updatedBy) 
         updated,
         in_mes_table: Boolean(updated),
         db_error: dbError,
+        sync,
         sap_response: response,
     };
 };
