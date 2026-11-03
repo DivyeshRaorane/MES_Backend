@@ -132,57 +132,9 @@ const insertOperations = async (client, orderNo, operations = []) => {
     }
 };
 
-// ─── CREATE: header + components + operations in a single transaction ───
-export const createOrderS = async (payload) => {
-    const { header = {}, components = [], operations = [] } = payload || {};
-    const orderNo = header.order_no;
-
-    const client = await pool.connect();
-    try {
-        await client.query("BEGIN");
-
-        // Reject duplicate order_no.
-        const dup = await client.query(
-            `SELECT order_no FROM order_hdr WHERE order_no = $1`,
-            [orderNo]
-        );
-        if (dup.rowCount > 0) {
-            const err = new Error("Order already exists");
-            err.code = "ORDER_EXISTS";
-            throw err;
-        }
-
-        await client.query(
-            `INSERT INTO order_hdr (
-                order_no, material_code, order_qty, uom, gr_qty,
-                "type", order_status, order_creation_date, updated_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())`,
-            [
-                orderNo,
-                textOrNull(header.material_code),
-                numOrNull(header.order_qty),
-                textOrNull(header.uom),
-                numOrNull(header.gr_qty),
-                textOrNull(header.type),
-                textOrNull(header.order_status),
-                textOrNull(header.order_creation_date),
-            ]
-        );
-
-        await insertComponents(client, orderNo, components);
-        await insertOperations(client, orderNo, operations);
-
-        await client.query("COMMIT");
-
-        // Confirmations in the body (if any) are intentionally ignored.
-        return await getOrderByNoS(orderNo);
-    } catch (error) {
-        await client.query("ROLLBACK");
-        throw error;
-    } finally {
-        client.release();
-    }
-};
+// New orders are created in SAP via POST /api/admin/process-order/create
+// (services/sap_integrate/process_order/process_order_create.service.js)
+// and brought into order_hdr by the SAP sync.
 
 // ─── UPDATE: update header, full-replace components + operations. Never touch order_conf ───
 export const updateOrderS = async (orderNo, payload) => {
