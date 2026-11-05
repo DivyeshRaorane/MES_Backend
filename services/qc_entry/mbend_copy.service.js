@@ -217,7 +217,7 @@ export const mbendCopyS = async (bobbin_no) => {
              WHERE spool_id = $1 AND is_sample = true AND start_length < $2
              ORDER BY start_length DESC LIMIT 1`,
             [spool_id, startLength]
-        );
+        ); 
 
         if (sampleResult.rows.length === 0) {
             console.log(`[MBEnd] No previous sample found for ${bobbin_no}`);
