@@ -89,6 +89,10 @@ import adminRewMachineRoutes from "./routes/postgress/admin_rew_machine.routes.j
 import adminColorMachineRoutes from "./routes/postgress/admin_color_machine.routes.js"
 import adminPtUserRoutes from "./routes/postgress/admin_pt_user.routes.js"
 import adminQcUserRoutes from "./routes/postgress/admin_qc_user.routes.js"
+import fgUserRoutes from "./routes/postgress/fg_user.routes.js"
+import adminFgUserRoutes from "./routes/postgress/admin_fg_user.routes.js"
+import qaUserRoutes from "./routes/postgress/qa_user.routes.js"
+import adminQaUserRoutes from "./routes/postgress/admin_qa_user.routes.js"
 import dispatchRoutes from "./routes/postgress/dispatch.routes.js"
 import mailRoutes from "./routes/postgress/mail.routes.js"
 import productionReportRoutes from "./routes/postgress/production_report.routes.js"
@@ -229,6 +233,10 @@ app.use("/api", adminRewMachineRoutes)
 app.use("/api", adminColorMachineRoutes)
 app.use("/api", adminPtUserRoutes)
 app.use("/api", adminQcUserRoutes)
+app.use("/api", fgUserRoutes)
+app.use("/api", adminFgUserRoutes)
+app.use("/api", qaUserRoutes)
+app.use("/api", adminQaUserRoutes)
 app.use("/api", dispatchRoutes)
 app.use("/api", mailRoutes)
 app.use("/api", productionReportRoutes)

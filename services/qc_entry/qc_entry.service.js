@@ -51,10 +51,20 @@ export const fetchBobbinQcS = async (bobbin_no) => {
         const finalGrade = tempCheck.rows[0].final_grade;
         const hasTempGrade = tempGrade !== null && tempGrade !== undefined && String(tempGrade).trim() !== '';
         const hasFinalGrade = finalGrade !== null && finalGrade !== undefined && String(finalGrade).trim() !== '';
+console.log("has final grade:", hasFinalGrade)
+        // True when temp's final_grade is REW or FAIL (trimmed, case-insensitive).
+        const normalizedFinalGrade = hasFinalGrade ? String(finalGrade).trim().toUpperCase() : '';
+        const isRewOrFail = normalizedFinalGrade === 'REW' || normalizedFinalGrade === 'FAIL';
 
         if (hasFinalGrade) {
             const existsInFinal = await pool.query(`SELECT bobbin_no FROM qc_entry WHERE bobbin_no = $1`, [bobbin_no]);
-            if (existsInFinal.rows.length === 0) {
+            // Copy temp -> qc_entry when:
+            //   - no qc_entry row exists yet (original behavior), OR
+            //   - a qc_entry row already exists but temp's final_grade is REW or FAIL
+            //     (REW/FAIL overrides the "already finalized" guard and overwrites the
+            //      row via the ON CONFLICT upsert below).
+            const notFinalizedYet = existsInFinal.rows.length === 0;
+            if (notFinalizedYet || isRewOrFail) {
                 // Copy qc_entry_temp data into qc_entry
                 const tempRow = tempCheck.rows[0];
                 const excludeFields = ['created_at', 'updated_at', 'logged_in_user'];
@@ -70,10 +80,10 @@ export const fetchBobbinQcS = async (bobbin_no) => {
                 );
 
                 // Stamp final_grade_date on the qc_entry row we just created
-                await pool.query(
-                    `UPDATE qc_entry SET final_grade_date = NOW() WHERE bobbin_no = $1`,
-                    [bobbin_no]
-                );
+                //await pool.query(
+                //    `UPDATE qc_entry SET final_grade_date = NOW() WHERE bobbin_no = $1`,
+                //    [bobbin_no]
+                //);
             }
         }
 
@@ -166,6 +176,7 @@ export const fetchBobbinQcS = async (bobbin_no) => {
 
     // Re-fetch qc_entry_temp so the returned data reflects any values just calculated above
     const qcTempFinal = await pool.query(`SELECT * FROM qc_entry_temp WHERE bobbin_no = $1`, [bobbin_no]);
+    console.log("qc data:", qcTempFinal.rows[0])
 
     const data1 = await safeGetBobbinStatus(bobbin_no);
 

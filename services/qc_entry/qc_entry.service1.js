@@ -2,6 +2,20 @@ import pool from "../../db/postgres.js";
 import { mbendCopyS } from "./mbend_copy.service.js";
 import { mfdCableCutoffCalcS } from "./mfd_cable_cutoff.service.js";
 import { handleColoredBobbinQcS } from "./colored_bobbin_qc.service.js";
+import { getBobbinStatusS } from "../bobbin_status/bobbin_status.service.js";
+
+// Safe, side-effect-free wrapper around getBobbinStatusS.
+// Never throws and never alters the existing fetch flow — on any error it
+// simply resolves to null so callers can attach it as `data1` without risk.
+const safeGetBobbinStatus = async (bobbin_no) => {
+    try {
+        return await getBobbinStatusS(bobbin_no);
+    } catch (statusErr) {
+        console.error(`[fetchBobbinQcS] safeGetBobbinStatus error for ${bobbin_no}:`, statusErr.message);
+        return null;
+    }
+};
+
 // API 1: Fetch bobbin QC data
 
 
@@ -13,6 +27,21 @@ export const fetchBobbinQcS = async (bobbin_no) => {
     );
     if (bobbinEntryCheck.rows.length === 0) {
         return { success: false, in_bobbin_entries: false, message: "Bobbin not available." };
+    }
+
+    // Additive: fetch fiber_length and fiber_color from bobbin_entries (keyed by bobbin_no)
+    // so they can be surfaced as top-level fields in the response data object, alongside optical_length.
+    let fiberLengthVal = null;
+    let fiberColorVal = null;
+    try {
+        const fiberLengthRes = await pool.query(
+            `SELECT fiber_length, fiber_color FROM bobbin_entries WHERE bobbin_no = $1 LIMIT 1`,
+            [bobbin_no]
+        );
+        fiberLengthVal = fiberLengthRes.rows[0]?.fiber_length ?? null;
+        fiberColorVal = fiberLengthRes.rows[0]?.fiber_color ?? null;
+    } catch (fiberLenErr) {
+        console.error(`[fetchBobbinQcS] fiber_length/fiber_color fetch error for ${bobbin_no}:`, fiberLenErr.message);
     }
 
     // Step 1: If final_grade in qc_entry_temp is set (any value, excluding null/empty), auto-insert into qc_entry if not already done
@@ -65,8 +94,22 @@ export const fetchBobbinQcS = async (bobbin_no) => {
     // Step 2: Check qc_entry FIRST
     const qcEntry = await pool.query(`SELECT * FROM qc_entry WHERE bobbin_no = $1`, [bobbin_no]);
     if (qcEntry.rows[0]) {
-        // Finalized — locked for edit, no MBend/MAC/MFD calc needed here
-        return { success: true, source: "final", editable: false, data: qcEntry.rows[0] };
+        // Finalized — locked for edit, no MBend/MAC/MFD calc needed here.
+        // rew_enabled: true only while final_grade is still null/empty on this
+        // qc_entry row — once final_grade is set, everything (including REW) is disabled.
+        const qcFinalGrade = qcEntry.rows[0].final_grade;
+        const qcHasFinalGrade = qcFinalGrade !== null && qcFinalGrade !== undefined && String(qcFinalGrade).trim() !== '';
+
+        const data1 = await safeGetBobbinStatus(bobbin_no);
+
+        return {
+            success: true,
+            source: "final",
+            editable: false,
+            rew_enabled: !qcHasFinalGrade,
+            data: { ...qcEntry.rows[0], fiber_length: fiberLengthVal, fiber_color: fiberColorVal },
+            data1
+        };
     }
 
     // Step 3: Check qc_entry_temp
@@ -123,8 +166,17 @@ export const fetchBobbinQcS = async (bobbin_no) => {
 
     // Re-fetch qc_entry_temp so the returned data reflects any values just calculated above
     const qcTempFinal = await pool.query(`SELECT * FROM qc_entry_temp WHERE bobbin_no = $1`, [bobbin_no]);
+    console.log("qc data:", qcTempFinal.rows[0])
 
-    return { success: true, source: "temp", editable: true, data: qcTempFinal.rows[0] };
+    const data1 = await safeGetBobbinStatus(bobbin_no);
+
+    return {
+        success: true,
+        source: "temp",
+        editable: true,
+        data: { ...qcTempFinal.rows[0], fiber_length: fiberLengthVal, fiber_color: fiberColorVal },
+        data1
+    };
 };
 
 // export const fetchBobbinQcS = async (bobbin_no) => {
@@ -182,7 +234,7 @@ export const checkProcessCompletionS = async (bobbin_no) => {
     }
 
     const { is_pv, is_d2, is_h2_after } = result.rows[0];
-    const is_final_eligible = is_pv === true && is_d2 === true && is_h2_after === true;
+    const is_final_eligible = is_pv === true && is_d2 === true;
 
     const pending = [];
     if (!is_pv) pending.push("PV");
@@ -199,14 +251,80 @@ export const submitQcEntryS = async (payload) => {
     try {
         await client.query("BEGIN");
 
-        const { bobbin_no, grade, action, remark } = payload;
+        const { bobbin_no, grade, action, remark, reason, no_qc_data } = payload;
 
-        // Block if already in qc_entry (finalized)
-        const finalCheck = await client.query(
+        // ═══════════════════════════════════════════
+        // CASE: Manual REW for a bobbin that has NO QC data yet
+        // (no row in qc_entry_temp or qc_entry). The frontend signals this
+        // with no_qc_data === true; we also detect it defensively below.
+        // Source bobbin_fid + product_type from bobbin_entries (source of truth),
+        // then upsert REW rows into qc_entry_temp and qc_entry.
+        // ═══════════════════════════════════════════
+        const tempExists = await client.query(
+            `SELECT bobbin_no FROM qc_entry_temp WHERE bobbin_no = $1`,
+            [bobbin_no]
+        );
+        const finalExists = await client.query(
             `SELECT bobbin_no FROM qc_entry WHERE bobbin_no = $1`,
             [bobbin_no]
         );
-        if (finalCheck.rows.length > 0) {
+        const hasQcData = tempExists.rows.length > 0 || finalExists.rows.length > 0;
+
+        if (no_qc_data === true || !hasQcData) {
+            // Look up the bobbin in bobbin_entries — source of truth for fid/product_type.
+            const bobbinRow = await client.query(
+                `SELECT fid, product_type FROM bobbin_entries WHERE bobbin_no = $1 LIMIT 1`,
+                [bobbin_no]
+            );
+
+            if (bobbinRow.rows.length === 0) {
+                await client.query("ROLLBACK");
+                return { success: false, message: "Bobbin not found in bobbin_entries" };
+            }
+
+            const { fid: bobbin_fid, product_type } = bobbinRow.rows[0];
+
+            // Upsert qc_entry_temp (idempotent — skip duplicate, refresh on conflict)
+            await client.query(
+                `INSERT INTO qc_entry_temp (bobbin_no, bobbin_fid, product_type, temp_grade, final_grade, remark, reason)
+                 VALUES ($1, $2, $3, 'REW', 'REW', $4, $5)
+                 ON CONFLICT (bobbin_no) DO UPDATE
+                   SET bobbin_fid   = EXCLUDED.bobbin_fid,
+                       product_type = EXCLUDED.product_type,
+                       remark       = COALESCE($4, qc_entry_temp.remark),
+                       reason       = COALESCE($5, qc_entry_temp.reason),
+                       temp_grade   = 'REW',
+                       final_grade  = 'REW'`,
+                [bobbin_no, bobbin_fid, product_type, remark || null, reason || null]
+            );
+
+            // Upsert qc_entry (idempotent — same values)
+            await client.query(
+                `INSERT INTO qc_entry (bobbin_no, bobbin_fid, product_type, temp_grade, final_grade, remark, reason)
+                 VALUES ($1, $2, $3, 'REW', 'REW', $4, $5)
+                 ON CONFLICT (bobbin_no) DO UPDATE
+                   SET bobbin_fid   = EXCLUDED.bobbin_fid,
+                       product_type = EXCLUDED.product_type,
+                       remark       = COALESCE($4, qc_entry.remark),
+                       reason       = COALESCE($5, qc_entry.reason),
+                       temp_grade   = 'REW',
+                       final_grade  = 'REW'`,
+                [bobbin_no, bobbin_fid, product_type, remark || null, reason || null]
+            );
+
+            // Propagate grades to bobbin_entries (mirror existing REW flow).
+            await client.query(
+                `UPDATE bobbin_entries SET temp_grade = 'REW', final_grade = 'REW' WHERE bobbin_no = $1`,
+                [bobbin_no]
+            );
+
+            await client.query("COMMIT");
+
+            return { success: true };
+        }
+
+        // Block if already in qc_entry (finalized) — normal flow unchanged.
+        if (finalExists.rows.length > 0) {
             throw new Error("Final QC has already been completed for this bobbin.");
         }
 
@@ -215,8 +333,8 @@ export const submitQcEntryS = async (payload) => {
         // ═══════════════════════════════════════════
         if (action === 'temp_grade') {
             await client.query(
-                `UPDATE qc_entry_temp SET temp_grade = $2 WHERE bobbin_no = $1`,
-                [bobbin_no, grade]
+                `UPDATE qc_entry_temp SET temp_grade = $2, remark = COALESCE($3, remark), reason = COALESCE($4, reason) WHERE bobbin_no = $1`,
+                [bobbin_no, grade, remark || null, reason || null]
             );
 
             await client.query(
@@ -234,8 +352,8 @@ export const submitQcEntryS = async (payload) => {
         if (action === 'immediate_final') {
             // Update qc_entry_temp
             await client.query(
-                `UPDATE qc_entry_temp SET temp_grade = $2, final_grade = $2, remark = COALESCE($3, remark) WHERE bobbin_no = $1`,
-                [bobbin_no, grade, remark || null]
+                `UPDATE qc_entry_temp SET temp_grade = $2, final_grade = $2, remark = COALESCE($3, remark), reason = COALESCE($4, reason) WHERE bobbin_no = $1`,
+                [bobbin_no, grade, remark || null, reason || null]
             );
 
             // Copy full record from qc_entry_temp into qc_entry
@@ -264,6 +382,7 @@ export const submitQcEntryS = async (payload) => {
             );
 
             await client.query("COMMIT");
+
             return { success: true, type: "final", message: `Bobbin marked as ${grade}.`, grade };
         }
 
@@ -312,7 +431,20 @@ export const submitQcEntryS = async (payload) => {
 
             // If final grade is DCA1, upgrade product_type to G657A1250 across all tables
             if (finalGrade === 'DCA1') {
-                const upgradedProductType = 'G657A1250';
+                const upgradedProductType = 'SMFG657A1250';
+
+                // Capture the current product_type BEFORE the upgrade so we can
+                // record the movement (existing -> new) in material_move.
+                // Also grab fiber_length to store as the moved quantity (qty).
+                const existingRes = await client.query(
+                    `SELECT product_type, fiber_length FROM bobbin_entries WHERE bobbin_no = $1`,
+                    [bobbin_no]
+                );
+                const existingProductType = existingRes.rows[0]?.product_type ?? null;
+                const combinedProductType = existingProductType 
+  ? `SMF${existingProductType}` 
+  : 'SMF';
+                const qty = existingRes.rows[0]?.fiber_length ?? null;
 
                 await client.query(
                     `UPDATE qc_entry_temp SET product_type = $2 WHERE bobbin_no = $1`,
@@ -328,9 +460,26 @@ export const submitQcEntryS = async (payload) => {
                     `UPDATE bobbin_entries SET product_type = $2 WHERE bobbin_no = $1`,
                     [bobbin_no, upgradedProductType]
                 );
+
+                // Queue the product-type movement as an MTM (309) transfer in the
+                // unified transactions table for the SAP posting scheduler:
+                //   comp_material_code    <- existing product_type (issuing)
+                //   issg_or_rcvg_material <- new product_type       (receiving)
+                //   comp_batch            <- bobbin_no              (Batch)
+                //   comp_quantity         <- fiber_length           (qty)
+                //   ud_type               <- 'UD6' tag so it's clear which follow-up
+                //                            lane this MTM row will queue on success
+                await client.query(
+                    `INSERT INTO transactions (
+                        type, comp_material_code, issg_or_rcvg_material,
+                        comp_batch, comp_quantity, ud_required, ud_type, status, created_at
+                    ) VALUES ('MTM', $1, $2, $3, $4, false, 'UD6', false, current_timestamp)`,
+                    [combinedProductType, upgradedProductType, bobbin_no, qty]
+                );
             }
 
             await client.query("COMMIT");
+
             return { success: true, type: "final", message: `Final QC submitted! Grade: ${finalGrade}`, grade: finalGrade };
         }
 
@@ -415,7 +564,9 @@ export const ptCheckByBobbinS = async (bobbin_no) => {
             p.full_mbend,
             p.a_cut_flaw,
             b.product_type,
-            b.fid AS bobbin_fid
+            b.fid AS bobbin_fid,
+            b.optical_length,
+            b.fiber_length
         FROM pt_entry p
         LEFT JOIN bobbin_entries b
             ON p.bobbin_no = b.bobbin_no
@@ -436,7 +587,9 @@ export const ptCheckByBobbinS = async (bobbin_no) => {
             full_mbend: row.full_mbend === true,
             product_type: row.product_type,
             bobbin_fid: row.bobbin_fid,
-            flaw_rewind_instr: row.a_cut_flaw
+            flaw_rewind_instr: row.a_cut_flaw,
+            optical_length: row.optical_length,
+            fiber_length: row.fiber_length
         };
     }
 
@@ -445,7 +598,9 @@ export const ptCheckByBobbinS = async (bobbin_no) => {
         `
         SELECT
             b.product_type,
-            b.fid AS bobbin_fid
+            b.fid AS bobbin_fid,
+            b.optical_length,
+            b.fiber_length
         FROM rewinding_entry r
         LEFT JOIN bobbin_entries b
             ON r.bobbin_no = b.bobbin_no
@@ -466,7 +621,9 @@ export const ptCheckByBobbinS = async (bobbin_no) => {
             full_mbend: true,
             product_type: row.product_type,
             bobbin_fid: row.bobbin_fid,
-            flaw_rewind_instr: null
+            flaw_rewind_instr: null,
+            optical_length: row.optical_length,
+            fiber_length: row.fiber_length
         };
     }
 
@@ -475,7 +632,9 @@ export const ptCheckByBobbinS = async (bobbin_no) => {
         `
         SELECT
             b.product_type,
-            b.fid AS bobbin_fid
+            b.fid AS bobbin_fid,
+            b.optical_length,
+            b.fiber_length
         FROM coloring_entry c
         LEFT JOIN bobbin_entries b
             ON c.bobbin_no = b.bobbin_no
@@ -496,7 +655,9 @@ export const ptCheckByBobbinS = async (bobbin_no) => {
             full_mbend: true,
             product_type: row.product_type,
             bobbin_fid: row.bobbin_fid,
-            flaw_rewind_instr: null
+            flaw_rewind_instr: null,
+            optical_length: row.optical_length,
+            fiber_length: row.fiber_length
         };
     }
 
@@ -553,7 +714,7 @@ export const ptCheckByBobbinS = async (bobbin_no) => {
 //   - Inserts into fg_rewind if not already present
 //   - Inserts into rewind_instr (table used by the rewinding module)
 export const flawRewindS = async (payload) => {
-    const { bobbin_no, p1, p2, instruction, logged_in_user } = payload;
+    const { bobbin_no, p1, p2, instruction, reason, logged_in_user } = payload;
 
     // Build remark in the same format scanForRewindingS expects to parse
     const formattedRemark = (p1 && p2)
@@ -578,28 +739,30 @@ export const flawRewindS = async (payload) => {
 
         // 1. Upsert qc_entry — insert with key fields if missing, update if exists
         await client.query(
-            `INSERT INTO qc_entry (bobbin_no, bobbin_fid, product_type, temp_grade, final_grade, remark)
-             VALUES ($1, $2, $3, 'REW', 'REW', $4)
+            `INSERT INTO qc_entry (bobbin_no, bobbin_fid, product_type, temp_grade, final_grade, remark, reason)
+             VALUES ($1, $2, $3, 'REW', 'REW', $4, $5)
              ON CONFLICT (bobbin_no) DO UPDATE
                SET bobbin_fid   = EXCLUDED.bobbin_fid,
                    product_type = EXCLUDED.product_type,
                    remark       = $4,
+                   reason       = $5,
                    temp_grade   = 'REW',
                    final_grade  = 'REW'`,
-            [bobbin_no, bobbin_fid, product_type, formattedRemark]
+            [bobbin_no, bobbin_fid, product_type, formattedRemark, reason || null]
         );
 
         // 2. Upsert qc_entry_temp — same
         await client.query(
-            `INSERT INTO qc_entry_temp (bobbin_no, bobbin_fid, product_type, temp_grade, final_grade, remark)
-             VALUES ($1, $2, $3, 'REW', 'REW', $4)
+            `INSERT INTO qc_entry_temp (bobbin_no, bobbin_fid, product_type, temp_grade, final_grade, remark, reason)
+             VALUES ($1, $2, $3, 'REW', 'REW', $4, $5)
              ON CONFLICT (bobbin_no) DO UPDATE
                SET bobbin_fid   = EXCLUDED.bobbin_fid,
                    product_type = EXCLUDED.product_type,
                    remark       = $4,
+                   reason       = $5,
                    temp_grade   = 'REW',
                    final_grade  = 'REW'`,
-            [bobbin_no, bobbin_fid, product_type, formattedRemark]
+            [bobbin_no, bobbin_fid, product_type, formattedRemark, reason || null]
         );
 
         // 3. Update bobbin_entries grades + dispatch_status
@@ -644,4 +807,363 @@ export const flawRewindS = async (payload) => {
     } finally {
         client.release();
     }
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// BULK QC TEMP-GRADE FLOW (append-only — does not modify existing code)
+// ═══════════════════════════════════════════════════════════════════════════
+
+// validateBobbinQC opens its OWN pg client per call. It only VALIDATES and does
+// NOT persist the grade — persistence is done by reusing submitQcEntryS's
+// action:'temp_grade' path. Imported here (ES import declarations are hoisted,
+// so appending at module end is valid and keeps this change append-only).
+import { validateBobbinQC } from "./qc_grade.service.js";
+
+/**
+ * Bulk temp-grade flow.
+ *
+ * For EACH bobbin_no, in its own try/catch so one failure NEVER aborts the batch:
+ *   1. Not in qc_entry_temp            -> SKIPPED_NO_TEST
+ *   2. qc_entry.final_grade present     -> SKIPPED_HAS_GRADE
+ *   3. Else validateBobbinQC(bobbin_no) and map the result. On PASSED, persist
+ *      temp_grade by REUSING submitQcEntryS's action:'temp_grade' path (no SQL
+ *      duplication).
+ *
+ * validateBobbinQC and submitQcEntryS each own their own pg client / transaction,
+ * so they are called SEQUENTIALLY in the loop — never wrapped in an outer
+ * transaction owned here (keeps within the pool size).
+ *
+ * @param {string[]} bobbin_nos
+ * @returns {Promise<{ summary: object, results: object[] }>}
+ */
+export const gradeBulkTempS = async (bobbin_nos) => {
+    const results = [];
+
+    for (const rawBobbinNo of bobbin_nos) {
+        // Normalize server-side so a stray space / lowercase doesn't cause a
+        // false SKIPPED_NO_TEST. Bobbin numbers are stored trimmed + uppercase.
+        const bobbin_no = String(rawBobbinNo).trim().toUpperCase();
+
+        try {
+            // Step 1: Run the FULL single-bobbin fetch prep before validating, so bulk
+            // grading is self-sufficient and behaves EXACTLY like the single-bobbin flow.
+            // fetchBobbinQcS performs (per bobbin, sequentially — each helper owns its
+            // own pg client): temp->final auto-insert, grade sync into bobbin_entries,
+            // optical_length sync, MBend copy + MAC calc, and MFD/cable-cutoff calc.
+            // These populate mac_value + MBend columns in qc_entry_temp that
+            // validateBobbinQC then reads (e.g. D->A1 conversion, MBend tiers).
+            const fetchResult = await fetchBobbinQcS(bobbin_no);
+
+            // Map fetch outcome onto the existing skip statuses (no behavior change):
+            //  - not in bobbin_entries          -> SKIPPED_NO_TEST (bobbin not available)
+            //  - already finalized (source final)-> SKIPPED_HAS_GRADE
+            //  - in bobbin_entries but no usable QC row -> SKIPPED_NO_TEST
+            if (fetchResult.success === false) {
+                results.push({
+                    bobbin_no,
+                    status: "SKIPPED_NO_TEST",
+                    message: fetchResult.in_bobbin_entries === false
+                        ? "Bobbin not available"
+                        : "Testing not done for this bobbin",
+                });
+                continue;
+            }
+
+            if (fetchResult.source === "final") {
+                results.push({
+                    bobbin_no,
+                    status: "SKIPPED_HAS_GRADE",
+                    message: "This bobbin already has a grade",
+                });
+                continue;
+            }
+
+            // Step 2: validate (own client — called sequentially). qc_entry_temp is now
+            // fully prepped (mac_value + MBend copied) by fetchBobbinQcS above.
+            const validation = await validateBobbinQC(bobbin_no);
+
+            switch (validation.status) {
+                case "PASSED": {
+                    // Reuse the existing action:'temp_grade' submit path — no SQL
+                    // duplication. For a bobbin already in qc_entry_temp this branch
+                    // throws on failure and returns { success:true, ... } on success,
+                    // but we still defensively check the return.
+                    const saveResult = await submitQcEntryS({
+                        bobbin_no,
+                        grade: validation.matched_grade,
+                        action: "temp_grade",
+                    });
+
+                    if (saveResult && saveResult.success === false) {
+                        results.push({
+                            bobbin_no,
+                            status: "ERROR",
+                            message: saveResult.message || "Failed to save temp grade",
+                        });
+                    } else {
+                        results.push({
+                            bobbin_no,
+                            status: "PASSED",
+                            matched_grade: validation.matched_grade,
+                        });
+                    }
+                    break;
+                }
+                case "FAILED": {
+                    results.push({
+                        bobbin_no,
+                        status: "FAILED",
+                        failed_parameter: validation.failure_details?.failed_parameter,
+                        failure_details: validation.failure_details,
+                    });
+                    break;
+                }
+                case "MISSING_DATA": {
+                    results.push({
+                        bobbin_no,
+                        status: "MISSING_DATA",
+                        missing_parameters: validation.missing_parameters,
+                    });
+                    break;
+                }
+                case "MBEND_REQUIRED": {
+                    results.push({
+                        bobbin_no,
+                        status: "MBEND_REQUIRED",
+                        message: validation.message,
+                    });
+                    break;
+                }
+                case "ERROR":
+                case "CRITICAL_ERROR":
+                default: {
+                    results.push({
+                        bobbin_no,
+                        status: "ERROR",
+                        message: validation.message || "Unknown validation error",
+                    });
+                    break;
+                }
+            }
+        } catch (error) {
+            // One failure must NEVER abort the batch.
+            results.push({
+                bobbin_no,
+                status: "ERROR",
+                message: error.message,
+            });
+        }
+    }
+
+    const summary = {
+        total: results.length,
+        passed: results.filter((r) => r.status === "PASSED").length,
+        failed: results.filter((r) => r.status === "FAILED").length,
+        missing: results.filter((r) => r.status === "MISSING_DATA").length,
+        mbend_required: results.filter((r) => r.status === "MBEND_REQUIRED").length,
+        skipped: results.filter(
+            (r) => r.status === "SKIPPED_NO_TEST" || r.status === "SKIPPED_HAS_GRADE"
+        ).length,
+        error: results.filter((r) => r.status === "ERROR").length,
+    };
+
+    return { summary, results };
+};
+
+/**
+ * List every bobbin present in bobbin_entries AND qc_entry_temp that has NO
+ * temp_grade yet (qc_entry_temp.temp_grade IS NULL or ''), excluding any bobbin
+ * that already has a final_grade in qc_entry.
+ *
+ * Note: qc_entry_temp has no matcode column in this DB, so only product_type is
+ * returned alongside bobbin_no (matcode was optional in the spec).
+ *
+ * @returns {Promise<{ success: true, data: Array<{ bobbin_no: string, product_type: string|null }> }>}
+ */
+export const getPendingTempGradeS = async () => {
+    const result = await pool.query(
+        `SELECT be.bobbin_no,
+                qt.product_type
+           FROM bobbin_entries be
+           JOIN qc_entry_temp qt ON qt.bobbin_no = be.bobbin_no
+           LEFT JOIN qc_entry qe ON qe.bobbin_no = be.bobbin_no
+          WHERE (qt.temp_grade IS NULL OR TRIM(qt.temp_grade::text) = '')
+            AND (qe.final_grade IS NULL OR TRIM(qe.final_grade::text) = '')
+          ORDER BY be.bobbin_no`
+    );
+
+    return { success: true, data: result.rows };
+};
+
+/**
+ * List candidate bobbins for the QC Entry "Bulk Submit → Automatic" mode.
+ *
+ * A bobbin qualifies ONLY when ALL hold:
+ *   1. It exists in qc_entry_temp.
+ *   2. Its temp_grade is set (NOT NULL and not an empty string).
+ *   3. Its final_grade is empty (NULL or empty string) in qc_entry_temp.
+ *   4. It does NOT exist in qc_entry (not already finalized/moved).
+ *
+ * Note: qc_entry_temp has no matcode column in this DB, so only product_type is
+ * returned alongside bobbin_no / temp_grade (matcode was optional in the spec).
+ * Results are deduped by bobbin_no.
+ *
+ * @returns {Promise<{ success: true, data: Array<{ bobbin_no: string, temp_grade: string, product_type: string|null }> }>}
+ */
+export const getPendingFinalSubmitS = async () => {
+    const result = await pool.query(
+        `SELECT DISTINCT ON (t.bobbin_no)
+                t.bobbin_no,
+                t.temp_grade,
+                t.product_type
+           FROM qc_entry_temp t
+          WHERE t.temp_grade IS NOT NULL
+            AND TRIM(t.temp_grade::text) <> ''
+            AND (t.final_grade IS NULL OR TRIM(t.final_grade::text) = '')
+            AND NOT EXISTS (
+                SELECT 1 FROM qc_entry q WHERE q.bobbin_no = t.bobbin_no
+            )
+          ORDER BY t.bobbin_no`
+    );
+
+    return { success: true, data: result.rows };
+};
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FINAL QC SUBMIT (Submit button) — append-only, does not modify existing code
+//
+// Flow requested:
+//   1. temp_grade missing in qc_entry_temp -> error "Grade not there"
+//   2. temp_grade present but final_grade already set -> error
+//      "QC process already complete"
+//   3. Otherwise -> copy the full qc_entry_temp row as-is into qc_entry,
+//      and sync temp_grade into bobbin_entries against bobbin_no.
+// ═══════════════════════════════════════════════════════════════════════════
+export const submitFinalQcS = async (bobbin_no) => {
+    const client = await pool.connect();
+
+    try {
+        await client.query("BEGIN");
+
+        const tempRes = await client.query(
+            `SELECT * FROM qc_entry_temp WHERE bobbin_no = $1`,
+            [bobbin_no]
+        );
+
+        if (tempRes.rows.length === 0) {
+            await client.query("ROLLBACK");
+            return { success: false, message: "Bobbin not found in qc_entry_temp." };
+        }
+
+        const tempRow = tempRes.rows[0];
+        const tempGrade = tempRow.temp_grade;
+        const finalGrade = tempRow.final_grade;
+
+        const hasTempGrade = tempGrade !== null && tempGrade !== undefined && String(tempGrade).trim() !== '';
+        const hasFinalGrade = finalGrade !== null && finalGrade !== undefined && String(finalGrade).trim() !== '';
+
+        // 1. No temp_grade yet
+        if (!hasTempGrade) {
+            await client.query("ROLLBACK");
+            return { success: false, message: "Grade not there." };
+        }
+
+        // 2. Already finalized
+        if (hasFinalGrade) {
+            await client.query("ROLLBACK");
+            return { success: false, message: "QC process already complete." };
+        }
+
+        // 3. Copy full qc_entry_temp row as-is into qc_entry
+        const excludeFields = ['created_at', 'updated_at', 'logged_in_user'];
+        const columns = Object.keys(tempRow).filter(k => !excludeFields.includes(k));
+        const values = columns.map(k => tempRow[k] === '' ? null : tempRow[k]);
+        const placeholders = values.map((_, i) => `$${i + 1}`).join(',');
+        const updateSet = columns.filter(k => k !== 'bobbin_no').map(k => `${k} = EXCLUDED.${k}`).join(',');
+
+        await client.query(
+            `INSERT INTO qc_entry (${columns.join(',')}) VALUES (${placeholders})
+             ON CONFLICT (bobbin_no) DO UPDATE SET ${updateSet}`,
+            values
+        );
+
+        // Sync temp_grade into bobbin_entries against bobbin_no
+        await client.query(
+            `UPDATE bobbin_entries SET temp_grade = $2 WHERE bobbin_no = $1`,
+            [bobbin_no, tempGrade]
+        );
+
+        await client.query("COMMIT");
+
+        return { success: true, message: "QC submitted successfully.", grade: tempGrade };
+    } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+    } finally {
+        client.release();
+    }
+};
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// BULK FINAL QC SUBMIT (append-only — does not modify existing code)
+//
+// Runs submitFinalQcS for each bobbin_no, one at a time (submitFinalQcS owns
+// its own client/transaction), and NEVER aborts the batch on a single failure.
+// Returns a per-bobbin result so the frontend can show success/failure +
+// reason per bobbin, plus a summary count.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Bulk final-submit flow.
+ *
+ * For EACH bobbin_no, in its own try/catch:
+ *   - Reuses submitFinalQcS(bobbin_no) (same guard rules: missing temp_grade,
+ *     already-finalized, else copy qc_entry_temp -> qc_entry + sync bobbin_entries).
+ *
+ * @param {string[]} bobbin_nos
+ * @returns {Promise<{ summary: object, results: object[] }>}
+ */
+export const submitFinalQcBulkS = async (bobbin_nos) => {
+    const results = [];
+
+    for (const rawBobbinNo of bobbin_nos) {
+        const bobbin_no = String(rawBobbinNo).trim().toUpperCase();
+
+        try {
+            const result = await submitFinalQcS(bobbin_no);
+
+            if (result.success) {
+                results.push({
+                    bobbin_no,
+                    status: "SUCCESS",
+                    message: result.message,
+                    grade: result.grade,
+                });
+            } else {
+                results.push({
+                    bobbin_no,
+                    status: "FAILED",
+                    message: result.message,
+                });
+            }
+        } catch (error) {
+            // One failure must NEVER abort the batch.
+            results.push({
+                bobbin_no,
+                status: "ERROR",
+                message: error.message,
+            });
+        }
+    }
+
+    const summary = {
+        total: results.length,
+        success: results.filter((r) => r.status === "SUCCESS").length,
+        failed: results.filter((r) => r.status === "FAILED").length,
+        error: results.filter((r) => r.status === "ERROR").length,
+    };
+
+    return { summary, results };
 };
