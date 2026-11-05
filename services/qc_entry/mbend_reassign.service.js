@@ -1,41 +1,49 @@
 import pool from "../../db/postgres.js";
 
 export const mbendReassignS = async (bobbin_no) => {
+    // ── Step 0 — Validation (read-only, done BEFORE opening a transaction) ──
+    // These checks only read, so they must not run inside a transaction: an
+    // early return from inside BEGIN...COMMIT would release the pooled client
+    // with the transaction still open. Validating here keeps every early exit
+    // transaction-free.
+
+    // Find the PT Entry record
+    const ptResult = await pool.query(
+        `SELECT * FROM pt_entry WHERE bobbin_no = $1 LIMIT 1`,
+        [bobbin_no]
+    );
+
+    if (ptResult.rows.length === 0) {
+        return { success: false, message: "Bobbin not found in pt_entry" };
+    }
+
+    const failedEntry = ptResult.rows[0];
+    const spool_id = failedEntry.spool_id;
+
+    // Check if this bobbin is a sample
+    if (failedEntry.is_sample !== true) {
+        return { success: true, reassigned: false, message: "Bobbin is not a sample. No reassignment needed." };
+    }
+
+    // Confirm temp_grade is FAIL or REW (trimmed, case-insensitive)
+    const qcResult = await pool.query(
+        `SELECT temp_grade FROM qc_entry_temp WHERE bobbin_no = $1 LIMIT 1`,
+        [bobbin_no]
+    );
+
+    if (qcResult.rows.length > 0) {
+        const grade = qcResult.rows[0].temp_grade;
+        const normalizedGrade = grade === null || grade === undefined ? '' : String(grade).trim().toUpperCase();
+        if (normalizedGrade !== 'FAIL' && normalizedGrade !== 'REW') {
+            return { success: true, reassigned: false, message: "Bobbin temp_grade is not FAIL/REW. No reassignment needed." };
+        }
+    }
+
+    // ── Validation passed — now open the transaction for the write phase ──
     const client = await pool.connect();
 
     try {
         await client.query("BEGIN");
-
-        // Step 0 — Validate: Find the PT Entry record
-        const ptResult = await client.query(
-            `SELECT * FROM pt_entry WHERE bobbin_no = $1 LIMIT 1`,
-            [bobbin_no]
-        );
-
-        if (ptResult.rows.length === 0) {
-            return { success: false, message: "Bobbin not found in pt_entry" };
-        }
-
-        const failedEntry = ptResult.rows[0];
-        const spool_id = failedEntry.spool_id;
-
-        // Check if this bobbin is a sample
-        if (failedEntry.is_sample !== true) {
-            return { success: true, reassigned: false, message: "Bobbin is not a sample. No reassignment needed." };
-        }
-
-        // Confirm temp_grade is FAIL or REW
-        const qcResult = await client.query(
-            `SELECT temp_grade FROM qc_entry_temp WHERE bobbin_no = $1 LIMIT 1`,
-            [bobbin_no]
-        );
-
-        if (qcResult.rows.length > 0) {
-            const grade = qcResult.rows[0].temp_grade;
-            if (grade !== 'FAIL' && grade !== 'REW') {
-                return { success: true, reassigned: false, message: "Bobbin temp_grade is not FAIL/REW. No reassignment needed." };
-            }
-        }
 
         // Step 1 — Remove sample from failed bobbin (keep full_mbend = true)
         await client.query(

@@ -1,4 +1,5 @@
 import pool from "../../db/postgres.js";
+import { mbendReassignS } from "./mbend_reassign.service.js";
 
 const MBEND_COLUMNS = [
     'm_100t_50mm_1550', 'm_100t_50mm_1310', 'm_100t_50mm_1625',
@@ -211,38 +212,84 @@ export const mbendCopyS = async (bobbin_no) => {
         const productType = bobbinEntry.rows[0]?.product_type || null;
         console.log(`[MBEnd] Product type for ${bobbin_no}: ${productType}`);
 
-        // Step 2: Find the nearest PREVIOUS sample bobbin in the same spool
-        const sampleResult = await pool.query(
-            `SELECT bobbin_no, fid, start_length FROM pt_entry
-             WHERE spool_id = $1 AND is_sample = true AND start_length < $2
-             ORDER BY start_length DESC LIMIT 1`,
-            [spool_id, startLength]
-        );
+        // Step 2 + 3: Find the nearest PREVIOUS sample bobbin and validate its grade.
+        // SELF-HEAL: if that sample's temp_grade is REW/FAIL, the sample is no longer
+        // trustworthy. This can happen when a grade arrives via backend/machine
+        // integration (no frontend scan ever triggers mbendReassignS). So here we
+        // reassign the cycle (promote the next valid sample) and re-find, repeating
+        // until we land on a sample with a valid grade — or run out of candidates.
+        // Bounded by MAX_REASSIGN_ATTEMPTS so a spool where every candidate is
+        // REW/FAIL can never loop forever.
+        const MAX_REASSIGN_ATTEMPTS = 10;
+        let sampleData = null;
+        let sampleBobbin = null;
+        let attempts = 0;
 
-        if (sampleResult.rows.length === 0) {
-            console.log(`[MBEnd] No previous sample found for ${bobbin_no}`);
-            return { success: true, message: "No previous sample bobbin found", mbend_copied, mac_calculated, mac_value };
-        }
+        while (true) {
+            const sampleResult = await pool.query(
+                `SELECT bobbin_no, fid, start_length FROM pt_entry
+                 WHERE spool_id = $1 AND is_sample = true AND start_length < $2
+                 ORDER BY start_length DESC LIMIT 1`,
+                [spool_id, startLength]
+            );
 
-        const sampleBobbin = sampleResult.rows[0];
-        sample_fid = sampleBobbin.fid;
-        console.log(`[MBEnd] Previous sample found: ${sampleBobbin.bobbin_no} (FID: ${sample_fid})`);
+            if (sampleResult.rows.length === 0) {
+                console.log(`[MBEnd] No previous sample found for ${bobbin_no}`);
+                return { success: true, message: "No previous sample bobbin found", mbend_copied, mac_calculated, mac_value };
+            }
 
-        // Step 3: Validate the sample bobbin's qc_entry_temp record
-        const sampleQC = await pool.query(
-            `SELECT * FROM qc_entry_temp WHERE bobbin_no = $1 LIMIT 1`,
-            [sampleBobbin.bobbin_no]
-        );
+            sampleBobbin = sampleResult.rows[0];
+            sample_fid = sampleBobbin.fid;
+            console.log(`[MBEnd] Previous sample found: ${sampleBobbin.bobbin_no} (FID: ${sample_fid})`);
 
-        if (sampleQC.rows.length === 0) {
-            return { success: true, message: "Sample has no QC temp record", mbend_copied, mac_calculated, mac_value };
-        }
+            // Validate the sample bobbin's qc_entry_temp record
+            const sampleQC = await pool.query(
+                `SELECT * FROM qc_entry_temp WHERE bobbin_no = $1 LIMIT 1`,
+                [sampleBobbin.bobbin_no]
+            );
 
-        const sampleData = sampleQC.rows[0];
+            if (sampleQC.rows.length === 0) {
+                return { success: true, message: "Sample has no QC temp record", mbend_copied, mac_calculated, mac_value };
+            }
 
-        // Check temp_grade is valid (not NULL, not 'REW', not 'FAIL')
-        if (!sampleData.temp_grade || sampleData.temp_grade === 'REW' || sampleData.temp_grade === 'FAIL') {
-            return { success: true, message: "Sample temp_grade is NULL/REW/FAIL", mbend_copied, mac_calculated, mac_value };
+            const candidate = sampleQC.rows[0];
+            const sampleGrade = candidate.temp_grade === null || candidate.temp_grade === undefined
+                ? ''
+                : String(candidate.temp_grade).trim().toUpperCase();
+
+            // Valid, gradable sample → done searching.
+            if (sampleGrade !== '' && sampleGrade !== 'REW' && sampleGrade !== 'FAIL') {
+                sampleData = candidate;
+                break;
+            }
+
+            // NULL grade (not yet graded) → nothing to reassign on; behave as before.
+            if (sampleGrade === '') {
+                return { success: true, message: "Sample temp_grade is NULL/REW/FAIL", mbend_copied, mac_calculated, mac_value };
+            }
+
+            // REW/FAIL sample → self-heal: reassign the cycle, then re-find.
+            if (attempts >= MAX_REASSIGN_ATTEMPTS) {
+                console.warn(`[MBEnd] Reached max reassign attempts (${MAX_REASSIGN_ATTEMPTS}) for ${bobbin_no}; sample ${sampleBobbin.bobbin_no} still ${sampleGrade}. Stopping.`);
+                return { success: true, message: "Sample temp_grade is NULL/REW/FAIL", mbend_copied, mac_calculated, mac_value };
+            }
+
+            attempts++;
+            console.log(`[MBEnd] Sample ${sampleBobbin.bobbin_no} is ${sampleGrade} - reassigning cycle (attempt ${attempts}/${MAX_REASSIGN_ATTEMPTS}).`);
+            try {
+                const reassignRes = await mbendReassignS(sampleBobbin.bobbin_no);
+                console.log(`[MBEnd] Reassign result for ${sampleBobbin.bobbin_no}:`, reassignRes?.message);
+                // If reassign made no change (e.g. no eligible next sample yet),
+                // re-finding would return the same REW/FAIL sample → stop to avoid a spin.
+                if (!reassignRes?.reassigned) {
+                    console.log(`[MBEnd] No reassignment happened for ${sampleBobbin.bobbin_no} - stopping self-heal.`);
+                    return { success: true, message: "Sample temp_grade is NULL/REW/FAIL", mbend_copied, mac_calculated, mac_value };
+                }
+            } catch (reassignErr) {
+                console.error(`[MBEnd] Reassign error for ${sampleBobbin.bobbin_no}:`, reassignErr.message);
+                return { success: true, message: "Sample temp_grade is NULL/REW/FAIL", mbend_copied, mac_calculated, mac_value };
+            }
+            // Loop again — the next iteration's find query now returns the newly promoted sample.
         }
 
         // === Check if sample bobbin has ANY MBend value filled ===
