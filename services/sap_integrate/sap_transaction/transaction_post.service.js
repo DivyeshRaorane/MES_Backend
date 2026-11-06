@@ -3,7 +3,14 @@ import pool from "../../../db/postgres.js";
 import { sapAuthHeader, clearSapToken } from "../auth/sap_auth.service.js";
 import { logSapCall } from "../sap_log.service.js";
 import { postInspectionLotUd } from "../inspection_lot/inspection_lot_ud.service.js";
-import { resolveUdCode, udCodeDefault, udCodeForRew } from "../inspection_lot/ud_code.js";
+import {
+    resolveUdCode,
+    udCodeDefault,
+    udCodeForRew,
+    normalizeGrade,
+    GRADE_REW,
+    GRADE_FAIL,
+} from "../inspection_lot/ud_code.js";
 import { postInspectionLotMatDoc } from "../inspection_lot/inspection_lot_matdoc.service.js";
 import { postInspectionResultRecord } from "../inspection_lot/inspection_result_record.service.js";
 
@@ -1183,30 +1190,6 @@ const postUdRow = async (row) => {
     console.log("[SAP-POST][UD] transaction:", row.transaction_id, "lot:", row.inspection_lot, "ud_type:", udType);
 
     if (udType === "UD1" || udType === "UD2") {
-        // UD1 only: the bobbin must have completed PV (bobbin_entries.is_pv =
-        // true) before its temp_grade UD can be posted. If is_pv is false (or
-        // the bobbin isn't in bobbin_entries yet), SKIP this row — leave it
-        // pending, do not post, do not error — so it retries once PV is done.
-        if (udType === "UD1") {
-            const pvResult = await pool.query(
-                `SELECT is_pv FROM bobbin_entries WHERE bobbin_no = $1 LIMIT 1`,
-                [bobbinNo]
-            );
-            const isPv = pvResult.rows[0]?.is_pv === true;
-
-            if (!isPv) {
-                console.log(
-                    `[SAP-POST][UD][UD1] Skipped transaction ${row.transaction_id}: ` +
-                        `bobbin_entries.is_pv is not true for bobbin_no "${bobbinNo}"`
-                );
-                const skipError = new Error(
-                    `skip: is_pv not true in bobbin_entries for bobbin_no "${bobbinNo}"`
-                );
-                skipError.isSkip = true;
-                throw skipError;
-            }
-        }
-
         const gradeColumn = udType === "UD1" ? "temp_grade" : "final_grade";
 
         const qcResult = await pool.query(
@@ -1227,6 +1210,37 @@ const postUdRow = async (row) => {
             );
             skipError.isSkip = true;
             throw skipError;
+        }
+
+        // UD1 only: the bobbin must have completed PV (bobbin_entries.is_pv =
+        // true) before its temp_grade UD can be posted — EXCEPT when temp_grade
+        // is REW or FAIL, which bypass the is_pv check entirely. Otherwise, if
+        // is_pv is false (or the bobbin isn't in bobbin_entries yet), SKIP this
+        // row — leave it pending, do not post, do not error — so it retries
+        // once PV is done.
+        if (udType === "UD1") {
+            const g = normalizeGrade(grade);
+            const bypassPv = g === GRADE_REW || g === GRADE_FAIL;
+
+            if (!bypassPv) {
+                const pvResult = await pool.query(
+                    `SELECT is_pv FROM bobbin_entries WHERE bobbin_no = $1 LIMIT 1`,
+                    [bobbinNo]
+                );
+                const isPv = pvResult.rows[0]?.is_pv === true;
+
+                if (!isPv) {
+                    console.log(
+                        `[SAP-POST][UD][UD1] Skipped transaction ${row.transaction_id}: ` +
+                            `bobbin_entries.is_pv is not true for bobbin_no "${bobbinNo}"`
+                    );
+                    const skipError = new Error(
+                        `skip: is_pv not true in bobbin_entries for bobbin_no "${bobbinNo}"`
+                    );
+                    skipError.isSkip = true;
+                    throw skipError;
+                }
+            }
         }
 
         lot.UD_CODE = resolveUdCode(grade);
