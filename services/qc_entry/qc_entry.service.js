@@ -33,13 +33,20 @@ export const fetchBobbinQcS = async (bobbin_no) => {
     // so they can be surfaced as top-level fields in the response data object, alongside optical_length.
     let fiberLengthVal = null;
     let fiberColorVal = null;
+    let draw_tower_no = null;
+    let pt_machine_no = null;
+    let coating_type = null;
     try {
         const fiberLengthRes = await pool.query(
-            `SELECT fiber_length, fiber_color FROM bobbin_entries WHERE bobbin_no = $1 LIMIT 1`,
+            `SELECT fiber_length, fiber_color,tower_no,pt_machine_no, coating_type FROM bobbin_entries WHERE bobbin_no = $1 LIMIT 1`,
             [bobbin_no]
         );
         fiberLengthVal = fiberLengthRes.rows[0]?.fiber_length ?? null;
         fiberColorVal = fiberLengthRes.rows[0]?.fiber_color ?? null;
+        draw_tower_no = fiberLengthRes.rows[0]?.tower_no ?? null;
+        pt_machine_no = fiberLengthRes.rows[0]?.pt_machine_no ?? null;
+        coating_type = fiberLengthRes.rows[0]?.coating_type ?? null;
+
     } catch (fiberLenErr) {
         console.error(`[fetchBobbinQcS] fiber_length/fiber_color fetch error for ${bobbin_no}:`, fiberLenErr.message);
     }
@@ -51,7 +58,7 @@ export const fetchBobbinQcS = async (bobbin_no) => {
         const finalGrade = tempCheck.rows[0].final_grade;
         const hasTempGrade = tempGrade !== null && tempGrade !== undefined && String(tempGrade).trim() !== '';
         const hasFinalGrade = finalGrade !== null && finalGrade !== undefined && String(finalGrade).trim() !== '';
-console.log("has final grade:", hasFinalGrade)
+
         // True when temp's final_grade is REW or FAIL (trimmed, case-insensitive).
         const normalizedFinalGrade = hasFinalGrade ? String(finalGrade).trim().toUpperCase() : '';
         const isRewOrFail = normalizedFinalGrade === 'REW' || normalizedFinalGrade === 'FAIL';
@@ -117,7 +124,7 @@ console.log("has final grade:", hasFinalGrade)
             source: "final",
             editable: false,
             rew_enabled: !qcHasFinalGrade,
-            data: { ...qcEntry.rows[0], fiber_length: fiberLengthVal, fiber_color: fiberColorVal },
+            data: { ...qcEntry.rows[0], fiber_length: fiberLengthVal,draw_tower_no,pt_machine_no,coating_type, fiber_color: fiberColorVal },
             data1
         };
     }
@@ -176,15 +183,14 @@ console.log("has final grade:", hasFinalGrade)
 
     // Re-fetch qc_entry_temp so the returned data reflects any values just calculated above
     const qcTempFinal = await pool.query(`SELECT * FROM qc_entry_temp WHERE bobbin_no = $1`, [bobbin_no]);
-    console.log("qc data:", qcTempFinal.rows[0])
-
+    
     const data1 = await safeGetBobbinStatus(bobbin_no);
 
     return {
         success: true,
         source: "temp",
         editable: true,
-        data: { ...qcTempFinal.rows[0], fiber_length: fiberLengthVal, fiber_color: fiberColorVal },
+        data: { ...qcTempFinal.rows[0], fiber_length: fiberLengthVal,draw_tower_no,pt_machine_no,coating_type, fiber_color: fiberColorVal },
         data1
     };
 };
