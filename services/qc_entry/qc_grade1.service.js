@@ -154,6 +154,39 @@ async function isRetestRequired(client, bobbinNo) {
   return status === 'RETEST';
 }
 
+// Find which bobbin MBend must be tested on (same rule as mbend_copy.service.js)
+async function findMbendSampleBobbin(client, bobbinNo) {
+  const ptRes = await client.query(
+    `SELECT spool_id, start_length, is_sample, full_mbend
+     FROM pt_entry WHERE bobbin_no = $1 LIMIT 1`,
+    [bobbinNo]
+  );
+
+  if (ptRes.rows.length === 0) return { sample_bobbin_no: null, sample_fid: null, is_self: false };
+
+  const current = ptRes.rows[0];
+
+  // This bobbin itself must be MBend tested
+  if (current.is_sample === true || current.full_mbend === true) {
+    return { sample_bobbin_no: bobbinNo, sample_fid: null, is_self: true };
+  }
+
+  const sampleRes = await client.query(
+    `SELECT bobbin_no, fid FROM pt_entry
+     WHERE spool_id = $1 AND is_sample = true AND start_length < $2
+     ORDER BY start_length DESC LIMIT 1`,
+    [current.spool_id, parseFloat(current.start_length) || 0]
+  );
+
+  if (sampleRes.rows.length === 0) return { sample_bobbin_no: null, sample_fid: null, is_self: false };
+
+  return {
+    sample_bobbin_no: sampleRes.rows[0].bobbin_no,
+    sample_fid: sampleRes.rows[0].fid,
+    is_self: false
+  };
+}
+
 // 3. Core Validation Engine Function
 export async function validateBobbinQC(bobbinNo) {
   const client = await pool.connect();
@@ -175,6 +208,7 @@ export async function validateBobbinQC(bobbinNo) {
 
     const measurement = measurementRes.rows[0];
     const product_type = measurement.product_type;
+    console.log("product_type:", product_type)
 
     const bobbinRes = await client.query(
     `SELECT fiber_color
@@ -229,9 +263,13 @@ else {
     const parametersToCheckQuery = `Select mandatory_params from grade_mandatory where product_type = $1;`;
     const parametersToCheckRes = await client.query(parametersToCheckQuery, [effectiveProductType])
 
+    console.log("parametrs to check:", parametersToCheckRes.rows.length)
     const parametersToCheck = parametersToCheckRes.rows[0]?.mandatory_params
       ?.split(',')
       .map(param => param.trim()) || [];
+
+      console.log("param:", parametersToCheck)
+
 
 
     const fullCheckQuery = `Select full_check from pt_entry where bobbin_no = $1;`;
@@ -345,7 +383,7 @@ else {
 
       // D. INNER LOOP: Check every single parameter against this tier's rules
       for (const paramName of parametersToCheck) {
-
+        
         totalChecksPerformed++;
 
         const measuredValue = parseFloat(measurement[paramName]);
@@ -430,6 +468,8 @@ else {
           // MBend not entered
           if (!hasMbendValues(measurement)) {
 
+            const sample = await findMbendSampleBobbin(client, bobbinNo);
+
             return {
               status: "MBEND_REQUIRED",
               matched_grade: null,
@@ -437,7 +477,7 @@ else {
               metrics: {
                 total_checks_performed: totalChecksPerformed
               },
-              message: "Bobbin qualifies for G657A1250. Please complete MBend testing."
+              message: `Bobbin qualifies for G657A1250. Please complete MBend testing(${sample.sample_bobbin_no || bobbinNo}).`
             };
 
           }
@@ -452,6 +492,7 @@ else {
 
         // Normal success
         finalMatchedTier = tier;
+        //console.log("FInalMAtchedTier:", finalMatchedTier)
         validationFailureLog = null;
         break;
       }
@@ -483,7 +524,6 @@ else {
 
       }
       // --------------------------------------------------------------------------
-
       return {
         status: 'PASSED',
         matched_grade: finalMatchedTier.grade,

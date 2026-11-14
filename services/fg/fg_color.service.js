@@ -2,7 +2,7 @@ import pool from "../../db/postgres.js";
 
 export const validateColorS = async (bobbin_no, require_color) => {
     const bobbinResult = await pool.query(
-        `SELECT bobbin_no, fid, fiber_color, fiber_length, is_qc_out, dispatch_status, final_grade
+        `SELECT bobbin_no, fid, fiber_color, fiber_length, is_qc_out, dispatch_status, final_grade,product_type
          FROM bobbin_entries WHERE bobbin_no = $1`,
         [bobbin_no]
     );
@@ -25,6 +25,18 @@ export const validateColorS = async (bobbin_no, require_color) => {
         return { success: false, message: `Bobbin is ${bobbin.final_grade} We Cannot proceed it For Color` };
     }
 
+     const trayCheck = await pool.query(
+        `SELECT tp.position_no, tm.tray_no FROM tray_position tp
+         JOIN tray_master tm ON tp.tray_id = tm.tray_id
+         WHERE tp.bobbin_no = $1 AND tp.status = 'OCCUPIED'`,
+        [bobbin_no]
+    );
+
+    if (trayCheck.rows.length > 0) {
+        const { tray_no, position_no } = trayCheck.rows[0];
+        return { success: false, message: `Bobbin is in Modula Tray ${tray_no}, Position ${position_no}. Remove from tray first.` };
+    }
+
     const colorCheck = await pool.query(
         `SELECT fg_color_id FROM fg_color WHERE bobbin_no = $1 LIMIT 1`,
         [bobbin_no]
@@ -44,7 +56,8 @@ export const validateColorS = async (bobbin_no, require_color) => {
             bobbin_no: bobbin.bobbin_no,
             bobbin_fid: bobbin.fid,
             fiber_color: bobbin.fiber_color,
-            fiber_length: bobbin.fiber_length
+            fiber_length: bobbin.fiber_length,
+            product_type: bobbin.product_type
         }
     };
 };

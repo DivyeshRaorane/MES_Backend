@@ -16,7 +16,7 @@ export const getOrderForPackingS = async (order_no) => {
 export const validateBobbinForPackingS = async (bobbin_no, order_no) => {
     // Check bobbin exists
     const bobbinResult = await pool.query(
-        `SELECT bobbin_no, fiber_length, is_qc_out, dispatch_status, lock, lock_reason
+        `SELECT bobbin_no, fiber_length, is_qc_out, dispatch_status, lock, lock_reason,product_type
          FROM bobbin_entries WHERE bobbin_no = $1`,
         [bobbin_no]
     );
@@ -54,7 +54,8 @@ export const validateBobbinForPackingS = async (bobbin_no, order_no) => {
         success: true,
         data: {
             bobbin_no: bobbin.bobbin_no,
-            fiber_length: bobbin.fiber_length
+            fiber_length: bobbin.fiber_length,
+            product_type: bobbin.product_type
         }
     };
 };
