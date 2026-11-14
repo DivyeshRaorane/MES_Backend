@@ -2,7 +2,7 @@ import pool from "../../db/postgres.js";
 
 export const validateRewindS = async (bobbin_no) => {
     const bobbinResult = await pool.query(
-        `SELECT bobbin_no, fid, fiber_length, is_qc_out, dispatch_status
+        `SELECT bobbin_no, fid, fiber_length, is_qc_out, dispatch_status, product_type
          FROM bobbin_entries WHERE bobbin_no = $1`,
         [bobbin_no]
     );
@@ -39,7 +39,8 @@ export const validateRewindS = async (bobbin_no) => {
         data: {
             bobbin_no: bobbin.bobbin_no,
             bobbin_fid: bobbin.fid,
-            fiber_length: bobbin.fiber_length
+            fiber_length: bobbin.fiber_length,
+            product_type: bobbin.product_type
         }
     };
 };

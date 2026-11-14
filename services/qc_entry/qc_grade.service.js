@@ -208,7 +208,7 @@ export async function validateBobbinQC(bobbinNo) {
 
     const measurement = measurementRes.rows[0];
     const product_type = measurement.product_type;
-
+    
     const bobbinRes = await client.query(
     `SELECT fiber_color
      FROM bobbin_entries
@@ -259,12 +259,8 @@ else {
       : product_type;
 
   
-    const parametersToCheckQuery = `Select mandatory_params from grade_mandatory where product_type = $1;`;
-    const parametersToCheckRes = await client.query(parametersToCheckQuery, [effectiveProductType])
-
-    const parametersToCheck = parametersToCheckRes.rows[0]?.mandatory_params
-      ?.split(',')
-      .map(param => param.trim()) || [];
+    // NOTE: mandatory parameters are now resolved PER TIER (per product_type + grade)
+    // after the spec tiers are loaded - see "mandatoryByTier" below.
 
 
     const fullCheckQuery = `Select full_check from pt_entry where bobbin_no = $1;`;
@@ -348,24 +344,24 @@ else {
     // If ANY parameter is missing, we do NOT enter the grade-check loop at all for ANY tier -
     // we just report back which parameters are missing so the operator knows what to test. ---
     const missingParameters = [];
-    for (const paramName of parametersToCheck) {
-      const rawValue = measurement[paramName];
-      if (rawValue === null || rawValue === undefined || rawValue === '') {
-        missingParameters.push(paramName);
-      }
-    }
 
+    // Load mandatory parameters for every (product_type, grade) used by the tiers.
+    // Each grade has its own mandatory list, so each tier is checked with its own list.
+    const mandatoryKey = (pt, grade) =>
+      `${(pt || '').toString().trim().toUpperCase()}|${(grade || '').toString().trim().toUpperCase()}`;
 
+    const tierProductTypes = [...new Set(specificationTiers.map(t => t.product_type))];
+    const mandatoryRes = await client.query(
+      `SELECT product_type, grade, mandatory_params FROM grade_mandatory WHERE product_type = ANY($1);`,
+      [tierProductTypes]
+    );
 
-    if (missingParameters.length > 0) {
-      return {
-        status: 'MISSING_DATA',
-        matched_grade: null,
-        matched_priority: null,
-        metrics: { total_checks_performed: 0 },
-        missing_parameters: missingParameters, // params null/missing after top-bottom sync - no grade check was run
-        failure_details: null
-      };
+    const mandatoryByTier = new Map();
+    for (const row of mandatoryRes.rows) {
+      mandatoryByTier.set(
+        mandatoryKey(row.product_type, row.grade),
+        (row.mandatory_params || '').split(',').map(param => param.trim()).filter(Boolean)
+      );
     }
 
     let totalChecksPerformed = 0;
@@ -376,9 +372,34 @@ else {
     for (const tier of specificationTiers) {
       let tierPassed = true;
 
+      // Mandatory parameters belong to THIS tier's grade (not any other grade)
+      const parametersToCheck = mandatoryByTier.get(mandatoryKey(tier.product_type, tier.grade));
+
+      if (!parametersToCheck || parametersToCheck.length === 0) {
+        return {
+          status: 'ERROR',
+          message: `No mandatory parameters configured for product_type ${tier.product_type}, grade ${tier.grade}.`
+        };
+      }
+
+      // If any mandatory parameter of this tier is still missing (after top-bottom sync),
+      // stop and tell the operator what to test.
+      const tierMissingParameters = parametersToCheck.filter(paramName => isEmpty(measurement[paramName]));
+
+      if (tierMissingParameters.length > 0) {
+        return {
+          status: 'MISSING_DATA',
+          matched_grade: null,
+          matched_priority: null,
+          metrics: { total_checks_performed: totalChecksPerformed },
+          missing_parameters: tierMissingParameters, // params null/missing for this tier's grade after top-bottom sync
+          failure_details: null
+        };
+      }
+
       // D. INNER LOOP: Check every single parameter against this tier's rules
       for (const paramName of parametersToCheck) {
-
+        
         totalChecksPerformed++;
 
         const measuredValue = parseFloat(measurement[paramName]);
@@ -487,6 +508,7 @@ else {
 
         // Normal success
         finalMatchedTier = tier;
+        //console.log("FInalMAtchedTier:", finalMatchedTier)
         validationFailureLog = null;
         break;
       }
@@ -518,7 +540,6 @@ else {
 
       }
       // --------------------------------------------------------------------------
-
       return {
         status: 'PASSED',
         matched_grade: finalMatchedTier.grade,
