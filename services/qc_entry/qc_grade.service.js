@@ -216,6 +216,7 @@ export async function validateBobbinQC(bobbinNo) {
     [bobbinNo]
 );
 
+
 if (bobbinRes.rows.length === 0) {
     return {
         status: "ERROR",
@@ -320,10 +321,10 @@ else {
       const productTypeInOrder = [SECONDARY_PRODUCT_TYPE_FOR_LOW_MAC, product_type];
       const dualSpecsQuery = `
         SELECT * FROM qc_grade 
-        WHERE product_type = ANY($1) AND Status = true 
+        WHERE product_type = ANY($1) AND Status = true AND color_type = $2
         ORDER BY array_position($1, product_type), priority ASC;
       `;
-      specsRes = await client.query(dualSpecsQuery, [productTypeInOrder]);
+      specsRes = await client.query(dualSpecsQuery, [productTypeInOrder, fiber_type]);
     } else {
       const specsQuery = `
         SELECT * FROM qc_grade 
@@ -340,6 +341,7 @@ else {
 
     const specificationTiers = specsRes.rows;
 
+    
     // --- NEW LOGIC: Determine which parameters are still null/missing AFTER top-bottom sync.
     // If ANY parameter is missing, we do NOT enter the grade-check loop at all for ANY tier -
     // we just report back which parameters are missing so the operator knows what to test. ---
@@ -355,6 +357,7 @@ else {
       `SELECT product_type, grade, mandatory_params FROM grade_mandatory WHERE product_type = ANY($1);`,
       [tierProductTypes]
     );
+
 
     const mandatoryByTier = new Map();
     for (const row of mandatoryRes.rows) {
@@ -372,9 +375,12 @@ else {
     for (const tier of specificationTiers) {
       let tierPassed = true;
 
+    
+
       // Mandatory parameters belong to THIS tier's grade (not any other grade)
       const parametersToCheck = mandatoryByTier.get(mandatoryKey(tier.product_type, tier.grade));
 
+      
       if (!parametersToCheck || parametersToCheck.length === 0) {
         return {
           status: 'ERROR',
@@ -574,7 +580,7 @@ else {
 //  const testBobbins = ['B-FAIL-01', 'B-FAIL-02', 'B-FAIL-03', 'B-FAIL-04', 'B-FAIL-05','B-PASS-APLUS','B-PASS-GRADEA','B-PASS-GRADEB','B-PASS-GRADEC'];
 //
 //  for (const bobbin of testBobbins) {
-//    console.log(`Evaluating Spool: ${bobbin}...`);
+//    .log(`Evaluating Spool: ${bobbin}...`);
 //    const report = await validateBobbinQC(bobbin);
 //    console.log(JSON.stringify(report, null, 2));
 //    console.log('\n-------------------------------------------------------\n');
