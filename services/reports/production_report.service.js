@@ -8,7 +8,9 @@ import pool from "../../db/postgres.js";
  * Sheet 3: OEE Report (On Date + Cumulative)
  */
 export const generateProductionReportS = async (reportDate) => {
-  const date = reportDate || new Date().toISOString().split("T")[0];
+  // Default: yesterday (full day 00:00 - 24:00) in IST, regardless of server timezone or fetch time
+  const date = reportDate || new Date(Date.now() - 24 * 60 * 60 * 1000)
+    .toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
   const formattedDate = formatDateDDMMYYYY(date);
 
   // Fetch all data in parallel
@@ -22,7 +24,7 @@ export const generateProductionReportS = async (reportDate) => {
     pool.query(`SELECT * FROM public.fn_production_stages($1)`, [date]),
     pool.query(`SELECT * FROM public.fn_production_trend_summary($1)`, [date]),
     pool.query(`SELECT * FROM public.fn_draw_tower_oee_report($1)`, [date]),
-    pool.query(`SELECT * FROM public.fn_draw_tower_oee_report($1, $2)`, [getFirstDayOfMonth(date), getYesterday(date)]),
+    pool.query(`SELECT * FROM public.fn_draw_tower_oee_report($1, $2)`, [getFirstDayOfMonth(date), date]),
   ]);
 
   const workbook = new ExcelJS.Workbook();
@@ -425,12 +427,11 @@ function buildOEESheet(workbook, formattedDate, date, oeeOnDate, oeeCumulative) 
 
   // ===== OEE CUMULATIVE =====
   const firstDay = getFirstDayOfMonth(date);
-  const yesterday = getYesterday(date);
   currentRow = addSectionTitle(
     ws,
     currentRow,
     "OEE REPORT - CUMULATIVE",
-    `Period: ${formatDateDDMMYYYY(firstDay)} to ${formatDateDDMMYYYY(yesterday)}`,
+    `Period: ${formatDateDDMMYYYY(firstDay)} to ${formatDateDDMMYYYY(date)}`,
     17
   );
 
@@ -519,10 +520,4 @@ function formatDateDDMMYYYY(dateStr) {
 function getFirstDayOfMonth(dateStr) {
   const d = new Date(dateStr);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
-}
-
-function getYesterday(dateStr) {
-  const d = new Date(dateStr);
-  d.setDate(d.getDate() - 1);
-  return d.toISOString().split("T")[0];
 }
