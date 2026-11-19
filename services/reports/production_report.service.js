@@ -14,7 +14,7 @@ export const generateProductionReportS = async (reportDate) => {
   const formattedDate = formatDateDDMMYYYY(date);
 
   // Fetch all data in parallel
-  const [yieldData, ptData, breakData, defectData, packingData, fgStockData, prodStagesData, prodTrendData, oeeOnDate, oeeCumulative] = await Promise.all([
+  const [yieldData, ptData, breakData, defectData, packingData, fgStockData, prodStagesData, fiberWipData, bobbinColorWipData, prodTrendData, oeeOnDate, oeeCumulative, drawSummaryData, towerDrawSummaryData, ptSummaryData, machinePtSummaryData] = await Promise.all([
     pool.query(`SELECT * FROM public.fn_draw_tower_yield_report($1)`, [date]),
     pool.query(`SELECT * FROM public.fn_draw_tower_pt_proof_report($1)`, [date]),
     pool.query(`SELECT * FROM public.fn_machine_wise_break_data($1)`, [date]),
@@ -22,9 +22,29 @@ export const generateProductionReportS = async (reportDate) => {
     pool.query(`SELECT * FROM public.fn_draw_tower_optical_packing_report($1)`, [date]),
     pool.query(`SELECT * FROM public.fn_fg_stock()`),
     pool.query(`SELECT * FROM public.fn_production_stages($1)`, [date]),
+    pool.query(`SELECT * FROM public.fn_wip_fiber_report()`),
+    pool.query(`SELECT * FROM public.fn_bobbin_color_wip_report()`),
     pool.query(`SELECT * FROM public.fn_production_trend_summary($1)`, [date]),
     pool.query(`SELECT * FROM public.fn_draw_tower_oee_report($1)`, [date]),
     pool.query(`SELECT * FROM public.fn_draw_tower_oee_report($1, $2)`, [getFirstDayOfMonth(date), date]),
+    // Day-wise draw dashboard: 1st of the month up to the report date
+    pool.query(
+      `SELECT "day", month_plan, dt_prod, diff, dt_yield, dt_scrap, dt_brk_10k, bfd, lumps, airline, cd2
+         FROM public.draw_summary_report
+        WHERE "day" BETWEEN $1 AND $2
+        ORDER BY "day"`,
+      [getFirstDayOfMonth(date), date]
+    ),
+    pool.query(`SELECT * FROM public.fn_tower_draw_summary($1)`, [date]),
+    // Day-wise PT dashboard: 1st of the month up to the report date
+    pool.query(
+      `SELECT "day", plan, pt_prod, diff, pt_yield, pt_scrap, pt_brk_1k, ftr, pt_full_length
+         FROM public.pt_summary_report
+        WHERE "day" BETWEEN $1 AND $2
+        ORDER BY "day"`,
+      [getFirstDayOfMonth(date), date]
+    ),
+    pool.query(`SELECT * FROM public.fn_machine_pt_summary($1)`, [date]),
   ]);
 
   const workbook = new ExcelJS.Workbook();
@@ -32,13 +52,19 @@ export const generateProductionReportS = async (reportDate) => {
   workbook.created = new Date();
 
   // ========== SHEET 1: Cover Page ==========
-  buildCoverSheet(workbook, formattedDate, prodStagesData.rows, prodTrendData.rows);
+  buildCoverSheet(workbook, formattedDate, prodStagesData.rows, fiberWipData.rows, bobbinColorWipData.rows, prodTrendData.rows);
 
   // ========== SHEET 2: Yield / PT / Break / Defect / Packing / FG Stock ==========
   buildProductionSheet(workbook, formattedDate, yieldData.rows, ptData.rows, breakData.rows, defectData.rows, packingData.rows, fgStockData.rows);
 
   // ========== SHEET 3: OEE Report ==========
   buildOEESheet(workbook, formattedDate, date, oeeOnDate.rows, oeeCumulative.rows);
+
+  // ========== SHEET 4: Draw Dashboard (day-wise, month to report date) ==========
+  buildDrawProdSheet(workbook, formattedDate, date, drawSummaryData.rows, towerDrawSummaryData.rows);
+
+  // ========== SHEET 5: PT Dashboard (day-wise, month to report date) ==========
+  buildPtProdSheet(workbook, formattedDate, date, ptSummaryData.rows, machinePtSummaryData.rows);
 
   // Generate buffer
   const buffer = await workbook.xlsx.writeBuffer();
@@ -48,7 +74,7 @@ export const generateProductionReportS = async (reportDate) => {
 };
 
 // ==================== SHEET 1: COVER PAGE ====================
-function buildCoverSheet(workbook, formattedDate, prodStagesData, prodTrendData) {
+function buildCoverSheet(workbook, formattedDate, prodStagesData, fiberWipData, bobbinColorWipData, prodTrendData) {
   const ws = workbook.addWorksheet("Production");
 
   // Set column widths
@@ -59,34 +85,34 @@ function buildCoverSheet(workbook, formattedDate, prodStagesData, prodTrendData)
 
   // Merge cells for header area
   ws.mergeCells("A3:K3");
+  ws.mergeCells("A4:K4");
   ws.mergeCells("A5:K5");
-  ws.mergeCells("A7:K7");
 
   // Company Name
   const companyCell = ws.getCell("A3");
   companyCell.value = "West Coast Optilinks Hyderabad";
-  companyCell.font = { size: 30, bold: true, color: { argb: "FF003399" } };
+  companyCell.font = { size: 18, bold: true, color: { argb: "FF003399" } };
   companyCell.alignment = { horizontal: "center", vertical: "middle" };
 
   // Plant Name
-  const plantCell = ws.getCell("A5");
+  const plantCell = ws.getCell("A4");
   plantCell.value = "OPTICAL FIBRE PLANT - HYDERABAD";
-  plantCell.font = { size: 30, bold: true, color: { argb: "FF003399" } };
+  plantCell.font = { size: 18, bold: true, color: { argb: "FF003399" } };
   plantCell.alignment = { horizontal: "center", vertical: "middle" };
 
   // Report Title
-  const titleCell = ws.getCell("A7");
+  const titleCell = ws.getCell("A5");
   titleCell.value = `Daily Production Report For :${formattedDate}`;
-  titleCell.font = { size: 30, bold: true, color: { argb: "FF003399" } };
+  titleCell.font = { size: 18, bold: true, color: { argb: "FF003399" } };
   titleCell.alignment = { horizontal: "center", vertical: "middle" };
 
   // Set row heights for better spacing
-  ws.getRow(3).height = 45;
-  ws.getRow(5).height = 45;
-  ws.getRow(7).height = 45;
+  ws.getRow(3).height = 30;
+  ws.getRow(4).height = 30;
+  ws.getRow(5).height = 30;
 
   // ===== PRODUCTION STAGES TABLE =====
-  let currentRow = 10;
+  let currentRow = 7;
 
   currentRow = addSectionTitle(ws, currentRow, "PRODUCTION STAGES SUMMARY", `Date: ${formattedDate}`, 11);
 
@@ -117,6 +143,12 @@ function buildCoverSheet(workbook, formattedDate, prodStagesData, prodTrendData)
   });
 
   currentRow += 2;
+
+  // ===== FIBER WIP TABLE =====
+  currentRow = addDynamicTable(ws, currentRow, "FIBER WIP", `Date: ${formattedDate}`, fiberWipData);
+
+  // ===== BOBBIN COLOR WIP TABLE =====
+  currentRow = addDynamicTable(ws, currentRow, "FG STOCK", `Date: ${formattedDate}`, bobbinColorWipData);
 
   // ===== PRODUCTION TREND TABLE =====
   // Data format: metric_name, target_val, on_date_val, cumm_val, m1_label, m1_val, ..., m6_label, m6_val
@@ -460,6 +492,186 @@ function buildOEESheet(workbook, formattedDate, date, oeeOnDate, oeeCumulative) 
   });
 }
 
+// ==================== SHEET 4: DRAW DASHBOARD ====================
+function buildDrawProdSheet(workbook, formattedDate, date, drawSummaryData, towerDrawSummaryData) {
+  const ws = workbook.addWorksheet("Draw_Prod");
+
+  ws.columns = [
+    { width: 14 }, { width: 14 }, { width: 14 }, { width: 14 }, { width: 12 },
+    { width: 12 }, { width: 14 }, { width: 10 }, { width: 10 }, { width: 10 }, { width: 10 },
+  ];
+
+  const firstDay = getFirstDayOfMonth(date);
+  let currentRow = addSectionTitle(
+    ws,
+    1,
+    "DRAW DASHBOARD",
+    `Day wise: ${formatDateDDMMYYYY(firstDay)} to ${formattedDate}`,
+    11
+  );
+
+  const drawHeaders = [
+    "Date", "Month Plan", "DT Prod", "Diff", "DT Yield",
+    "DT Scrap", "DT Brk/10K", "BFD", "Lumps", "Airline", "CD2",
+  ];
+  currentRow = addTableHeaders(ws, currentRow, drawHeaders);
+
+  drawSummaryData.forEach((row) => {
+    writeNumericRow(ws, currentRow, [
+      row.day ? formatDateDDMMYYYY(row.day) : "-",
+      row.month_plan, row.dt_prod, row.diff, row.dt_yield,
+      row.dt_scrap, row.dt_brk_10k, row.bfd, row.lumps, row.airline, row.cd2,
+    ]);
+    currentRow++;
+  });
+
+  currentRow += 2;
+
+  // ===== TOWER WISE DRAW SUMMARY =====
+  currentRow = addSectionTitle(
+    ws,
+    currentRow,
+    "TOWER WISE DRAW SUMMARY",
+    `Date: ${formattedDate}`,
+    5
+  );
+
+  const towerHeaders = ["DT Machine", "Total DT", "DT OK", "DT Break", "Draw Scrap"];
+  currentRow = addTableHeaders(ws, currentRow, towerHeaders);
+
+  towerDrawSummaryData.forEach((row) => {
+    writeNumericRow(
+      ws,
+      currentRow,
+      [row.dt_machine, row.total_dt, row.dt_ok, row.dt_break, row.draw_scrap],
+      { isTotal: /^\s*total/i.test(String(row.dt_machine ?? "")) }
+    );
+    currentRow++;
+  });
+
+  return currentRow;
+}
+
+// ==================== SHEET 5: PT DASHBOARD ====================
+function buildPtProdSheet(workbook, formattedDate, date, ptSummaryData, machinePtSummaryData) {
+  const ws = workbook.addWorksheet("PT_Prod");
+
+  ws.columns = [
+    { width: 14 }, { width: 14 }, { width: 14 }, { width: 14 }, { width: 12 },
+    { width: 12 }, { width: 14 }, { width: 10 }, { width: 16 },
+  ];
+
+  const firstDay = getFirstDayOfMonth(date);
+  let currentRow = addSectionTitle(
+    ws,
+    1,
+    "PT DASHBOARD",
+    `Day wise: ${formatDateDDMMYYYY(firstDay)} to ${formattedDate}`,
+    9
+  );
+
+  const ptHeaders = [
+    "Date", "Plan", "PT Prod", "Diff", "PT Yield",
+    "PT Scrap", "PT Brk/1K", "FTR", "PT Full Length",
+  ];
+  currentRow = addTableHeaders(ws, currentRow, ptHeaders);
+
+  ptSummaryData.forEach((row) => {
+    writeNumericRow(ws, currentRow, [
+      row.day ? formatDateDDMMYYYY(row.day) : "-",
+      row.plan, row.pt_prod, row.diff, row.pt_yield,
+      row.pt_scrap, row.pt_brk_1k, row.ftr, row.pt_full_length,
+    ]);
+    currentRow++;
+  });
+
+  if (ptSummaryData.length > 0) {
+    const total = (key) => roundTo3(sumColumn(ptSummaryData, key));
+    const totalProd = sumColumn(ptSummaryData, "pt_prod");
+    const totalScrap = sumColumn(ptSummaryData, "pt_scrap");
+
+    // pt_yield and ftr are percentages, so they are recomputed from the totals
+    // the same way fn_insert_pt_summary_report derives them per day. Adding or
+    // averaging the daily percentages would give the wrong answer whenever
+    // daily volumes differ.
+    const yieldPct = totalProd > 0 ? roundTo3(((totalProd - totalScrap) / totalProd) * 100) : null;
+
+    // pt_brk_1k is a ratio over the day's break count, and the break count is
+    // not stored in pt_summary_report, so no correct total can be derived here.
+    writeNumericRow(
+      ws,
+      currentRow,
+      [
+        "Total",
+        total("plan"), roundTo3(totalProd), total("diff"), yieldPct,
+        roundTo3(totalScrap), null, yieldPct, total("pt_full_length"),
+      ],
+      { isTotal: true }
+    );
+    currentRow++;
+  }
+
+  currentRow += 2;
+
+  // ===== MACHINE WISE PT SUMMARY =====
+  currentRow = addSectionTitle(
+    ws,
+    currentRow,
+    "MACHINE WISE PT SUMMARY",
+    `Date: ${formattedDate}`,
+    5
+  );
+
+  const machineHeaders = ["PT Machine", "Total PT", "PT OK", "PT Break", "PT Scrap"];
+  currentRow = addTableHeaders(ws, currentRow, machineHeaders);
+
+  machinePtSummaryData.forEach((row) => {
+    writeNumericRow(
+      ws,
+      currentRow,
+      [row.pt_machine, row.total_pt, row.pt_ok, row.pt_break, row.pt_scrap],
+      { isTotal: /^\s*total/i.test(String(row.pt_machine ?? "")) }
+    );
+    currentRow++;
+  });
+
+  return currentRow;
+}
+
+/** Sum one column across rows, treating null/blank/non-numeric as 0. */
+function sumColumn(rows, key) {
+  return rows.reduce((acc, row) => {
+    const num = Number(row[key]);
+    return acc + (Number.isFinite(num) ? num : 0);
+  }, 0);
+}
+
+/** Round to 3 decimals, matching the precision stored in the summary tables. */
+function roundTo3(value) {
+  if (value === null || value === undefined || !Number.isFinite(value)) return null;
+  return Math.round(value * 1000) / 1000;
+}
+
+/**
+ * Write one data row, coercing pg's numeric-as-string values (every column but
+ * the first) into real numbers so the sheet can be summed, sorted and charted.
+ */
+function writeNumericRow(ws, rowIndex, values, { isTotal = false } = {}) {
+  const dataRow = ws.getRow(rowIndex);
+
+  values.forEach((val, idx) => {
+    const cell = dataRow.getCell(idx + 1);
+    const num = idx > 0 && typeof val === "string" && val.trim() !== "" && !isNaN(val) ? Number(val) : val;
+    cell.value = num !== null && num !== undefined && num !== "" ? num : "-";
+    cell.alignment = { horizontal: "center", vertical: "middle" };
+    cell.border = getThinBorder();
+    cell.font = isTotal ? { size: 10, bold: true } : { size: 10 };
+    if (isTotal) {
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE8F0FE" } };
+    }
+  });
+}
+
 // ==================== HELPER FUNCTIONS ====================
 
 function addSectionTitle(ws, row, title, subtitle, colSpan) {
@@ -498,6 +710,52 @@ function addTableHeaders(ws, row, headers) {
   });
 
   return row + 1;
+}
+
+/**
+ * Render a table whose columns are taken from whatever the SQL function returns,
+ * in order, so no hand-written column map can drift from the function.
+ * Returns the next free row (with the usual 2-row gap). Renders nothing for no rows.
+ */
+function addDynamicTable(ws, row, title, subtitle, data) {
+  const columns = data.length > 0 ? Object.keys(data[0]) : [];
+  if (columns.length === 0) return row;
+
+  let currentRow = addSectionTitle(ws, row, title, subtitle, columns.length);
+  currentRow = addTableHeaders(ws, currentRow, columns.map(toHeaderLabel));
+
+  data.forEach((dataItem) => {
+    const dataRow = ws.getRow(currentRow);
+    const isTotal = /^\s*total/i.test(String(dataItem[columns[0]] ?? ""));
+
+    columns.forEach((key, idx) => {
+      const val = dataItem[key];
+      const cell = dataRow.getCell(idx + 1);
+      cell.value = val !== null && val !== undefined && val !== "" ? val : "-";
+      cell.alignment = { horizontal: "center", vertical: "middle" };
+      cell.border = getThinBorder();
+      cell.font = isTotal ? { size: 10, bold: true } : { size: 10 };
+      if (isTotal) {
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE8F0FE" } };
+      }
+    });
+
+    // First column left-aligned, like the stages table
+    dataRow.getCell(1).alignment = { horizontal: "left", vertical: "middle" };
+    currentRow++;
+  });
+
+  return currentRow + 2;
+}
+
+/** Turn a SQL column name into a readable header: "wip_km" -> "WIP Km" */
+function toHeaderLabel(columnName) {
+  const special = { wip: "WIP", km: "Km", pct: "%", qty: "Qty", no: "No", id: "ID", fg: "FG", pt: "PT", qc: "QC" };
+  return String(columnName)
+    .split("_")
+    .filter(Boolean)
+    .map((word) => special[word.toLowerCase()] || word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
 }
 
 function getThinBorder() {

@@ -116,6 +116,7 @@ import { startMaterialStockSchedular } from "./schedulars/material_stock.schedul
 import { startProcessOrderSchedular } from "./schedulars/process_order.schedular.js";
 import { startTransactionPostSchedular } from "./schedulars/transaction_post.schedular.js";
 import { startInspectionLotUdSchedular } from "./schedulars/inspection_lot_ud.schedular.js";
+import { startSummaryReportSchedular } from "./schedulars/summary_report.schedular.js";
 import { authMiddleware } from "./middleware/aut_middleware.js";
 
 // Routes under /api that do NOT require a JWT. Everything else under /api does.
@@ -273,5 +274,6 @@ startMaterialStockSchedular();
 //startProcessOrderSchedular();
 startTransactionPostSchedular();
 //startInspectionLotUdSchedular();
+startSummaryReportSchedular();
 
 export default app
