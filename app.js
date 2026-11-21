@@ -12,6 +12,8 @@ import { startMailSchedular } from "./schedulars/mail.schedular.js";
 import preformAcceptRoutes from "./routes/postgress/preform_accept.routes.js"
 import handleJoinRoutes from "./routes/postgress/handle_join.routes.js"
 import drawTowerRoutes from "./routes/postgress/draw_tower.routes.js"
+import dashboardDrawRoutes from "./routes/postgress/dashboard_draw.routes.js"
+import dashboardPtRoutes from "./routes/postgress/dashboard_pt.routes.js"
 import preformAllocationRoutes from "./routes/postgress/preform_allocation.routes.js"
 import drawEntryRoutes from "./routes/postgress/draw_entry.routes.js"
 import towerDataRoutes from "./routes/sql/tower_data.routes.js"
@@ -159,6 +161,8 @@ app.use("/api", preformDataRoutes)
 app.use("/api", preformAcceptRoutes)
 app.use("/api", handleJoinRoutes)
 app.use("/api", drawTowerRoutes)
+app.use("/api", dashboardDrawRoutes)
+app.use("/api", dashboardPtRoutes)
 app.use("/api", preformAllocationRoutes)
 app.use("/api", drawEntryRoutes)
 app.use("/api", shiftRoutes)
