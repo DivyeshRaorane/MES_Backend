@@ -1,18 +1,18 @@
-import { getChambersInUseS, getRunningBatchS, submitGasEntryS } from "../../../services/d2_gas/d2_gas.service.js";
+import { getD2GasChambersInUseS, getD2GasRunningBatchS, submitGasEntryS } from "../../../services/d2_gas/d2_gas.service.js";
 
-export const getChambersInUseC = async (req, res) => {
+export const getD2GasChambersInUseC = async (req, res) => {
     try {
-        const result = await getChambersInUseS();
+        const result = await getD2GasChambersInUseS();
         res.status(200).json({ success: true, data: result });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
 };
 
-export const getRunningBatchC = async (req, res) => {
+export const getD2GasRunningBatchC = async (req, res) => {
     try {
         const { chamber_no } = req.params;
-        const result = await getRunningBatchS(chamber_no);
+        const result = await getD2GasRunningBatchS(chamber_no);
 
         if (!result) {
             return res.status(404).json({ success: false, message: "No active D2 batch is currently running in the selected chamber." });

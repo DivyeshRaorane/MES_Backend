@@ -1,18 +1,18 @@
-import { getChambersInUseS, getRunningBatchS, completeReceivingS } from "../../../services/d2_receiving/d2_receiving.service.js";
+import { getD2ReceivingChambersInUseS, getD2ReceivingRunningBatchS, completeReceivingS } from "../../../services/d2_receiving/d2_receiving.service.js";
 
-export const getChambersInUseC = async (req, res) => {
+export const getD2ReceivingChambersInUseC = async (req, res) => {
     try {
-        const result = await getChambersInUseS();
+        const result = await getD2ReceivingChambersInUseS();
         res.status(200).json({ success: true, data: result });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
 };
 
-export const getRunningBatchC = async (req, res) => {
+export const getD2ReceivingRunningBatchC = async (req, res) => {
     try {
         const { chamber_no } = req.params;
-        const result = await getRunningBatchS(chamber_no);
+        const result = await getD2ReceivingRunningBatchS(chamber_no);
 
         if (!result) {
             return res.status(404).json({ success: false, message: "No active D2 batch is running in the selected chamber." });

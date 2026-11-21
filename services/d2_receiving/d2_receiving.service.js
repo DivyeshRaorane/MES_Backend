@@ -1,16 +1,45 @@
 import pool from "../../db/postgres.js";
 
-export const getChambersInUseS = async () => {
+// export const getD2ReceivingChambersInUseS = async () => {
+//     const query = `
+//         SELECT * FROM d2_chamber
+//         WHERE is_active = false
+//         ORDER BY d2_chamber_no ASC;
+//     `;
+//     const result = await pool.query(query);
+//     return result.rows;
+// };
+
+
+export const getD2ReceivingChambersInUseS = async () => {
     const query = `
-        SELECT * FROM d2_chamber
-        WHERE is_active = false
-        ORDER BY d2_chamber_no ASC;
+        SELECT c.*, b.d2_batch_id
+        FROM d2_chamber c
+        JOIN (
+            SELECT DISTINCT ON (chamber) chamber, d2_batch_id
+            FROM d2_issue
+            WHERE d2_end_date IS NULL
+            ORDER BY chamber, d2_batch_id
+        ) b ON b.chamber = c.d2_chamber_no
+        WHERE c.is_active = false
+          AND NOT EXISTS (
+            SELECT 1
+            FROM d2_issue_draft d
+            WHERE d.chamber = c.d2_chamber_no
+          )
+          AND EXISTS (
+            SELECT 1
+            FROM d2_gas_entry g
+            WHERE g.d2_batch_id = b.d2_batch_id
+          )
+        ORDER BY c.d2_chamber_no ASC;
     `;
     const result = await pool.query(query);
     return result.rows;
 };
 
-export const getRunningBatchS = async (chamber_no) => {
+
+export const getD2ReceivingRunningBatchS = async (chamber_no) => {
     const query = `
         SELECT d2_batch_id, d2_start_date, d2_start_time, COUNT(*) as total_bobbins
         FROM d2_issue
