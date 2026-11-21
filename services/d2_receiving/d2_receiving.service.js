@@ -52,6 +52,16 @@ export const completeReceivingS = async (payload) => {
             throw new Error("D2 batch not found or already completed.");
         }
 
+        // Validate gas entry exists for this batch
+        const gasCheck = await client.query(
+            `SELECT 1 FROM d2_gas_entry WHERE d2_batch_id = $1 LIMIT 1`,
+            [d2_batch_id]
+        );
+
+        if (gasCheck.rows.length === 0) {
+            throw new Error("First make gas entry for this batch.");
+        }
+
         // Validate minimum hours elapsed since start.
         // Admins are allowed to receive before the minimum has elapsed.
         if (!isAdmin) {

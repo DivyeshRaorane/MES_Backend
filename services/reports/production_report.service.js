@@ -2,15 +2,25 @@ import ExcelJS from "exceljs";
 import pool from "../../db/postgres.js";
 
 /**
+ * The report covers the last complete day: yesterday in IST, as YYYY-MM-DD.
+ * Derived in IST rather than from the server clock or UTC, so the answer does
+ * not shift with the server timezone or the time of day the report is pulled.
+ *
+ * This is the single definition of "the report date" for every caller that does
+ * not ask for a specific day.
+ */
+export const getDefaultReportDate = () =>
+  new Date(Date.now() - 24 * 60 * 60 * 1000)
+    .toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+
+/**
  * Generate Production Report Excel with 3 sheets
  * Sheet 1: Cover Page
  * Sheet 2: Yield / PT Proof / Optical Packing
  * Sheet 3: OEE Report (On Date + Cumulative)
  */
 export const generateProductionReportS = async (reportDate) => {
-  // Default: yesterday (full day 00:00 - 24:00) in IST, regardless of server timezone or fetch time
-  const date = reportDate || new Date(Date.now() - 24 * 60 * 60 * 1000)
-    .toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+  const date = reportDate || getDefaultReportDate();
   const formattedDate = formatDateDDMMYYYY(date);
 
   // Fetch all data in parallel

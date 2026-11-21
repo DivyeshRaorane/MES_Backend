@@ -21,7 +21,7 @@ console.log("🔥 fgRewind query completed:", fgRewind);
         }
 
 
-console.log("this:", bobbin_no)
+
         // Check final_grade = REW from qc_entry (or qc_entry_temp)
         let finalGrade = null;
         const qcEntry = (await pool.query(`SELECT final_grade, remark FROM qc_entry WHERE bobbin_no = $1`, [bobbin_no])).rows[0];
@@ -123,7 +123,7 @@ console.log("this:", bobbin_no)
 const AUTO_SCRAP_THRESHOLD = 2.1;
 
 export const saveRewindingS = async (payload) => {
-    console.log("what is the payload", payload)
+    
     const client = await pool.connect();
 
     try {

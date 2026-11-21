@@ -406,6 +406,17 @@ export const submitQcEntryS = async (payload) => {
         // ACTION: final_grade (promote temp_grade to final)
         // ═══════════════════════════════════════════
         if (action === 'final_grade') {
+            // Bobbins marked for H2 are not eligible for final grade
+            const h2Check = await client.query(
+                `SELECT for_h2 FROM bobbin_entries WHERE bobbin_no = $1`,
+                [bobbin_no]
+            );
+
+            if (h2Check.rows[0]?.for_h2 === true) {
+                await client.query("ROLLBACK");
+                return { success: false, message: "Bobbin is marked for H2, not eligible for final grade" };
+            }
+
             // Get temp_grade from qc_entry_temp
             const tempResult = await client.query(
                 `SELECT temp_grade FROM qc_entry_temp WHERE bobbin_no = $1`,

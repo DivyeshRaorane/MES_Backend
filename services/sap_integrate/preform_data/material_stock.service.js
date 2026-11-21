@@ -230,6 +230,7 @@ export const syncMaterialStock = async (materials) => {
         skipped_duplicate_in_batch: 0,
         skipped_storage_location: 0,
         skipped_uom: 0,
+        skipped_zero_qty: 0,
         inserted_ids: [],
         missing_material_codes: [],
     };
@@ -274,6 +275,13 @@ export const syncMaterialStock = async (materials) => {
                 continue;
             }
 
+            // Skip rows with zero / invalid quantity.
+            const qty = Number(row.MatlWrhsStkQtyInMatlBaseUnit);
+            if (!Number.isFinite(qty) || qty <= 0) {
+                summary.skipped_zero_qty += 1;
+                continue;
+            }
+
             // Already in DB -> skip
             if (existingIds.has(batch)) {
                 summary.skipped_existing += 1;
@@ -312,7 +320,7 @@ export const syncMaterialStock = async (materials) => {
                 ON CONFLICT (preform_id) DO NOTHING`,
                 [
                     batch,
-                    row.MatlWrhsStkQtyInMatlBaseUnit || null,
+                    qty,
                     master.preform_type,
                     master.product_type,
                     code,

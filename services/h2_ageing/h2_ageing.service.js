@@ -83,6 +83,20 @@ export const validateBobbinForH2S = async (bobbin_no, d2_batch_ids) => {
         }
     }
 
+    // Check bobbin was marked for H2 during D2 Issue
+    const d2IssueResult = await pool.query(
+        `SELECT for_h2 FROM d2_issue WHERE bobbin_no = $1 AND d2_batch_id = $2 LIMIT 1`,
+        [bobbin_no, bobbin.d2_batch_id]
+    );
+
+    if (d2IssueResult.rows.length === 0) {
+        return { success: false, message: "D2 issue record not found for this bobbin." };
+    }
+
+    if (d2IssueResult.rows[0].for_h2 !== true) {
+        return { success: false, message: "This bobbin was not marked for H2 in the D2 Issue." };
+    }
+
     // Check if already in h2_ageing
     const h2Check = await pool.query(
         `SELECT h2_ageing_id FROM h2_ageing WHERE bobbin_no = $1`,
@@ -457,6 +471,44 @@ export const save14DayEntryS = async (payload) => {
             if (result.rowCount === 0) {
                 throw new Error(`No matching row found for bobbin ${bobbin_no} with h2_id ${h2_id} in batch ${h2_batch_id}.`);
             }
+        }
+
+        // Grade every bobbin in this 14-day entry as REW
+        const bobbinNos = bobbins.map(b => b.bobbin_no);
+
+        // qc_entry: grades only
+        const qcResult = await client.query(
+            `UPDATE qc_entry
+             SET temp_grade = 'REW', final_grade = 'REW'
+             WHERE bobbin_no = ANY($1)`,
+            [bobbinNos]
+        );
+        if (qcResult.rowCount !== bobbinNos.length) {
+            throw new Error("qc_entry record not found for one or more bobbins.");
+        }
+
+        // qc_entry_temp: grades only
+        const qcTempResult = await client.query(
+            `UPDATE qc_entry_temp
+             SET temp_grade = 'REW', final_grade = 'REW'
+             WHERE bobbin_no = ANY($1)`,
+            [bobbinNos]
+        );
+        if (qcTempResult.rowCount !== bobbinNos.length) {
+            throw new Error("qc_entry_temp record not found for one or more bobbins.");
+        }
+
+        // bobbin_entries: grades + final_grade_date (date only, no time)
+        const beResult = await client.query(
+            `UPDATE bobbin_entries
+             SET temp_grade = 'REW',
+                 final_grade = 'REW',
+                 final_grade_date = CURRENT_DATE
+             WHERE bobbin_no = ANY($1)`,
+            [bobbinNos]
+        );
+        if (beResult.rowCount !== bobbinNos.length) {
+            throw new Error("bobbin_entries record not found for one or more bobbins.");
         }
 
         await client.query("COMMIT");

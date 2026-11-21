@@ -83,13 +83,26 @@ export const validateBobbinForD2S = async (bobbin_no, restricted) => {
 
 export const submitD2IssueS = async (payload) => {
     const { d2_batch_id: draft_batch_id, start_operator, d2_start_date, d2_start_time,
-            chamber, process_hours = null, bobbins, logged_in_user } = payload;
+            chamber, process_hours = null, bobbins, h2_bobbins, logged_in_user } = payload;
 
     if (!draft_batch_id) {
         throw new Error("d2_batch_id (draft id) is required.");
     }
     if (!Array.isArray(bobbins) || bobbins.length === 0) {
         throw new Error("At least one bobbin is required to submit a D2 Issue.");
+    }
+
+    // H2 selection is mandatory: at least one bobbin must be marked for H2
+    if (!Array.isArray(h2_bobbins) || h2_bobbins.length === 0) {
+        throw new Error("Mandatory selection for H2: select at least one bobbin for H2.");
+    }
+
+    const h2Set = new Set(h2_bobbins.map((b) => b.bobbin_no));
+    const issuedSet = new Set(bobbins.map((b) => b.bobbin_no));
+    const invalidH2 = [...h2Set].filter((no) => !issuedSet.has(no));
+
+    if (invalidH2.length > 0) {
+        throw new Error(`H2 bobbin(s) not part of this D2 issue: ${invalidH2.join(", ")}`);
     }
 
     // Mint the final batch id up front. The generator reserves it in its own
@@ -112,9 +125,9 @@ export const submitD2IssueS = async (payload) => {
                 `
                 INSERT INTO d2_issue (
                     d2_batch_id, start_operator, d2_start_date, d2_start_time,
-                    bobbin_fid, bobbin_no, chamber, process_hours, d2_type, logged_in_user
+                    bobbin_fid, bobbin_no, chamber, process_hours, d2_type, logged_in_user, for_h2
                 )
-                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
                 `,
                 [
                     final_batch_id,
@@ -126,7 +139,8 @@ export const submitD2IssueS = async (payload) => {
                     chamber,
                     process_hours,
                     bobbin.d2_type,
-                    logged_in_user
+                    logged_in_user,
+                    h2Set.has(bobbin.bobbin_no)   // for_h2
                 ]
             );
 

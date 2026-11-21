@@ -25,6 +25,8 @@ export const submitD2IssueC = async (req, res) => {
         res.status(201).json(result);
     } catch (error) {
         console.error("D2 Issue Error:", error.message);
-        res.status(500).json({ success: false, message: error.message });
+        const isValidation = error.message.startsWith("Mandatory selection for H2")
+            || error.message.startsWith("H2 bobbin(s) not part");
+        res.status(isValidation ? 400 : 500).json({ success: false, message: error.message });
     }
 };

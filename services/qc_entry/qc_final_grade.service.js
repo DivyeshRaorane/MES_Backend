@@ -43,12 +43,17 @@ const isBlank = (v) => v === null || v === undefined || String(v).trim() === '';
 const processFinalGradePromotion = async (client, bobbin_no) => {
     // Step 1: must exist in bobbin_entries
     const bobbinRes = await client.query(
-        `SELECT bobbin_no, is_pv, is_d2 FROM bobbin_entries WHERE bobbin_no = $1`,
+        `SELECT bobbin_no, is_pv, is_d2, for_h2 FROM bobbin_entries WHERE bobbin_no = $1`,
         [bobbin_no]
     );
 
     if (bobbinRes.rows.length === 0) {
         return { bobbin_no, status: 'error', message: 'Bobbin not found' };
+    }
+
+    // Step 1b: bobbins marked for H2 are not eligible for final grade
+    if (bobbinRes.rows[0].for_h2 === true) {
+        return { bobbin_no, status: 'error', message: 'Bobbin is marked for H2, not eligible for final grade' };
     }
 
     // Step 2: PV and D2 process must both be complete

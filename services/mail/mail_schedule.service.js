@@ -1,6 +1,6 @@
 import pool from "../../db/postgres.js";
 import { sendMailS } from "./mail.service.js";
-import { generateProductionReportS } from "../reports/production_report.service.js";
+import { generateProductionReportS, getDefaultReportDate } from "../reports/production_report.service.js";
 
 /**
  * Create a scheduled mail entry
@@ -159,7 +159,7 @@ export const processScheduledMailS = async (mail) => {
 
     // If template is production_report, generate Excel and attach it
     if (mail.template_name === "production_report") {
-      const reportDate = mail.template_vars?.reportDate || new Date().toISOString().split("T")[0];
+      const reportDate = mail.template_vars?.reportDate || getDefaultReportDate();
       
       // Auto-fill template variables
       mailOptions.templateVars = {

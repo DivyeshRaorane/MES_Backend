@@ -8,10 +8,9 @@ export const getProductionReportC = async (req, res) => {
   try {
     const { date } = req.query;
 
-    // Default to today if no date provided
-    const reportDate = date || new Date().toISOString().split("T")[0];
-
-    const { buffer, fileName } = await generateProductionReportS(reportDate);
+    // No date given: let the service default to yesterday (IST), the last
+    // complete day. Do not default to today here, or the two would disagree.
+    const { buffer, fileName } = await generateProductionReportS(date);
 
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
