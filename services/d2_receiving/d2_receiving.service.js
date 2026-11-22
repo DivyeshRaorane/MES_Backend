@@ -25,7 +25,7 @@ export const getD2ReceivingChambersInUseS = async () => {
           AND NOT EXISTS (
             SELECT 1
             FROM d2_issue_draft d
-            WHERE d.chamber = c.d2_chamber_no
+            WHERE d.chamber = c.d2_chamber_no::text
           )
           AND EXISTS (
             SELECT 1

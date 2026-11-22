@@ -25,7 +25,7 @@ export const getD2GasChambersInUseS = async () => {
           AND NOT EXISTS (
             SELECT 1
             FROM d2_issue_draft d
-            WHERE d.chamber = c.d2_chamber_no
+            WHERE d.chamber = c.d2_chamber_no::text
           )
           AND NOT EXISTS (
             SELECT 1
@@ -35,6 +35,7 @@ export const getD2GasChambersInUseS = async () => {
         ORDER BY c.d2_chamber_no ASC;
     `;
     const result = await pool.query(query);
+    
     return result.rows;
 };
 

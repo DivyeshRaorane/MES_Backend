@@ -3,6 +3,7 @@ import { getD2GasChambersInUseS, getD2GasRunningBatchS, submitGasEntryS } from "
 export const getD2GasChambersInUseC = async (req, res) => {
     try {
         const result = await getD2GasChambersInUseS();
+        
         res.status(200).json({ success: true, data: result });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
