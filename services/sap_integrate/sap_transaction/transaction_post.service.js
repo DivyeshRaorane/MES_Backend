@@ -245,13 +245,23 @@ const resetStaleClaims = async () => {
  * entire set stuck at processing = true — resetStaleClaims() is what rescues
  * them on a later run, so that sweep is essential here.
  */
-const claimPendingRows = async (type = null) => {
-    const params = [];
-    let innerWhere = "COALESCE(status, false) = false AND COALESCE(processing, false) = false";
-    if (type) {
-        params.push(type);
-        innerWhere += ` AND type = $${params.length}`;
-    }
+ const claimPendingRows = async (type = null) => {
+     const params = [];
+     let innerWhere = "COALESCE(status, false) = false AND COALESCE(processing, false) = false";
+     if (type) {
+         params.push(type);
+         innerWhere += ` AND type = $${params.length}`;
+     }
+
+
+
+    //const claimPendingRows = async (type = null) => {
+    //const params = [];
+    //let innerWhere = "COALESCE(status, false) = false AND COALESCE(processing, false) = false AND tmp_status = 'ok'";
+    //if (type) {
+    //    params.push(type);
+    //    innerWhere += ` AND type = $${params.length}`;
+    //}
 
     const result = await pool.query(
         `UPDATE transactions

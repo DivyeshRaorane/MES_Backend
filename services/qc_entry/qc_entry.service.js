@@ -1030,6 +1030,7 @@ export const getPendingTempGradeS = async () => {
  *   2. Its temp_grade is set (NOT NULL and not an empty string).
  *   3. Its final_grade is empty (NULL or empty string) in qc_entry_temp.
  *   4. It does NOT exist in qc_entry (not already finalized/moved).
+ *   5. bobbin_entries.is_pv is true for this bobbin_no.
  *
  * Note: qc_entry_temp has no matcode column in this DB, so only product_type is
  * returned alongside bobbin_no / temp_grade (matcode was optional in the spec).
@@ -1049,6 +1050,11 @@ export const getPendingFinalSubmitS = async () => {
             AND (t.final_grade IS NULL OR TRIM(t.final_grade::text) = '')
             AND NOT EXISTS (
                 SELECT 1 FROM qc_entry q WHERE q.bobbin_no = t.bobbin_no
+            )
+            AND EXISTS (
+                SELECT 1 FROM bobbin_entries b
+                 WHERE b.bobbin_no = t.bobbin_no
+                   AND b.is_pv = true
             )
           ORDER BY t.bobbin_no`
     );
@@ -1081,6 +1087,16 @@ export const submitFinalQcS = async (bobbin_no) => {
         if (tempRes.rows.length === 0) {
             await client.query("ROLLBACK");
             return { success: false, message: "Bobbin not found in qc_entry_temp." };
+        }
+
+        // PV check: only bobbins with is_pv = true in bobbin_entries may be submitted
+        const pvRes = await client.query(
+            `SELECT 1 FROM bobbin_entries WHERE bobbin_no = $1 AND is_pv = true LIMIT 1`,
+            [bobbin_no]
+        );
+        if (pvRes.rows.length === 0) {
+            await client.query("ROLLBACK");
+            return { success: false, message: "Bobbin is not PV (is_pv is not true)." };
         }
 
         const tempRow = tempRes.rows[0];

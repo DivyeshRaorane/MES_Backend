@@ -2,7 +2,6 @@ import pool from "../../db/postgres.js";
 import { insertSapTransaction } from "../sap_integrate/sap_transaction/sap_transaction_insert.service.js";
 
 export const ptEntryS = async (payload) => {
-    console.log("Payload:",payload)
     const client = await pool.connect();
 
     try {

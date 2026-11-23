@@ -1,5 +1,6 @@
 import express from 'express';
 import { fetchBobbinQcC, checkProcessCompletionC, gradeBobbinC, submitQcEntryC, updateMissingValuesC, mbendCopyC, mbendReassignC, ptCheckByBobbinC, flawRewindC, coloredBobbinQcC, mfdCableCutoffCalcC } from '../../controller/postgres/qc_entry/qc_entry.controller.js';
+import {requireRole} from '../../middleware/aut_middleware.js'
 
 const router = express.Router();
 
@@ -26,8 +27,8 @@ import { gradeBulkTempC, getPendingTempGradeC, getPendingFinalSubmitC, submitFin
 router.post('/qcentry/grade-bulk', gradeBulkTempC);
 router.get('/qcentry/pending-temp-grade', getPendingTempGradeC);
 router.get('/qcentry/pending-final-submit', getPendingFinalSubmitC);
-router.post('/qcentry/submit-final', submitFinalQcC);
-router.post('/qcentry/submit-final-bulk', submitFinalQcBulkC);
+router.post('/qcentry/submit-final', requireRole("admin", "supervisor"),submitFinalQcC);
+router.post('/qcentry/submit-final-bulk', requireRole("admin", "supervisor"),submitFinalQcBulkC);
 
 // ═══════════════════════════════════════════════════════════════════════════
 // FINAL GRADE PROMOTION ROUTES (temp_grade -> final_grade) — append-only
