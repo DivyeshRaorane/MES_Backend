@@ -102,6 +102,7 @@ import materialStockRoutes from "./routes/postgress/material_stock.routes.js"
 import adminOrderRoutes from "./routes/postgress/admin_order.routes.js"
 import processOrderSyncRoutes from "./routes/postgress/process_order_sync.routes.js"
 import sapTransactionPostRoutes from "./routes/postgress/sap_transaction_post.routes.js"
+import reversalEntryRoutes from "./routes/postgress/reversal_entry.routes.js"
 import releasedProdOrderRoutes from "./routes/postgress/released_prod_order.routes.js"
 import inspectionLotUdRoutes from "./routes/postgress/inspection_lot_ud.routes.js"
 import userDecisionRoutes from "./routes/postgress/user_decision.routes.js"
@@ -120,6 +121,7 @@ import { startTransactionPostSchedular } from "./schedulars/transaction_post.sch
 import { startInspectionLotUdSchedular } from "./schedulars/inspection_lot_ud.schedular.js";
 import { startSummaryReportSchedular } from "./schedulars/summary_report.schedular.js";
 import { authMiddleware } from "./middleware/aut_middleware.js";
+import drawSpecialRemarkRoutes from "./routes/postgress/draw_special_remark.routes.js";
 
 // Routes under /api that do NOT require a JWT. Everything else under /api does.
 // Paths are relative to /api. ":param" matches one path segment.
@@ -169,6 +171,7 @@ app.use("/api", shiftRoutes)
 app.use("/api", drawUsersRoutes)
 app.use("/api", windingObservationRoutes)
 app.use("/api", drawFiberCutReasonRoutes)
+app.use("/api", drawSpecialRemarkRoutes)
 app.use("/api", ptMachineRoutes)
 app.use("/api", ptUsersRoutes)
 app.use("/api", ptAllocationRoutes)
@@ -250,6 +253,7 @@ app.use("/api", materialStockRoutes)
 app.use("/api/admin", adminOrderRoutes)
 app.use("/api", processOrderSyncRoutes)
 app.use("/api", sapTransactionPostRoutes)
+app.use("/api", reversalEntryRoutes)
 app.use("/api", releasedProdOrderRoutes)
 app.use("/api", inspectionLotUdRoutes)
 app.use("/api", userDecisionRoutes)

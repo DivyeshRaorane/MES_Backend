@@ -193,6 +193,8 @@ export const drawEntryS = async(payload)=>{
 
          end_length = start_length + Number(payload.drawn_length || 0);
 
+         const sDRemark = (typeof payload.s_d_remark === "string" && payload.s_d_remark.trim() !== "") ? payload.s_d_remark.trim() : null;
+
          const balanceWeight = Number(stock.balance_qty);
          const usedWeight = Number(payload.drawn_weight);
 
@@ -264,7 +266,8 @@ export const drawEntryS = async(payload)=>{
                 die_operator,
                 ground_operator,
                 spool_no,
-                is_first
+                is_first,
+                s_d_remark
             )
                 VALUES
             (
@@ -282,7 +285,7 @@ export const drawEntryS = async(payload)=>{
                 $36,$37,
                 $38,$39,
                 $40,$41,$42,
-                $43,$44,$45,$46,$47,$48,$49
+                $43,$44,$45,$46,$47,$48,$49,$50
             )
                 RETURNING spool_id
                 `,
@@ -350,7 +353,8 @@ export const drawEntryS = async(payload)=>{
                 payload.die_operator,
                 payload.ground_operator,
                 spoolNo,
-                isFirst
+                isFirst,
+                sDRemark
                 ]
         );
 

@@ -131,7 +131,7 @@ export const getSpoolsByPreformS = async (preformId) => {
   return ok("Spools fetched", { preform_id: id, spools: r.rows.map((x) => x.spool_id) });
 };
 
-// Bobbins (bobbin_entries) that are in qc_entry_temp and NOT in qc_entry, grouped per spool: [{ spool_id, bobbins: [bobbin_no] }]
+// Bobbins (bobbin_entries) that are in qc_entry_temp, grouped per spool: [{ spool_id, bobbins: [bobbin_no] }]
 const groupBySpool = (rows, orderedSpools) => {
   const map = new Map(orderedSpools.map((s) => [s, []]));
   for (const row of rows) {
@@ -149,12 +149,11 @@ export const getBobbinsBySpoolsS = async (spoolIds) => {
     `SELECT be.spool_id, be.bobbin_no FROM bobbin_entries be
       WHERE be.spool_id = ANY($1::text[]) AND be.bobbin_no IS NOT NULL
         AND EXISTS (SELECT 1 FROM qc_entry_temp t WHERE t.bobbin_no = be.bobbin_no)
-        AND NOT EXISTS (SELECT 1 FROM qc_entry q WHERE q.bobbin_no = be.bobbin_no)
       ORDER BY be.spool_id, be.bobbin_no`,
     [ids]
   );
   const spools = groupBySpool(r.rows, ids);
-  if (r.rows.length === 0) return fail(404, "No bobbins available for update in the selected spool(s) (must be in qc_entry_temp and not in qc_entry)");
+  if (r.rows.length === 0) return fail(404, "No bobbins available for update in the selected spool(s) (must be in qc_entry_temp)");
   return ok("Bobbins fetched", { spools });
 };
 
@@ -165,11 +164,10 @@ export const getBobbinByNoS = async (bobbinNo) => {
   const r = await pool.query(
     `SELECT be.spool_id, be.bobbin_no FROM bobbin_entries be
       WHERE be.bobbin_no = $1
-        AND EXISTS (SELECT 1 FROM qc_entry_temp t WHERE t.bobbin_no = be.bobbin_no)
-        AND NOT EXISTS (SELECT 1 FROM qc_entry q WHERE q.bobbin_no = be.bobbin_no)`,
+        AND EXISTS (SELECT 1 FROM qc_entry_temp t WHERE t.bobbin_no = be.bobbin_no)`,
     [id]
   );
-  if (r.rows.length === 0) return fail(404, `Bobbin ${id} is not available for update (not found, not in qc_entry_temp, or already in qc_entry)`);
+  if (r.rows.length === 0) return fail(404, `Bobbin ${id} is not available for update (not found or not in qc_entry_temp)`);
   return ok("Bobbin fetched", { spools: groupBySpool(r.rows, []) });
 };
 
@@ -215,8 +213,7 @@ export const updateQcValuesS = async ({ bobbin_nos, values }) => {
 
     const found = await client.query(
       `SELECT t.bobbin_no FROM qc_entry_temp t
-        WHERE t.bobbin_no = ANY($1::text[])
-          AND NOT EXISTS (SELECT 1 FROM qc_entry q WHERE q.bobbin_no = t.bobbin_no)`,
+        WHERE t.bobbin_no = ANY($1::text[])`,
       [bobbins]
     );
     const foundSet = new Set(found.rows.map((r) => r.bobbin_no));

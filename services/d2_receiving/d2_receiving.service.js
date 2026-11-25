@@ -41,12 +41,16 @@ export const getD2ReceivingChambersInUseS = async () => {
 
 export const getD2ReceivingRunningBatchS = async (chamber_no) => {
     const query = `
-        SELECT d2_batch_id, d2_start_date, d2_start_time, COUNT(*) as total_bobbins
-        FROM d2_issue
-        WHERE chamber = $1
-        AND d2_end_date IS NULL
-        AND d2_end_time IS NULL
-        GROUP BY d2_batch_id, d2_start_date, d2_start_time
+        SELECT i.d2_batch_id, i.d2_start_date, i.d2_start_time, COUNT(*) as total_bobbins,
+               (SELECT g.created_at 
+                  FROM d2_gas_entry g
+                 WHERE g.d2_batch_id = i.d2_batch_id
+                 LIMIT 1) AS created_at
+        FROM d2_issue i
+        WHERE i.chamber = $1
+        AND i.d2_end_date IS NULL
+        AND i.d2_end_time IS NULL
+        GROUP BY i.d2_batch_id, i.d2_start_date, i.d2_start_time
         LIMIT 1;
     `;
     const result = await pool.query(query, [chamber_no]);
@@ -83,7 +87,7 @@ export const completeReceivingS = async (payload) => {
 
         // Validate gas entry exists for this batch
         const gasCheck = await client.query(
-            `SELECT 1 FROM d2_gas_entry WHERE d2_batch_id = $1 LIMIT 1`,
+            `SELECT created_at FROM d2_gas_entry WHERE d2_batch_id = $1 LIMIT 1`,
             [d2_batch_id]
         );
 
@@ -93,9 +97,9 @@ export const completeReceivingS = async (payload) => {
 
         // Validate minimum hours elapsed since start.
         // Admins are allowed to receive before the minimum has elapsed.
+        // The elapsed time is measured from the gas entry created_at.
         if (!isAdmin) {
-            const { d2_start_date, d2_start_time } = batchCheck.rows[0];
-            const startDateTime = new Date(`${d2_start_date}T${d2_start_time}`);
+            const startDateTime = new Date(gasCheck.rows[0].created_at);
             const now = new Date();
             const elapsedHours = (now - startDateTime) / (1000 * 60 * 60);
 

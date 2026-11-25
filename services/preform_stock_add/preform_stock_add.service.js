@@ -19,7 +19,9 @@ import pool from "../../db/postgres.js";
  *                   add adding_weight to balance_weight of every draw_entry row for this preform.
  *               - if preform_allocation.preform_draw = true:
  *                   add adding_weight to balance_weight of every draw_entry row for this preform
- *                   AND flip the row that has is_last = true to is_last = false.
+ *                   AND flip the row that has is_last = true to is_last = false,
+ *                   set preform_allocation.preform_draw = false and tower_no = 0,
+ *                   and set handle_join.is_allocate = false.
  *
  * @param {Object} params
  * @param {string} params.preform_id    - Preform / batch identifier.
@@ -81,6 +83,7 @@ export const addPreformStockS = async ({ preform_id, adding_weight, logged_in_us
             draw_entries_updated: 0,
             is_last_reset: false,
             preform_draw_reset: false,
+            is_allocate_reset: false,
         };
 
         // mat_stock update helper: find the row by batch_id = preform_id and add
@@ -223,6 +226,16 @@ export const addPreformStockS = async ({ preform_id, adding_weight, logged_in_us
                             [preform_id]
                         );
                         summary.preform_draw_reset = true;
+
+                        // Preform is reopened and removed from the tower,
+                        // so mark handle_join as not allocated.
+                        await client.query(
+                            `UPDATE handle_join
+                             SET is_allocate = false
+                             WHERE preform_id = $1`,
+                            [preform_id]
+                        );
+                        summary.is_allocate_reset = true;
                     }
                 }
             }

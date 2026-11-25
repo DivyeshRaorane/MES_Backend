@@ -79,7 +79,7 @@ export const getSpoolReportS = async (filters) => {
     const { date_from, date_to } = filters;
     const result = await pool.query(
         `SELECT spool_id, spool_fid, preform_id, start_date, tower_no, shift,
-                drawn_length, drawn_weight, spool_status, is_pt_allocate
+                drawn_length, drawn_weight, spool_status, is_pt_allocate, s_d_remark
          FROM draw_entry
          WHERE entry_date BETWEEN $1 AND $2
          ORDER BY entry_date DESC, start_time DESC LIMIT 500`,
@@ -273,7 +273,7 @@ export const getDrawEntryReportS = async (filters) => {
                shift, drawn_line_speed, draw_tension, furnace_power, furnace_argon,
                furnace_he, tube_he, co2_flow, n2_flow, uv_air,
                winding_observation, scr_observation, top_end_scrap, bottom_end_scrap,
-               die_clean, spool_status, indication_fiber_cut, indication_reason, remark,
+               die_clean, spool_status, indication_fiber_cut, indication_reason, remark, s_d_remark,
                primary_coating, secondary_coating, coating_type,
                primary_pressure, secondary_pressure, primary_batch, secondary_batch,
                process_type, shift_incharge, furnace_operator, die_operator, ground_operator,

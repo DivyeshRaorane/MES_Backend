@@ -54,6 +54,17 @@ export const drawEntryC = async(req,res)=>{
             return res.status(200).json({ success: true, message: "Preform removed. Tower freed." });
         }
 
+        // Validate optional special remark: must be an active (is_disable = false) record
+        if (typeof payload.s_d_remark === "string" && payload.s_d_remark.trim() !== "") {
+            const remarkCheck = await pool.query(
+                `SELECT 1 FROM draw_special_remark WHERE s_d_remark = $1 AND is_disable = FALSE LIMIT 1`,
+                [payload.s_d_remark.trim()]
+            );
+            if (remarkCheck.rows.length === 0) {
+                return res.status(400).json({ success: false, message: "Invalid special remark" });
+            }
+        }
+
         // Normal draw entry insert flow
         const result = await drawEntryS({...payload, logged_in_user:emp_id});
 

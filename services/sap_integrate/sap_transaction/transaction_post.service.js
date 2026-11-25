@@ -247,7 +247,9 @@ const resetStaleClaims = async () => {
  */
  const claimPendingRows = async (type = null) => {
      const params = [];
-     let innerWhere = "COALESCE(status, false) = false AND COALESCE(processing, false) = false";
+     let innerWhere =
+         "COALESCE(status, false) = false AND COALESCE(processing, false) = false " +
+         "AND COALESCE(reverse_status, false) = false";
      if (type) {
          params.push(type);
          innerWhere += ` AND type = $${params.length}`;
@@ -321,10 +323,11 @@ const markRowsPosted = async (ids, client = pool) => {
  *   2. insert a row into order_conf
  *   3. bump order_hdr.gr_qty by the confirmed quantity
  */
-const recordFgSuccess = async ({ ids, orderNo, operationNo, confirmedQty, fgBatch, conf, udRequired }) => {
-    const client = await pool.connect();
+const recordFgSuccess = async ({ ids, orderNo, operationNo, confirmedQty, fgBatch, conf, udRequired, client: extClient = null }) => {
+    const client = extClient || (await pool.connect());
+    const own = !extClient; // true: this function owns the transaction
     try {
-        await client.query("BEGIN");
+        if (own) await client.query("BEGIN");
 
         await markRowsPosted(ids, client);
 
@@ -370,16 +373,18 @@ const recordFgSuccess = async ({ ids, orderNo, operationNo, confirmedQty, fgBatc
             );
         }
 
-        await client.query("COMMIT");
+        if (own) await client.query("COMMIT");
     } catch (error) {
-        try {
-            await client.query("ROLLBACK");
-        } catch (_) {
-            /* ignore */
+        if (own) {
+            try {
+                await client.query("ROLLBACK");
+            } catch (_) {
+                /* ignore */
+            }
         }
         throw error;
     } finally {
-        client.release();
+        if (own) client.release();
     }
 };
 
@@ -705,7 +710,7 @@ const buildLtlPayload = (row) => {
    per-type posters (one row -> one SAP call)
    ══════════════════════════════════════════════════════════ */
 
-const postFgRow = async (row) => {
+const postFgRow = async (row, client) => {
     const ids = [row.transaction_id];
     const payload = buildFgPayload(row);
     const udRequired = row.ud_required === true;
@@ -814,12 +819,13 @@ const postFgRow = async (row) => {
         fgBatch: sentBatch,
         conf,
         udRequired,
+        client,
     });
 
     return { ids, payload, response };
 };
 
-const postScrapRow = async (row) => {
+const postScrapRow = async (row, client) => {
     const ids = [row.transaction_id];
     const payload = buildScrapPayload(row);
     const url = SCRAP_URL();
@@ -875,7 +881,7 @@ const postScrapRow = async (row) => {
         throw new Error(`Scrap goods issue not successful: ${detail}`);
     }
 
-    await markRowsPosted(ids);
+    await markRowsPosted(ids, client);
 
     await logSapCall({
         operation: "SCRAP_GOODS_ISSUE",
@@ -896,7 +902,7 @@ const postScrapRow = async (row) => {
     return { ids, payload, response };
 };
 
-const postMtmRow = async (row) => {
+const postMtmRow = async (row, client) => {
     const ids = [row.transaction_id];
 
     if (!str(row.issg_or_rcvg_material)) {
@@ -977,7 +983,7 @@ const postMtmRow = async (row) => {
         throw new Error(`Stock transfer material-to-material not successful: ${detail}`);
     }
 
-    await markRowsPosted(ids);
+    await markRowsPosted(ids, client);
 
     await logSapCall({
         operation: "STOCK_TRANSFER_MTM",
@@ -1013,7 +1019,7 @@ const postMtmRow = async (row) => {
     return { ids, payload, response };
 };
 
-const postLtlRow = async (row) => {
+const postLtlRow = async (row, client) => {
     const ids = [row.transaction_id];
 
     if (!str(row.receiving_s_location)) {
@@ -1101,7 +1107,7 @@ const postLtlRow = async (row) => {
         throw new Error(`Stock transfer location-to-location not successful: ${detail}`);
     }
 
-    await markRowsPosted(ids);
+    await markRowsPosted(ids, client);
 
     await logSapCall({
         operation: "STOCK_TRANSFER_LTL",
@@ -1184,7 +1190,7 @@ const postLtlRow = async (row) => {
  * it does not re-resolve the grade itself); that service also handles its own
  * SAP logging. On success the transactions row is marked posted here.
  */
-const postUdRow = async (row) => {
+export const postUdRow = async (row, client) => {
     const ids = [row.transaction_id];
 
     // comp_batch / fg_batch carry the bobbin_no for grade resolution.
@@ -1310,7 +1316,7 @@ const postUdRow = async (row) => {
 
     const result = await postInspectionLotUd(lot);
 
-    await markRowsPosted(ids);
+    await markRowsPosted(ids, client);
 
     return { ids, payload: lot, response: result };
 };
@@ -1326,22 +1332,59 @@ const postUdRow = async (row) => {
  * @returns {Promise<{ids:number[], payload:object, response:object}>}
  * @throws when the type is unsupported or the SAP call fails
  */
-const dispatchRow = async (row) => {
+const dispatchRow = async (row, client = pool) => {
     const type = String(row.type || "").trim().toUpperCase();
 
     switch (type) {
         case "FG":
-            return postFgRow(row);
+            return postFgRow(row, client);
         case "SCRAP":
-            return postScrapRow(row);
+            return postScrapRow(row, client);
         case "MTM":
-            return postMtmRow(row);
+            return postMtmRow(row, client);
         case "LTL":
-            return postLtlRow(row);
+            return postLtlRow(row, client);
         case "UD":
-            return postUdRow(row);
+            return postUdRow(row, client);
         default:
             throw new Error(`unsupported transaction type "${row.type}"`);
+    }
+};
+
+/**
+ * Post one row while holding its transactions row lock (FOR UPDATE).
+ * - waits if a reversal holds the row, then re-reads status / reverse_status
+ * - skips the row when it is already posted or reversed
+ * - the lock is released at COMMIT / ROLLBACK
+ */
+const dispatchRowLocked = async (row) => {
+    const client = await pool.connect();
+    try {
+        await client.query("BEGIN");
+
+        const cur = (
+            await client.query(
+                `SELECT status, reverse_status
+                   FROM transactions
+                  WHERE transaction_id = $1
+                    FOR UPDATE`,
+                [row.transaction_id]
+            )
+        ).rows[0];
+
+        if (!cur || cur.status === true || cur.reverse_status === true) {
+            await client.query("ROLLBACK");
+            return { skipped: true };
+        }
+
+        const result = await dispatchRow(row, client);
+        await client.query("COMMIT");
+        return result;
+    } catch (error) {
+        await client.query("ROLLBACK").catch(() => {});
+        throw error;
+    } finally {
+        client.release();
     }
 };
 
@@ -1390,7 +1433,13 @@ export const postPendingTransactions = async () => {
     for (const row of rows) {
         const type = String(row.type || "").trim().toUpperCase();
         try {
-            await dispatchRow(row);
+            const r = await dispatchRowLocked(row);
+            if (r?.skipped) {
+                // Already posted, or reversed while it was waiting in the queue.
+                summary.skipped += 1;
+                await releaseRowClaim(row.transaction_id);
+                continue;
+            }
             summary.posted += 1;
             if (summary.by_type[type] !== undefined) summary.by_type[type] += 1;
         } catch (error) {
@@ -1452,7 +1501,11 @@ export const postSingleTransaction = async (transactionId) => {
     }
 
     try {
-        const { ids, response } = await dispatchRow(row);
+        const locked = await dispatchRowLocked(row);
+        if (locked?.skipped) {
+            return { posted: false, reason: "reversed_or_posted", transaction_id: id };
+        }
+        const { ids, response } = locked;
         return {
             posted: true,
             type: String(row.type || "").trim().toUpperCase(),
